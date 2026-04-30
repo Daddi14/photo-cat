@@ -1,0 +1,32 @@
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Generated output
+output/
+*.log
+
+# Local/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Large generated index files, if produced outside output/
+*.npy
+*.npz
+*.bin
+*.tmp
+*.pkl
+*.parquet
+
+# Keep repository examples tracked
+!data/example_catalog.csv
+!data/example_targets.csv

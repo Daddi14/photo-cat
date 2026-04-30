@@ -1,0 +1,119 @@
+# ============================================================
+# PHOTO-CAT - PHOTOMETRIC CONTAMINATION ANALYZER TOOL - CONFIGURATION FILE
+# ============================================================
+#
+# Basic workflow:
+#   1. Run START_WINDOWS.bat.
+#   2. Use the GUI.
+#   3. Click Save + run.
+#
+# This default configuration works immediately with the tiny example file
+# inside the data/ folder.
+#
+# GUI auto-fill behavior:
+#   - When you select Catalog CSV, Targets CSV is set to the same file.
+#   - Output/index folder is set to an output folder next to that catalog.
+#   - Query index folder is set to the same output/index folder.
+#
+# Default Gaia-like column names:
+#   Catalog CSV: source_id, ra, dec, phot_g_mean_mag
+#   Targets CSV: source_id
+#
+# If your catalog uses different headers, change the column names in the GUI
+# to match your CSV exactly.
+#
+# Targets:
+#   - Default/easiest: TARGETS_INPUT can be the same file as input_catalog.
+#   - Alternative: TARGETS_INPUT can be another CSV with the configured target source_id column.
+#   - Manual mode: set TARGETS_INPUT to null and list source_ids under targets.
+#
+# Path rules:
+#   - Relative paths are relative to this project folder.
+#   - Absolute paths are also allowed.
+#   - On Windows, prefer / instead of \.
+#
+# Good Windows path:
+#   C:/Users/YourName/Desktop/catalog.csv
+#
+# Avoid this in YAML:
+#   C:\Users\YourName\Desktop\catalog.csv
+
+build_neighbors_index:
+  io:
+    # Input star catalog CSV.
+    input_catalog: "data/example_catalog.csv"
+
+    # Folder where the neighbor index will be generated.
+    # The GUI sets this automatically to: folder_of_catalog/output
+    out_dir: "data/output"
+
+    # Filename for the KDTree pickle.
+    KDTREE_FILENAME: "ckdtree.pkl"
+
+    # Default Gaia-like catalog column names.
+    # Change these only if your CSV header uses different names.
+    columns:
+      source_id: "source_id"
+      ra: "ra"
+      dec: "dec"
+      phot_g_mean_mag: "phot_g_mean_mag"
+
+    # Columns loaded from the input catalog.
+    # This is kept for compatibility; the GUI updates it automatically from columns above.
+    usecolumns:
+      - source_id
+      - ra
+      - dec
+      - phot_g_mean_mag
+
+  settings:
+    # Enabled by default. Dask is better for large CSV files and is installed automatically.
+    use_dask: true
+
+    # Set to true only if you also want to store neighbor separations on disk.
+    calculate_separations: false
+
+    # Maximum neighbor search radius, in arcseconds.
+    # Keep this equal to or larger than query_contamination_from_index.settings.field_of_view_arcsec.
+    max_radius_arcsec: 120.0
+
+    # Advanced setting. Wrong values can slow the tool down or increase RAM usage.
+    chunk_size: 10000
+
+    # Advanced setting. Lower values checkpoint more often but may write too often to disk.
+    buffer_flush_interval: 200
+
+query_contamination_from_index:
+  io:
+    # Must match build_neighbors_index.io.out_dir above, unless you already built an index elsewhere.
+    INDEX_DIR: "data/output"
+
+    # CSV containing targets to analyze.
+    # The GUI sets this to the same file as input_catalog by default.
+    # Set this to null if you want to use the manual targets list below instead.
+    TARGETS_INPUT: "data/example_catalog.csv"
+
+    # Default Gaia-like targets source_id column name.
+    # Change this only if your targets CSV header uses a different name.
+    # Manual targets ignore this setting.
+    target_source_id_column: "source_id"
+
+    # Manual target list. Used only when TARGETS_INPUT is null.
+    # Example:
+    # targets:
+    #   - 123456789012345678
+    #   - 987654321098765432
+    targets: []
+
+  settings:
+    # Instrument field-of-view radius, in arcseconds.
+    field_of_view_arcsec: 47.0
+
+    # Neighbor is counted as a contaminant when:
+    # contaminant_mag - target_mag <= delta_mag
+    delta_mag: 5
+
+execution:
+  # Default: build the example index, then query it.
+  run_build: true
+  run_query: true
