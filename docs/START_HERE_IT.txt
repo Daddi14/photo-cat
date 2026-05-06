@@ -1,15 +1,23 @@
-PHOTO-CAT avvio rapido
+PHOTO-CAT - Avvio rapido
 
-Windows:
-1. Doppio click su START_WINDOWS.bat.
+Windows
+1. Estrarre lo ZIP della release.
+2. Aprire la cartella photo-cat estratta.
+3. Fare doppio click su START_WINDOWS.bat.
 
-macOS / Linux:
-1. Apri Terminal nella cartella photo-cat.
-2. Esegui:
+macOS / Linux
+1. Estrarre lo ZIP della release.
+2. Aprire il Terminale nella cartella photo-cat estratta.
+3. Eseguire:
    sh START_UNIX.sh
 
-Flusso base:
-1. Seleziona Catalog CSV.
-2. PHOTO-CAT compila automaticamente Targets CSV, Output/index folder e Query index folder.
-3. Controlla i nomi colonna. Sono case-sensitive.
-4. Clicca Save + run.
+Dopo l'avvio
+1. Selezionare il Catalog CSV.
+2. Verificare che i nomi delle colonne corrispondano esattamente all'header del CSV.
+3. Controllare i percorsi generati per target e output.
+4. Cliccare Save + run.
+
+Note
+- I nomi delle colonne sono case-sensitive.
+- Il primo avvio può richiedere alcuni minuti per l'installazione delle dipendenze.
+- Se la cartella del progetto viene spostata, PHOTO-CAT può ricostruire automaticamente l'ambiente locale .venv.

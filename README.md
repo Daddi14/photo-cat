@@ -1,36 +1,48 @@
 # PHOTO-CAT - Photometric Contamination Analyzer Tool
 
-PHOTO-CAT is a Python-based tool for assessing photometric contamination in astronomical source catalogues. It builds a spatial neighbour index from a photometric catalogue and evaluates potential contaminating sources around a selected set of targets.
+PHOTO-CAT is a Python tool for evaluating photometric contamination in astronomical catalogues. It builds a neighbour index from a photometric catalogue and queries potential contaminating sources around selected targets.
 
-The package is intended for catalogue-level photometric analysis workflows where reproducible configuration, local execution, and clear validation of input data are required.
+The project is designed for local, reproducible catalogue-level analysis with a graphical configuration interface, automatic virtual environment setup, and platform-specific launchers for Windows, macOS, and Linux.
 
-## Overview
+## Features
 
-PHOTO-CAT performs two main operations:
+- Build a neighbour index from a photometric catalogue.
+- Query contamination around target sources.
+- Configure runs through a graphical interface.
+- Use either a targets CSV or a manual list of source IDs.
+- Validate input files, column names, output folders, and index paths before execution.
+- Automatically create and manage a local Python virtual environment.
+- Detect moved project folders and rebuild the virtual environment when required.
+- Provide readable error messages for common user-side configuration problems.
 
-1. construction of a neighbour index from an input photometric catalogue;
-2. contamination queries for target sources using the generated index.
+## Requirements
 
-The tool includes a graphical configurator for preparing `config.yaml`, platform launchers for local execution, and validation routines for common user-side configuration errors.
+PHOTO-CAT requires:
 
-## Supported platforms
+- Python 3.10 or newer
+- Internet access during the first dependency installation
+- A photometric catalogue in CSV format
 
-PHOTO-CAT provides launchers for:
+The launcher creates a local `.venv` folder and installs all required Python dependencies there. The virtual environment is local to the project folder and is not intended to be moved between paths.
+
+## Installation and launch
+
+Download the latest release ZIP, extract it, then run the launcher for your operating system.
 
 ```text
 Windows       START_WINDOWS.bat
 macOS/Linux   sh START_UNIX.sh
 ```
 
-The launchers create a local Python virtual environment and install the required dependencies into `.venv`.
+The launcher checks the Python installation, prepares the local virtual environment, installs or checks dependencies, and opens the graphical configurator.
 
-Python 3.10 or newer is required.
+Normal users should not need to open the `src/` or `scripts/` folders.
 
 ## Input data
 
-PHOTO-CAT expects CSV input data.
+PHOTO-CAT expects CSV input files.
 
-The default catalogue schema follows Gaia-like column names:
+The default catalogue schema follows common Gaia-style column names:
 
 ```text
 source_id
@@ -45,21 +57,35 @@ The default target identifier column is:
 source_id
 ```
 
-Column names are case-sensitive and must match the CSV header exactly. Alternative catalogue schemas can be configured through the graphical interface.
-
-A manual list of target `source_id` values may be used instead of a targets CSV.
+Column names are case-sensitive and must match the CSV header exactly. If the input files use different column names, they can be changed in the graphical configurator.
 
 ## Configuration
 
-The primary configuration file is:
+The main configuration file is:
 
 ```text
 config.yaml
 ```
 
-The recommended way to edit this file is through the graphical configurator launched by the platform starter.
+The recommended way to edit it is through the graphical interface.
 
-When a catalogue CSV is selected, PHOTO-CAT can automatically initialise the corresponding target file and output/index paths. These values remain editable before execution.
+When a catalogue CSV is selected, PHOTO-CAT automatically initializes the related paths:
+
+```text
+Targets CSV
+Output/index folder
+Query index folder
+```
+
+These values remain editable before execution.
+
+A manual list of target `source_id` values can also be used instead of a targets CSV.
+
+## Output
+
+PHOTO-CAT writes the generated neighbour index and query results to the configured output directory.
+
+The query stage produces a JSON results file containing, for each processed target, the contamination metrics and the list of qualifying neighbouring sources.
 
 ## Project structure
 
@@ -71,15 +97,49 @@ config.yaml            Runtime configuration
 requirements.txt       Python dependencies
 data/                  Small reference input files
 src/                   Source code
-scripts/               Launcher support scripts
+scripts/               Launcher and platform support scripts
 docs/                  Additional documentation
 ```
 
-## Validation and error handling
+## Platform notes
 
-PHOTO-CAT validates input files, configured column names, output locations, numeric catalogue fields, and index paths before execution where possible.
+### Windows
 
-Configuration errors are reported in a user-readable form to reduce dependence on raw Python tracebacks during routine use.
+`START_WINDOWS.bat` attempts to detect Python automatically. If Python is missing, the launcher tries to install it using `winget` first, then the official Python installer.
+
+If automatic installation fails, install Python 3.10 or newer manually and enable:
+
+```text
+Add python.exe to PATH
+```
+
+Then run `START_WINDOWS.bat` again.
+
+### macOS and Linux
+
+Use the shared Unix launcher:
+
+```bash
+sh START_UNIX.sh
+```
+
+On macOS, downloaded command files may be blocked by Gatekeeper. Running the Unix launcher through Terminal avoids that issue.
+
+On Linux, the launcher attempts to use the detected package manager where possible, but some distributions may still require manual installation of Python, `pip`, `venv`, and Tkinter.
+
+## Error handling
+
+PHOTO-CAT validates common configuration problems before and during execution, including:
+
+- missing input files;
+- missing or mismatched CSV columns;
+- case-sensitive column-name mismatches;
+- invalid output folders;
+- incomplete query index folders;
+- non-numeric coordinate or magnitude fields;
+- moved project folders with stale virtual environments.
+
+When the project folder is moved after a virtual environment has already been created, PHOTO-CAT detects the stale `.venv`, removes it, and recreates it in the new location. User files such as `config.yaml`, `data/`, and output folders are not deleted.
 
 ## Documentation
 
@@ -89,17 +149,17 @@ Additional documentation is available in:
 docs/
 ```
 
-Release and publication notes are available in:
+Release and publishing notes are available in:
 
 ```text
 docs/PUBLISHING.md
 ```
 
-## Citation
+## How to cite
 
 Please include the following citation and acknowledgement in any published material that makes use of PHOTO-CAT.
 
-### Reference
+### Citation
 
 ```text
 <paper reference>
@@ -111,4 +171,8 @@ Please include the following citation and acknowledgement in any published mater
 This research made use of Photo-cat, a Python package for photometric contamination analysis (<paper reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).
 ```
 
-Replace `<paper reference>` with the final bibliographic reference once available.
+Replace `<paper reference>` with the final paper reference once available.
+
+## License
+
+No license has been specified yet. Add a `LICENSE` file before distributing PHOTO-CAT publicly if reuse, modification, or redistribution terms should be defined.
