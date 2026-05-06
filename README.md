@@ -149,11 +149,6 @@ Additional documentation is available in:
 docs/
 ```
 
-Release and publishing notes are available in:
-
-```text
-docs/PUBLISHING.md
-```
 
 ## How to cite
 

@@ -149,11 +149,6 @@ La documentazione aggiuntiva è disponibile in:
 docs/
 ```
 
-Le note di release e pubblicazione sono disponibili in:
-
-```text
-docs/PUBLISHING.md
-```
 
 ## Come citare
 
