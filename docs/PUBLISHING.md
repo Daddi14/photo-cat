@@ -104,14 +104,14 @@ Repository page -> Releases -> Draft a new release
 Use:
 
 ```text
-Tag: v1.0.3
-Title: PHOTO-CAT v1.0.3
+Tag: vX.Y.Z
+Title: PHOTO-CAT vX.Y.Z
 ```
 
 Attach a manually created ZIP named:
 
 ```text
-photo-cat-v1.0.3.zip
+photo-cat-vX.Y.Z.zip
 ```
 
 Do not rely only on GitHub's automatic "Source code (zip)" asset. A clearly named release ZIP is easier for non-technical users.
@@ -119,13 +119,13 @@ Do not rely only on GitHub's automatic "Source code (zip)" asset. A clearly name
 ## 7. Suggested release notes
 
 ```markdown
-# PHOTO-CAT v1.0.3
+# PHOTO-CAT vX.Y.Z
 
 First public release.
 
 ## Quick start
 
-1. Download `photo-cat-v1.0.3.zip` from this release.
+1. Download `photo-cat-vX.Y.Z.zip` from this release.
 2. Extract the ZIP.
 3. Run the starter for your operating system:
    - Windows: double-click `START_WINDOWS.bat`

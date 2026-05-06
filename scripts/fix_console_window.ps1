@@ -1,6 +1,6 @@
 param(
     [int]$Columns = 112,
-    [int]$Lines = 36
+    [int]$Lines = 52
 )
 
 $ErrorActionPreference = "SilentlyContinue"

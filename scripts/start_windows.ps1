@@ -8,8 +8,20 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 $ProjectDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $ProjectDir
+$VersionFile = Join-Path $ProjectDir "VERSION"
+$ProgramVersion = "unknown"
+if (Test-Path $VersionFile) {
+    $versionText = (Get-Content -Path $VersionFile -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if (-not [string]::IsNullOrWhiteSpace($versionText)) {
+        $ProgramVersion = $versionText.Trim()
+    }
+}
 $env:PHOTO_CAT_PROJECT_DIR = $ProjectDir
 $env:PHOTO_CAT_CONFIG = Join-Path $ProjectDir "config.yaml"
+$env:PHOTO_CAT_VERSION = $ProgramVersion
+
+$TitleLine = ("=" * 72)
+$SoftLine = ("-" * 72)
 
 $LogDir = Join-Path $ProjectDir "logs"
 $SetupLog = Join-Path $LogDir "setup_windows.log"
@@ -26,12 +38,34 @@ elseif ($ModeArg -ieq "--run-only") {
     $Mode = "RUN"
 }
 
+function Write-InfoLine {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Label,
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    Write-Host (("  {0,-16}: {1}" -f $Label, $Value))
+}
+
+function Write-Note {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Text
+    )
+
+    Write-Host ("  " + $Text) -ForegroundColor Gray
+}
+
 function Write-Header {
-    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host $TitleLine -ForegroundColor Cyan
     Write-Host "PHOTO-CAT - Setup" -ForegroundColor Cyan
-    Write-Host "================================================================" -ForegroundColor Cyan
-    Write-Host "Project folder: $ProjectDir"
-    Write-Host "Setup log:      $SetupLog"
+    Write-Host $TitleLine -ForegroundColor Cyan
+    Write-Host ""
+    Write-InfoLine -Label "Version" -Value $ProgramVersion
+    Write-InfoLine -Label "Project folder" -Value $ProjectDir
+    Write-InfoLine -Label "Setup log" -Value $SetupLog
     Write-Host ""
 }
 
@@ -41,7 +75,9 @@ function Write-Step {
         [string]$Text
     )
 
+    Write-Host ""
     Write-Host $Text -ForegroundColor Cyan
+    Write-Host $SoftLine -ForegroundColor DarkGray
 }
 
 
@@ -65,7 +101,7 @@ function Write-ProgressBar {
     if ($hostWidth -lt 42) { $hostWidth = 42 }
     if ($hostWidth -gt 96) { $hostWidth = 96 }
 
-    $prefix = "  "
+    $prefix = "    "
     $percentText = ("{0,3}%" -f $Percent)
     $detailText = $Detail
 
@@ -157,6 +193,7 @@ function Add-SetupLog {
 function Initialize-SetupLog {
     Set-Content -Path $SetupLog -Value "PHOTO-CAT Windows setup log" -Encoding UTF8
     Add-SetupLog "Started: $(Get-Date -Format s)"
+    Add-SetupLog "Version: $ProgramVersion"
     Add-SetupLog "Project folder: $ProjectDir"
     Add-SetupLog ""
 }
@@ -268,8 +305,8 @@ function Install-PythonWithWinget {
         return $false
     }
 
-    Write-Step "[1/3] Installing Python with winget..."
-    Write-Host "This may take a few minutes. Detailed output is written to the setup log."
+    Write-Step "Step 1 of 3 - Install Python with winget"
+    Write-Note "This may take a few minutes. Detailed output is written to the setup log."
 
     return Invoke-LoggedCommand `
         -Command "winget" `
@@ -282,13 +319,13 @@ function Install-PythonWithOfficialInstaller {
     $installerPath = Join-Path $env:TEMP "python-$pythonVersion-amd64.exe"
     $pythonUrl = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-amd64.exe"
 
-    Write-Step "[1/3] Downloading Python from python.org..."
+    Write-Step "Step 1 of 3 - Download Python from python.org"
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Invoke-WebRequest -Uri $pythonUrl -OutFile $installerPath
     Write-Ok "Python installer downloaded."
 
-    Write-Step "[1/3] Installing Python for the current user..."
+    Write-Step "Step 1 of 3 - Install Python for the current user"
 
     $args = @(
         "/quiet",
@@ -308,7 +345,7 @@ function Install-PythonWithOfficialInstaller {
 }
 
 function Ensure-Python {
-    Write-Step "[1/3] Checking Python..."
+    Write-Step "Step 1 of 3 - Verify Python"
     Write-ProgressBar -Percent 0 -Detail "[Checking Python]"
 
     $python = Find-Python
@@ -319,6 +356,7 @@ function Ensure-Python {
     }
 
     Write-WarnLine "Python 3.10+ was not found. PHOTO-CAT will try to install it automatically."
+    Write-Host ""
 
     if (Install-PythonWithWinget) {
         Refresh-PythonPath
@@ -371,9 +409,8 @@ function Ensure-Libraries {
         $Python
     )
 
-    Write-Step "[2/3] Preparing PHOTO-CAT dependencies..."
+    Write-Step "Step 2 of 3 - Prepare PHOTO-CAT dependencies"
     Invoke-DetectedPython -Python $Python -Arguments @("src\install.py")
-    Write-ProgressBar -Percent 100 -Detail "[Dependencies ready]" -Complete
 }
 
 function Invoke-VenvPython {
@@ -394,33 +431,31 @@ function Invoke-VenvPython {
 }
 
 function Configure-Tool {
-    Write-Step "[3/3] Opening the graphical configurator..."
-    Write-ProgressBar -Percent 0 -Detail "[Opening configurator]"
-    Write-ProgressBar -Percent 100 -Detail "[Configurator launched]" -Complete
+    Write-Step "Step 3 of 3 - Open graphical configurator"
+    Write-Note "Opening the graphical configurator..."
     Invoke-VenvPython -ScriptPath "src\configure_gui.py"
 }
 
 function Run-Tool {
-    Write-Step "[3/3] Running PHOTO-CAT pipeline..."
-    Write-ProgressBar -Percent 0 -Detail "[Running pipeline]"
-    Write-ProgressBar -Percent 100 -Detail "[Pipeline launched]" -Complete
+    Write-Step "Step 3 of 3 - Run PHOTO-CAT pipeline"
+    Write-Note "Running the PHOTO-CAT pipeline..."
     Invoke-VenvPython -ScriptPath "src\config_and_run.py"
 }
 
 function Finish-Install {
     Write-Host ""
-    Write-Host "================================================================" -ForegroundColor Green
-    Write-Host "PHOTO-CAT setup completed successfully." -ForegroundColor Green
+    Write-Host $TitleLine -ForegroundColor Green
+    Write-Host "PHOTO-CAT setup is complete." -ForegroundColor Green
     Write-Host "Run START_WINDOWS.bat again to configure and run." -ForegroundColor Green
-    Write-Host "================================================================" -ForegroundColor Green
+    Write-Host $TitleLine -ForegroundColor Green
 }
 
 function Finish-Run {
     Write-Host ""
-    Write-Host "================================================================" -ForegroundColor Green
+    Write-Host $TitleLine -ForegroundColor Green
     Write-Host "PHOTO-CAT finished successfully." -ForegroundColor Green
     Write-Host "Check the configured output folder for results." -ForegroundColor Green
-    Write-Host "================================================================" -ForegroundColor Green
+    Write-Host $TitleLine -ForegroundColor Green
 }
 
 try {
@@ -449,7 +484,7 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "================================================================" -ForegroundColor Red
+    Write-Host $TitleLine -ForegroundColor Red
     Write-Fail "Something failed."
     $message = $_.Exception.Message
     if ([string]::IsNullOrWhiteSpace($message)) {
@@ -457,7 +492,7 @@ catch {
     }
     Write-Host $message
     Write-Host ""
-    Write-Host "Detailed setup log: $SetupLog"
-    Write-Host "================================================================" -ForegroundColor Red
+    Write-InfoLine -Label "Detailed setup log" -Value $SetupLog
+    Write-Host $TitleLine -ForegroundColor Red
     exit 1
 }

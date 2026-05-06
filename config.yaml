@@ -7,8 +7,8 @@
 
 build_neighbors_index:
   io:
-    input_catalog: C:/Palermo/BSSL/poetry_run/Dati/Dark_patch/dark_patch_135_5-result.csv
-    out_dir: C:/Palermo/BSSL/poetry_run/Dati/Dark_patch/output
+    input_catalog: data/example_catalog.csv
+    out_dir: data/output
     KDTREE_FILENAME: ckdtree.pkl
     usecolumns:
     - source_id
@@ -28,8 +28,8 @@ build_neighbors_index:
     buffer_flush_interval: 200
 query_contamination_from_index:
   io:
-    INDEX_DIR: C:/Palermo/BSSL/poetry_run/Dati/Dark_patch/output
-    TARGETS_INPUT: C:/Palermo/BSSL/poetry_run/Dati/Dark_patch/dark_patch_135_5-result.csv
+    INDEX_DIR: data/output
+    TARGETS_INPUT: data/example_targets.csv
     targets: []
     target_source_id_column: source_id
   settings:

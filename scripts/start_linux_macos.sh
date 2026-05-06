@@ -3,8 +3,17 @@ set -u
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR" || exit 1
+VERSION_FILE="$PROJECT_DIR/VERSION"
+PROGRAM_VERSION="unknown"
+if [ -f "$VERSION_FILE" ]; then
+    version_text=$(head -n 1 "$VERSION_FILE" 2>/dev/null | tr -d '\r')
+    if [ -n "$version_text" ]; then
+        PROGRAM_VERSION="$version_text"
+    fi
+fi
 export PHOTO_CAT_PROJECT_DIR="$PROJECT_DIR"
 export PHOTO_CAT_CONFIG="$PROJECT_DIR/config.yaml"
+export PHOTO_CAT_VERSION="$PROGRAM_VERSION"
 
 MODE="ALL"
 case "${1:-}" in
@@ -57,8 +66,21 @@ say_color() {
     printf "%b%s%b\n" "$color_code" "$*" "$RESET"
 }
 
+TITLE_LINE="========================================================================"
+SOFT_LINE="------------------------------------------------------------------------"
+
 step() {
+    printf '\n'
     say_color "$CYAN" "$1"
+    say_color "$GRAY" "$SOFT_LINE"
+}
+
+info_line() {
+    printf '  %-16s: %s\n' "$1" "$2"
+}
+
+note() {
+    say_color "$DIM" "  $1"
 }
 
 
@@ -81,7 +103,7 @@ progress_bar() {
     if [ "$cols" -lt 42 ]; then cols=42; fi
     if [ "$cols" -gt 96 ]; then cols=96; fi
 
-    prefix="  "
+    prefix="    "
     percent_text=$(printf '%3d%%' "$percent")
     min_bar_width=10
     max_bar_width=34
@@ -148,6 +170,7 @@ init_log() {
     {
         echo "PHOTO-CAT macOS/Linux setup log"
         echo "Started: $(date '+%Y-%m-%dT%H:%M:%S')"
+        echo "Version: $PROGRAM_VERSION"
         echo "Project folder: $PROJECT_DIR"
         echo "Operating system: $OS_NAME"
         echo
@@ -159,11 +182,13 @@ append_log() {
 }
 
 print_header() {
-    say_color "$CYAN" "================================================================"
+    say_color "$CYAN" "$TITLE_LINE"
     say_color "$BOLD$CYAN" "PHOTO-CAT - Setup"
-    say_color "$CYAN" "================================================================"
-    echo "Project folder: $PROJECT_DIR"
-    echo "Setup log:      $SETUP_LOG"
+    say_color "$CYAN" "$TITLE_LINE"
+    echo
+    info_line "Version" "$PROGRAM_VERSION"
+    info_line "Project folder" "$PROJECT_DIR"
+    info_line "Setup log" "$SETUP_LOG"
     echo
 }
 
@@ -204,8 +229,8 @@ install_python_macos() {
     warn "Python 3.10+ was not found."
 
     if command -v brew >/dev/null 2>&1; then
-        step "[1/3] Installing Python with Homebrew..."
-        echo "This may take a few minutes. Homebrew output is shown because it may ask for system permissions."
+        step "Step 1 of 3 - Install Python with Homebrew"
+        note "This may take a few minutes. Homebrew output is shown because it may ask for system permissions."
         echo
         brew install python
         return $?
@@ -230,7 +255,7 @@ install_python_macos() {
 install_python_linux() {
     warn "Python 3.10+ was not found."
     echo "PHOTO-CAT will try to install Python using your Linux package manager."
-    echo "Package manager output is shown because it may ask for administrator permissions."
+    note "Package manager output is shown because it may ask for administrator permissions."
     echo
 
     if command -v apt-get >/dev/null 2>&1; then
@@ -272,7 +297,7 @@ install_python_linux() {
 }
 
 ensure_python() {
-    step "[1/3] Checking Python..."
+    step "Step 1 of 3 - Verify Python"
     progress_bar 0 "[Checking Python]"
 
     if find_python; then
@@ -306,57 +331,54 @@ ensure_python() {
 }
 
 ensure_libraries() {
-    step "[2/3] Preparing PHOTO-CAT dependencies..."
+    step "Step 2 of 3 - Prepare PHOTO-CAT dependencies"
     "$PYTHON_CMD" "src/install.py"
-    progress_bar 100 "[Dependencies ready]" 1
 }
 
 configure_tool() {
-    step "[3/3] Opening the graphical configurator..."
-    progress_bar 0 "[Opening configurator]"
-    progress_bar 100 "[Configurator launched]" 1
+    step "Step 3 of 3 - Open graphical configurator"
+    note "Opening the graphical configurator..."
     "./.venv/bin/python" "src/configure_gui.py"
 }
 
 run_tool() {
-    step "[3/3] Running PHOTO-CAT pipeline..."
-    progress_bar 0 "[Running pipeline]"
-    progress_bar 100 "[Pipeline launched]" 1
+    step "Step 3 of 3 - Run PHOTO-CAT pipeline"
+    note "Running the PHOTO-CAT pipeline..."
     "./.venv/bin/python" "src/config_and_run.py"
 }
 
 finish_install() {
     echo
-    say_color "$GREEN" "================================================================"
-    say_color "$BOLD$GREEN" "PHOTO-CAT setup completed successfully."
+    say_color "$GREEN" "$TITLE_LINE"
+    say_color "$BOLD$GREEN" "PHOTO-CAT setup is complete."
     say_color "$GREEN" "Run sh START_UNIX.sh again to configure and run."
-    say_color "$GREEN" "================================================================"
+    say_color "$GREEN" "$TITLE_LINE"
     echo
 }
 
 finish_configure() {
     echo
-    say_color "$GREEN" "================================================================"
+    say_color "$GREEN" "$TITLE_LINE"
     say_color "$BOLD$GREEN" "Configuration completed."
-    say_color "$GREEN" "================================================================"
+    say_color "$GREEN" "$TITLE_LINE"
     echo
 }
 
 finish_done() {
     echo
-    say_color "$GREEN" "================================================================"
+    say_color "$GREEN" "$TITLE_LINE"
     say_color "$BOLD$GREEN" "PHOTO-CAT finished successfully."
     say_color "$GREEN" "Check the configured output folder for results."
-    say_color "$GREEN" "================================================================"
+    say_color "$GREEN" "$TITLE_LINE"
     echo
 }
 
 error_message() {
     echo
-    say_color "$RED" "================================================================"
+    say_color "$RED" "$TITLE_LINE"
     fail "Something failed."
-    echo "Detailed setup log: $SETUP_LOG"
-    say_color "$RED" "================================================================"
+    info_line "Detailed setup log" "$SETUP_LOG"
+    say_color "$RED" "$TITLE_LINE"
     echo
 }
 

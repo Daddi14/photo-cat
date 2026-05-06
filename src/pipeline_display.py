@@ -1,3 +1,6 @@
+import ctypes
+import os
+import re
 import shutil
 import sys
 import threading
@@ -16,18 +19,66 @@ class Style:
     GRAY = "\033[90m"
 
 
+def _enable_windows_ansi() -> bool:
+    if (os.name != "nt"):
+        return True
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)
+        mode = ctypes.c_uint32()
+
+        if (not kernel32.GetConsoleMode(handle, ctypes.byref(mode))):
+            return False
+
+        return bool(kernel32.SetConsoleMode(handle, mode.value | 0x0004))
+    except Exception:
+        return False
+
+
 def _supports_color() -> bool:
-    return sys.stdout.isatty()
+    if (os.environ.get("NO_COLOR", "").strip()):
+        return False
+
+    if (not sys.stdout.isatty()):
+        return False
+
+    if (os.name == "nt"):
+        return _enable_windows_ansi()
+
+    return True
 
 
 USE_COLOR = _supports_color()
 
 
 def color(text: str, style: str) -> str:
-    if (not _supports_color()):
+    if (not USE_COLOR):
         return text
 
     return f"{style}{text}{Style.RESET}"
+
+
+def write_progress_suffix(suffix: str) -> None:
+    if (not suffix):
+        return
+
+    match = re.match(r"^(?:(?P<spinner>[-\\|/])\s+)?(?P<count>\d+/\d+)(?P<rest>\s+\[.*\])$", suffix)
+    if (match):
+        spinner = match.group("spinner")
+        count = match.group("count")
+        rest = match.group("rest")
+
+        if (spinner):
+            sys.stdout.write(color(f"  {spinner}", Style.GRAY))
+            sys.stdout.write(f"  {count}")
+        else:
+            sys.stdout.write(f"  {count}")
+
+        sys.stdout.write(color(rest, Style.GRAY))
+        return
+
+    sys.stdout.write(color(f"  {suffix}", Style.GRAY))
 
 
 def progress_bar(percent: int, detail: str = "", spinner: str = "", complete: bool = False, width: int = 34) -> None:
@@ -36,7 +87,7 @@ def progress_bar(percent: int, detail: str = "", spinner: str = "", complete: bo
     terminal_width = shutil.get_terminal_size((88, 20)).columns
     max_width = max(42, min(terminal_width - 1, 96))
 
-    prefix = "  "
+    prefix = "    "
     percent_text = f"{percent:3d}%"
 
     suffix_parts = []
@@ -65,8 +116,6 @@ def progress_bar(percent: int, detail: str = "", spinner: str = "", complete: bo
     filled_part = "=" * filled
     empty_part = "-" * empty
 
-    # Clear the current console line before rewriting it. The line is also
-    # kept short enough to avoid wrapping when the user resizes the window.
     if (USE_COLOR):
         sys.stdout.write("\r\033[2K")
     else:
@@ -80,14 +129,12 @@ def progress_bar(percent: int, detail: str = "", spinner: str = "", complete: bo
     sys.stdout.write("  ")
     sys.stdout.write(color(percent_text, Style.GREEN))
     if (suffix):
-        sys.stdout.write(color(f"  {suffix}", Style.DIM))
+        write_progress_suffix(suffix)
     sys.stdout.flush()
 
     if (complete):
         sys.stdout.write("\n")
         sys.stdout.flush()
-
-
 
 
 class ActivityBar:
@@ -106,10 +153,7 @@ class ActivityBar:
     def __exit__(self, exc_type, exc, tb):
         self._done.set()
         self._thread.join(timeout=1.0)
-        if (exc_type is None):
-            progress_bar(100, self.detail, complete=True)
-        else:
-            progress_bar(100, self.detail, complete=True)
+        progress_bar(100, self.detail, complete=True)
         return False
 
     def _run(self) -> None:

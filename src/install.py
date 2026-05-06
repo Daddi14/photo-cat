@@ -20,10 +20,17 @@ from pathlib import Path
 
 MINIMUM_PYTHON_VERSION = (3, 10)
 PROJECT_DIR = Path(__file__).resolve().parent.parent
+VERSION_FILE = PROJECT_DIR / "VERSION"
 VENV_DIR = PROJECT_DIR / ".venv"
+VENV_PROJECT_MARKER_FILE = VENV_DIR / ".photo_cat_project_dir"
 REQUIREMENTS_FILE = PROJECT_DIR / "requirements.txt"
 LOG_DIR = PROJECT_DIR / "logs"
 INSTALL_LOG_FILE = LOG_DIR / "install.log"
+
+try:
+    PROGRAM_VERSION = VERSION_FILE.read_text(encoding="utf-8", errors="replace").strip() or "unknown"
+except Exception:
+    PROGRAM_VERSION = "unknown"
 
 
 class Style:
@@ -70,18 +77,30 @@ def color(text: str, style: str) -> str:
     return f"{style}{text}{Style.RESET}"
 
 
-def write_header(title: str) -> None:
-    print(color("=" * 64, Style.CYAN))
-    print(color(title, Style.BOLD + Style.CYAN))
-    print(color("=" * 64, Style.CYAN))
-    print(f"Project folder:      {PROJECT_DIR}")
-    print(f"Virtual environment: {VENV_DIR}")
-    print(f"Installation log:    {INSTALL_LOG_FILE}")
-    print()
+RULE_WIDTH = 72
+INFO_LABEL_WIDTH = 20
+
+
+def write_rule(style: str = Style.CYAN, char: str = "-") -> None:
+    print(color(char * RULE_WIDTH, style))
+
+
+def write_title_rule(style: str = Style.CYAN) -> None:
+    print(color("=" * RULE_WIDTH, style))
+
+
+def write_info_line(label: str, value: object) -> None:
+    print(f"  {label:<{INFO_LABEL_WIDTH}}: {value}")
+
+
+def write_note(message: str) -> None:
+    print(color(f"  {message}", Style.DIM))
 
 
 def write_step(index: int, total: int, message: str) -> None:
-    print(color(f"[{index}/{total}] {message}", Style.CYAN))
+    print()
+    print(color(f"Step {index} of {total} - {message}", Style.CYAN))
+    write_rule(Style.GRAY)
 
 
 def write_ok(message: str) -> None:
@@ -96,13 +115,38 @@ def write_error(message: str) -> None:
     print(color(f"[ERROR] {message}", Style.RED))
 
 
+def write_progress_suffix(suffix: str) -> None:
+    if (not suffix):
+        return
+
+    # Keep counters such as "3/3" and "7/7" in the default console color,
+    # but render the processed package/task name in grey for consistency with
+    # the pipeline progress bars.
+    match = re.match(r"^(?:(?P<spinner>[-\\|/])\s+)?(?P<count>\d+/\d+)(?P<rest>\s+\[.*\])$", suffix)
+    if (match):
+        spinner = match.group("spinner")
+        count = match.group("count")
+        rest = match.group("rest")
+
+        if (spinner):
+            sys.stdout.write(color(f"  {spinner}", Style.GRAY))
+            sys.stdout.write(f"  {count}")
+        else:
+            sys.stdout.write(f"  {count}")
+
+        sys.stdout.write(color(rest, Style.GRAY))
+        return
+
+    sys.stdout.write(color(f"  {suffix}", Style.GRAY))
+
+
 def progress_bar(percent: int, detail: str = "", spinner: str = "", complete: bool = False, width: int = 34) -> None:
     percent = max(0, min(int(percent), 100))
 
     terminal_width = shutil.get_terminal_size((88, 20)).columns
     max_width = max(42, min(terminal_width - 1, 96))
 
-    prefix = "  "
+    prefix = "    "
     percent_text = f"{percent:3d}%"
 
     suffix_parts = []
@@ -146,7 +190,7 @@ def progress_bar(percent: int, detail: str = "", spinner: str = "", complete: bo
     sys.stdout.write("  ")
     sys.stdout.write(color(percent_text, Style.GREEN))
     if (suffix):
-        sys.stdout.write(color(f"  {suffix}", Style.DIM))
+        write_progress_suffix(suffix)
     sys.stdout.flush()
 
     if (complete):
@@ -161,12 +205,150 @@ def venv_python_path() -> Path:
     return (VENV_DIR / "bin" / "python")
 
 
+def normalized_path_text(path: Path) -> str:
+    try:
+        text = str(path.resolve())
+    except Exception:
+        text = str(path.absolute())
+
+    text = text.replace("\\", "/").rstrip("/")
+
+    if (os.name == "nt"):
+        text = text.casefold()
+
+    return text
+
+
+def normalized_reference_text(text: str) -> str:
+    normalized = str(text).strip().strip("'\"").replace("\\", "/").rstrip("/")
+
+    if (os.name == "nt"):
+        normalized = normalized.casefold()
+
+    return normalized
+
+
+def read_stored_project_dir() -> str:
+    if (not VENV_PROJECT_MARKER_FILE.is_file()):
+        return ""
+
+    try:
+        return VENV_PROJECT_MARKER_FILE.read_text(encoding="utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+
+
+def write_stored_project_dir() -> None:
+    VENV_PROJECT_MARKER_FILE.write_text(str(PROJECT_DIR.resolve()) + "\n", encoding="utf-8")
+
+
+def extract_venv_path_references(text: str) -> list[str]:
+    references: list[str] = []
+    quoted_patterns = [
+        r"['\"]([A-Za-z]:[\\/][^\r\n'\"]*?\.venv)['\"]",
+        r"['\"](/[^\r\n'\"]*?\.venv)['\"]",
+    ]
+    unquoted_patterns = [
+        r"[A-Za-z]:[\\/][^\s\r\n'\"]*?\.venv",
+        r"/[^\s\r\n'\"]*?\.venv",
+    ]
+
+    for pattern in quoted_patterns:
+        for match in re.finditer(pattern, text):
+            reference = match.group(1).strip()
+            if ((reference) and (reference not in references)):
+                references.append(reference)
+
+    unquoted_text = re.sub(r"(['\"]).*?\1", " ", text)
+
+    for pattern in unquoted_patterns:
+        for match in re.finditer(pattern, unquoted_text):
+            reference = match.group(0).strip()
+            if ((reference) and (reference not in references)):
+                references.append(reference)
+
+    return references
+
+
+def find_different_embedded_venv_path() -> str:
+    candidate_files = [
+        VENV_DIR / "pyvenv.cfg",
+        VENV_DIR / "bin" / "activate",
+        VENV_DIR / "bin" / "activate.csh",
+        VENV_DIR / "bin" / "activate.fish",
+        VENV_DIR / "bin" / "pip",
+        VENV_DIR / "bin" / "pip3",
+        VENV_DIR / "Scripts" / "activate",
+        VENV_DIR / "Scripts" / "activate.bat",
+        VENV_DIR / "Scripts" / "Activate.ps1",
+        VENV_DIR / "Scripts" / "pip-script.py",
+    ]
+
+    current_venv = normalized_path_text(VENV_DIR)
+
+    for candidate_file in candidate_files:
+        if (not candidate_file.is_file()):
+            continue
+
+        try:
+            file_text = candidate_file.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+        for reference in extract_venv_path_references(file_text):
+            if (normalized_reference_text(reference) != current_venv):
+                return reference
+
+    return ""
+
+
+def virtual_environment_rebuild_reason() -> str:
+    if (not VENV_DIR.exists()):
+        return ""
+
+    if (not VENV_DIR.is_dir()):
+        return f"{VENV_DIR} exists but is not a folder"
+
+    stored_project_dir = read_stored_project_dir()
+    if (stored_project_dir):
+        if (normalized_reference_text(stored_project_dir) != normalized_path_text(PROJECT_DIR)):
+            return f"PHOTO-CAT was moved from {stored_project_dir} to {PROJECT_DIR}"
+    else:
+        embedded_venv_path = find_different_embedded_venv_path()
+        if (embedded_venv_path):
+            return f"the existing virtual environment still points to {embedded_venv_path}"
+
+    if (not venv_python_path().is_file()):
+        return "the virtual environment Python executable is missing"
+
+    return ""
+
+
+def rebuild_virtual_environment(reason: str) -> bool:
+    write_warn("The existing .venv needs to be rebuilt.")
+    print(f"  Reason: {reason}")
+    write_note("PHOTO-CAT will recreate .venv now. Dependencies may be downloaded again.")
+    append_log(f"Rebuilding virtual environment: {reason}")
+
+    try:
+        shutil.rmtree(VENV_DIR)
+    except Exception as exc:
+        write_error("Could not remove the old .venv folder.")
+        print(f"Details: {exc}")
+        append_log(f"ERROR: could not remove old .venv: {exc}")
+        return False
+
+    write_ok("Old virtual environment removed.")
+    return True
+
+
 def reset_log_file() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     with INSTALL_LOG_FILE.open("w", encoding="utf-8", errors="replace") as log_file:
-        log_file.write("PHOTO-CAT dependency installation log\n")
+        log_file.write("PHOTO-CAT dependency setup log\n")
         log_file.write(f"Started: {datetime.now().isoformat(timespec='seconds')}\n")
+        log_file.write(f"Version: {PROGRAM_VERSION}\n")
         log_file.write(f"Project folder: {PROJECT_DIR}\n")
         log_file.write(f"Virtual environment: {VENV_DIR}\n")
         log_file.write("\n")
@@ -293,6 +475,77 @@ def display_requirement_name(requirement: str) -> str:
     return (cleaned or requirement)
 
 
+def requirements_are_satisfied(python_exe: Path, requirements: list[str]) -> bool:
+    helper_code = r'''
+import importlib.metadata
+import sys
+
+try:
+    from pip._vendor.packaging.requirements import Requirement
+except Exception as exc:
+    print(f"Could not load requirement parser: {exc}")
+    raise SystemExit(1)
+
+missing = []
+
+for raw_requirement in sys.argv[1:]:
+    try:
+        requirement = Requirement(raw_requirement)
+
+        if ((requirement.marker is not None) and (not requirement.marker.evaluate())):
+            continue
+
+        if (requirement.url):
+            missing.append(raw_requirement)
+            continue
+
+        installed_version = importlib.metadata.version(requirement.name)
+
+        if ((requirement.specifier) and (installed_version not in requirement.specifier)):
+            missing.append(f"{raw_requirement} (installed: {installed_version})")
+    except Exception as exc:
+        missing.append(f"{raw_requirement} ({exc})")
+
+if (missing):
+    print("Missing or outdated requirements:")
+    for requirement in missing:
+        print(f"- {requirement}")
+    raise SystemExit(1)
+
+raise SystemExit(0)
+'''
+
+    append_log("=" * 80)
+    append_log("Checking installed requirements")
+    append_log("=" * 80)
+
+    process = subprocess.run(
+        [str(python_exe), "-c", helper_code, *requirements],
+        cwd=PROJECT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    if (process.stdout):
+        append_log(process.stdout.rstrip())
+
+    append_log(f"Exit code: {process.returncode}")
+    append_log("")
+
+    return (process.returncode == 0)
+
+
+def show_dependency_check_progress(requirements: list[str]) -> None:
+    total = max(1, len(requirements))
+
+    for index, requirement in enumerate(requirements, start=1):
+        package_name = display_requirement_name(requirement)
+        percent = int(round((index / total) * 100.0))
+        detail = f"{index}/{total} [{package_name}]"
+        progress_bar(percent, detail, complete=(index == total))
+
+
 def install_packages_one_by_one(python_exe: Path, requirements: list[str]) -> bool:
     total = len(requirements)
 
@@ -322,6 +575,7 @@ def install_packages_one_by_one(python_exe: Path, requirements: list[str]) -> bo
 
     return True
 
+
 def main() -> int:
     enable_windows_ansi()
     reset_log_file()
@@ -337,10 +591,18 @@ def main() -> int:
         write_error(f"requirements.txt was not found here: {REQUIREMENTS_FILE}")
         return 1
 
-    write_header("PHOTO-CAT - dependency installation")
 
-    write_step(1, 3, "Preparing the local virtual environment...")
+    write_step(1, 3, "Prepare local environment")
     progress_bar(0, "[virtual environment]")
+
+    rebuild_reason = virtual_environment_rebuild_reason()
+    if (rebuild_reason):
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        if (not rebuild_virtual_environment(rebuild_reason)):
+            return 1
+        progress_bar(0, "[virtual environment]")
+
     if (not VENV_DIR.exists()):
         try:
             venv.create(VENV_DIR, with_pip=True)
@@ -363,7 +625,13 @@ def main() -> int:
         print("Delete the .venv folder and run the installer again.")
         return 1
 
-    write_step(2, 3, "Updating installation tools...")
+    try:
+        write_stored_project_dir()
+    except Exception as exc:
+        write_warn(f"Could not save the .venv path marker: {exc}")
+        append_log(f"WARNING: could not save .venv path marker: {exc}")
+
+    write_step(2, 3, "Verify installation tools")
     tools = ["pip", "setuptools", "wheel"]
     for index, tool_name in enumerate(tools, start=1):
         start_percent = int(round(((index - 1) / len(tools)) * 100.0))
@@ -391,23 +659,33 @@ def main() -> int:
 
     write_ok("Installation tools are ready.")
 
-    write_step(3, 3, "Installing PHOTO-CAT dependencies...")
-    print(color("This may take a few minutes on the first run.", Style.DIM))
-
     requirements = read_requirements()
     if (not requirements):
         write_error("requirements.txt is empty. There are no dependencies to install.")
         return 1
 
-    if (not install_packages_one_by_one(python_exe, requirements)):
-        return 1
+    dependencies_ready = requirements_are_satisfied(python_exe, requirements)
+    if (dependencies_ready):
+        write_step(3, 3, "Verify project dependencies")
+        write_note("All required dependencies are already available.")
+        show_dependency_check_progress(requirements)
+        write_ok("Dependencies are ready.")
+    else:
+        write_step(3, 3, "Install project dependencies")
+        write_note("This may take a few minutes on the first run.")
 
-    write_ok("Dependencies installed successfully.")
+        if (not install_packages_one_by_one(python_exe, requirements)):
+            return 1
+
+        write_ok("Dependencies installed successfully.")
+
     print()
-    print(color("=" * 64, Style.GREEN))
-    print(color("PHOTO-CAT is ready.", Style.BOLD + Style.GREEN))
-    print(color("=" * 64, Style.GREEN))
-    print(f"Detailed installation log: {INSTALL_LOG_FILE}")
+    write_title_rule(Style.GREEN)
+    print(color("PHOTO-CAT setup is complete.", Style.BOLD + Style.GREEN))
+    print(color("The local environment is ready to use.", Style.GREEN))
+    write_title_rule(Style.GREEN)
+    print()
+    write_info_line("Detailed install log", INSTALL_LOG_FILE)
     print()
     return 0
 

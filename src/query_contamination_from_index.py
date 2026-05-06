@@ -98,13 +98,12 @@ from typing import Optional, Dict
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from Target_Result import Target_Result
 from Contaminant import Contaminant
 from logger_setup import get_logger
 from load_config import load_config
-from pipeline_display import ActivityBar, tqdm_options
+from pipeline_display import ActivityBar, progress_bar
 
 
 logger = get_logger(__name__)
@@ -485,12 +484,29 @@ def loop_over_targets(
 
         return ""
 
-    for internal_target in tqdm(targets_internal, **tqdm_options("Processing targets")):
+    total_targets = len(targets_internal)
+    if (total_targets <= 0):
+        progress_bar(100, "[processing targets]", complete=True)
+        return results
+
+    processed_targets = 0
+
+    def update_target_progress() -> None:
+        nonlocal processed_targets
+        processed_targets += 1
+        progress_bar(
+            int(round((processed_targets / float(total_targets)) * 100.0)),
+            "[processing targets]",
+            complete=(processed_targets == total_targets),
+        )
+
+    for internal_target in targets_internal:
         internal_target = int(internal_target)
 
         # Sanity check: internal_id must be in [1, N].
         if internal_target < 1 or internal_target > n_sources:
             logger.warning(f"internal_target {internal_target} out of range; skipping.")
+            update_target_progress()
             continue
 
         target_index = internal_target - 1
@@ -517,6 +533,7 @@ def loop_over_targets(
                     contaminants=[]
                 ).__dict__
             )
+            update_target_progress()
             continue
 
         # Extract internal_ids of neighbors for this target: shape (k,).
@@ -537,6 +554,7 @@ def loop_over_targets(
                     contaminants=[]
                 ).__dict__
             )
+            update_target_progress()
             continue
 
         contaminant_indices = contaminant_indices[valid_mask]
@@ -610,6 +628,8 @@ def loop_over_targets(
                 contaminants=contaminants
             ).__dict__
         )
+
+        update_target_progress()
 
     return results
 
@@ -701,11 +721,16 @@ def main() -> int:
     with ActivityBar("[saving JSON results]"):
         json_path = save_results_to_json(results, OUTPUT_JSON)
 
-    logger.info(f"\n[SAVED] Results saved to {json_path}")
-    logger.info(f"Total targets processed: {len(results)}")
-    logger.info(f"With contaminants: {sum(r['num_contaminants'] > 0 for r in results)}")
-    logger.info(f"Without contaminants: {sum(r['num_contaminants'] == 0 for r in results)}")
-    logger.info("Done")
+    targets_with_contaminants = sum(r["num_contaminants"] > 0 for r in results)
+    targets_without_contaminants = sum(r["num_contaminants"] == 0 for r in results)
+
+    logger.info("")
+    logger.info(f"Results saved to: {json_path}")
+    logger.info(
+        f"Targets processed: {len(results)} "
+        f"(with contaminants: {targets_with_contaminants}, "
+        f"without contaminants: {targets_without_contaminants})"
+    )
 
     return 0
 

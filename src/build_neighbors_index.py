@@ -914,7 +914,8 @@ def main() -> int:
         )
 
     # Summary.
-    logger.info(f"\nIndex saved to: {config_build.out_dir}")
+    logger.info("")
+    logger.info(f"Index saved to: {config_build.out_dir}")
     logger.info(f" - source_ids.npy: {number_of_stars_in_dataframe}")
     logger.info(f" - offsets.npy: {offsets.shape}")
     logger.info(f" - neighbors_ids.bin: written ({checkpoint_total} total neighbors)")
@@ -922,7 +923,7 @@ def main() -> int:
         logger.info(" - neighbors_seps.bin: written")
     logger.info(f" - master_catalog.parquet: {master_path}")
     logger.info(f" - KDTree: {tree_path}")
-    logger.info("Done")
+    logger.info("Build step finished.")
 
     return 0
 
