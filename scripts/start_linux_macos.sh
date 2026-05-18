@@ -296,6 +296,126 @@ install_python_linux() {
     return 1
 }
 
+python_has_tkinter() {
+    "$1" - <<'PYTK' >/dev/null 2>&1
+import tkinter
+raise SystemExit(0)
+PYTK
+}
+
+python_tk_formula_for() {
+    "$1" - <<'PYTK' 2>/dev/null
+import sys
+print(f"python-tk@{sys.version_info.major}.{sys.version_info.minor}")
+PYTK
+}
+
+install_tkinter_macos() {
+    if ! command -v brew >/dev/null 2>&1; then
+        fail "Tkinter is missing and Homebrew was not found."
+        echo
+        echo "Manual fix: install Python from python.org, then re-open Terminal and run: sh START_UNIX.sh"
+        echo
+        return 1
+    fi
+
+    venv_python="./.venv/bin/python"
+    tk_formula="$(python_tk_formula_for "$venv_python")"
+    if [ -z "$tk_formula" ]; then
+        tk_formula="python-tk"
+    fi
+
+    warn "Tkinter is missing from this Python installation."
+    note "PHOTO-CAT will install the matching Homebrew Tk package: $tk_formula"
+    echo
+
+    brew install "$tk_formula" || return 1
+    return 0
+}
+
+install_tkinter_linux() {
+    warn "Tkinter is missing from this Python installation."
+    echo "PHOTO-CAT will try to install the Tkinter package using your Linux package manager."
+    note "Package manager output is shown because it may ask for administrator permissions."
+    echo
+
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo_cmd apt-get update || return 1
+        sudo_cmd apt-get install -y python3-tk || return 1
+        return 0
+    fi
+
+    if command -v dnf >/dev/null 2>&1; then
+        sudo_cmd dnf install -y python3-tkinter || return 1
+        return 0
+    fi
+
+    if command -v yum >/dev/null 2>&1; then
+        sudo_cmd yum install -y python3-tkinter || return 1
+        return 0
+    fi
+
+    if command -v pacman >/dev/null 2>&1; then
+        sudo_cmd pacman -Syu --needed tk || return 1
+        return 0
+    fi
+
+    if command -v zypper >/dev/null 2>&1; then
+        sudo_cmd zypper install -y python3-tk || return 1
+        return 0
+    fi
+
+    if command -v apk >/dev/null 2>&1; then
+        sudo_cmd apk add tk || return 1
+        return 0
+    fi
+
+    fail "Could not detect a supported Linux package manager."
+    echo
+    echo "Manual fix: install the Tkinter package for your Python version, then run: sh START_UNIX.sh"
+    echo
+    return 1
+}
+
+ensure_gui_toolkit() {
+    venv_python="./.venv/bin/python"
+
+    progress_bar 0 "[checking GUI toolkit]"
+
+    if python_has_tkinter "$venv_python"; then
+        progress_bar 100 "[GUI toolkit ready]" 1
+        ok "GUI toolkit is ready."
+        return 0
+    fi
+
+    progress_bar 100 "[GUI toolkit missing]" 1
+
+    case "$OS_NAME" in
+        Darwin)
+            install_tkinter_macos || return 1
+            ;;
+        Linux)
+            install_tkinter_linux || return 1
+            ;;
+        *)
+            fail "Tkinter is missing and this operating system is not supported by the automatic fixer."
+            return 1
+            ;;
+    esac
+
+    if python_has_tkinter "$venv_python"; then
+        ok "GUI toolkit is ready."
+        return 0
+    fi
+
+    fail "Tkinter is still missing after the automatic fix."
+    echo
+    echo "Manual fix for macOS Homebrew Python: brew install $(python_tk_formula_for "$venv_python")"
+    echo "Then run: sh START_UNIX.sh"
+    echo
+    return 1
+}
+
 ensure_python() {
     step "Step 1 of 3 - Verify Python"
     progress_bar 0 "[Checking Python]"
@@ -337,6 +457,7 @@ ensure_libraries() {
 
 configure_tool() {
     step "Step 3 of 3 - Open graphical configurator"
+    ensure_gui_toolkit || return 1
     note "Opening the graphical configurator..."
     "./.venv/bin/python" "src/configure_gui.py"
 }

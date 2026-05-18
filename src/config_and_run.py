@@ -93,8 +93,6 @@ def write_header(title: str) -> None:
     print(color(title, Style.BOLD + Style.CYAN))
     write_rule(Style.CYAN)
     print()
-
-def write_project_info() -> None:
     write_info_line("Version", PROGRAM_VERSION)
     write_info_line("Project folder", PROJECT_DIR)
     write_info_line("Configuration", CONFIG_PATH)
@@ -168,7 +166,6 @@ def main() -> int:
     enable_windows_ansi()
     os.chdir(PROJECT_DIR)
     write_header("PHOTO-CAT - Pipeline")
-    write_project_info()
 
     pipeline_cfg = load_execution_config()
     run_build = bool(pipeline_cfg.get("run_build", True))

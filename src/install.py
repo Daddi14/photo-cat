@@ -302,6 +302,39 @@ def find_different_embedded_venv_path() -> str:
     return ""
 
 
+def venv_python_health_failure() -> str:
+    python_exe = venv_python_path()
+    if (not python_exe.is_file()):
+        return "the virtual environment Python executable is missing"
+
+    try:
+        process = subprocess.run(
+            [str(python_exe), "-c", "import sys; print(sys.executable)"],
+            cwd=PROJECT_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=15,
+        )
+    except Exception as exc:
+        append_log("Virtual environment Python health check failed before it could run.")
+        append_log(f"Details: {exc}")
+        append_log("")
+        return "the virtual environment Python executable could not be started"
+
+    if (process.stdout):
+        append_log("Virtual environment Python health check output:")
+        append_log(process.stdout.rstrip())
+
+    append_log(f"Virtual environment Python health check exit code: {process.returncode}")
+    append_log("")
+
+    if (process.returncode != 0):
+        return "the virtual environment Python executable is broken or points to a removed Python installation"
+
+    return ""
+
+
 def virtual_environment_rebuild_reason() -> str:
     if (not VENV_DIR.exists()):
         return ""
@@ -318,8 +351,9 @@ def virtual_environment_rebuild_reason() -> str:
         if (embedded_venv_path):
             return f"the existing virtual environment still points to {embedded_venv_path}"
 
-    if (not venv_python_path().is_file()):
-        return "the virtual environment Python executable is missing"
+    python_health_failure = venv_python_health_failure()
+    if (python_health_failure):
+        return python_health_failure
 
     return ""
 
@@ -590,7 +624,6 @@ def main() -> int:
     if (not REQUIREMENTS_FILE.is_file()):
         write_error(f"requirements.txt was not found here: {REQUIREMENTS_FILE}")
         return 1
-
 
     write_step(1, 3, "Prepare local environment")
     progress_bar(0, "[virtual environment]")
