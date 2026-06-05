@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """
 Run the full photometric contamination pipeline from config.yaml.
 
@@ -15,11 +16,12 @@ from pathlib import Path
 
 import yaml
 
-from logger_setup import get_logger
+from .logger_setup import get_logger
 
 
 logger = get_logger(__name__)
-SRC_DIR = Path(__file__).resolve().parent
+PACKAGE_DIR = Path(__file__).resolve().parent
+SRC_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = SRC_DIR.parent
 CONFIG_PATH = Path(os.environ.get("PHOTO_CAT_CONFIG", str(PROJECT_DIR / "config.yaml"))).resolve()
 VERSION_FILE = PROJECT_DIR / "VERSION"
@@ -122,6 +124,8 @@ def compact_environment() -> dict:
     env = {**os.environ}
     env.pop("NO_COLOR", None)
     env.setdefault("PHOTO_CAT_COMPACT_LOG", "1")
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(SRC_DIR) if (not existing_pythonpath) else str(SRC_DIR) + os.pathsep + existing_pythonpath
     if (os.name == "nt"):
         env.setdefault("PHOTO_CAT_FORCE_COLOR", "1")
     return env
@@ -137,8 +141,8 @@ def load_execution_config() -> dict:
     return (config.get("execution", {}) or {})
 
 
-def run_step(script_name: str, step_index: int, step_total: int, step_title: str, activity_label: str) -> None:
-    script_path = SRC_DIR / script_name
+def run_step(module_name: str, step_index: int, step_total: int, step_title: str, activity_label: str) -> None:
+    script_path = PACKAGE_DIR / f"{module_name}.py"
 
     if (not script_path.is_file()):
         raise FileNotFoundError(f"Required script was not found: {script_path}")
@@ -146,7 +150,7 @@ def run_step(script_name: str, step_index: int, step_total: int, step_title: str
     write_step(step_index, step_total, step_title)
 
     result = subprocess.run(
-        [sys.executable, str(script_path)],
+        [sys.executable, "-m", f"photo_cat.{module_name}"],
         check=False,
         cwd=PROJECT_DIR,
         env=compact_environment(),
@@ -154,7 +158,7 @@ def run_step(script_name: str, step_index: int, step_total: int, step_title: str
 
     if (result.returncode != 0):
         raise RuntimeError(
-            f"{script_name} failed.\n"
+            f"{module_name}.py failed.\n"
             "Read the error message above, fix the configuration in the GUI, then run again."
         )
 
@@ -181,7 +185,7 @@ def main() -> int:
     if (run_build):
         stage_index += 1
         run_step(
-            "build_neighbors_index.py",
+            "build_neighbors_index",
             stage_index,
             stage_total,
             "Build neighbour index",
@@ -191,7 +195,7 @@ def main() -> int:
     if (run_query):
         stage_index += 1
         run_step(
-            "query_contamination_from_index.py",
+            "query_contamination_from_index",
             stage_index,
             stage_total,
             "Query contamination",

@@ -1,25 +1,27 @@
-# Scripts
+# Launcher scripts
 
-This folder contains helper launchers used by the main starter files in the project root.
+This folder contains helper scripts used by the root launchers.
 
-Normal users should usually run only one of these root files:
+Normal users should run only the root starter files:
 
-```text
-START_WINDOWS.bat
-START_UNIX.sh
-```
+- `START_WINDOWS.bat`
+- `START_UNIX.sh`
 
-Advanced/manual helper scripts:
+## Main helpers
 
-```text
-start_windows.ps1                Main Windows launcher logic.
-run_pipeline_windows.bat         Opens the pipeline in a separate Windows console.
-run_pipeline_unix.sh             Opens/runs the pipeline from macOS/Linux after Save + run.
-start_linux_macos.sh             Main macOS/Linux launcher logic.
-install_windows.bat              Windows install-only compatibility launcher.
-configure_windows.bat            Windows configure-only compatibility launcher.
-run_windows.bat                  Windows run-only compatibility launcher.
-install_linux_macos.sh           Linux/macOS install-only compatibility launcher.
-configure_linux_macos.sh         Linux/macOS configure-only compatibility launcher.
-run_linux_macos.sh               Linux/macOS run-only compatibility launcher.
-```
+- `start_windows.ps1`, main Windows launcher logic.
+- `start_linux_macos.sh`, main macOS/Linux launcher logic.
+- `run_pipeline_windows.bat`, opens the pipeline in a separate Windows console.
+- `run_pipeline_unix.sh`, runs the pipeline from macOS/Linux after `Save + run`.
+- `fix_console_window.ps1`, adjusts the Windows console size.
+
+## Compatibility helpers
+
+- `install_windows.bat`
+- `configure_windows.bat`
+- `run_windows.bat`
+- `install_linux_macos.sh`
+- `configure_linux_macos.sh`
+- `run_linux_macos.sh`
+
+These are provided for advanced/manual workflows. Most users do not need them.

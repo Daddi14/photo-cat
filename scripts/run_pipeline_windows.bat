@@ -8,6 +8,7 @@ title PHOTO-CAT Pipeline
 
 set "PHOTO_CAT_COMPACT_LOG=1"
 set "PHOTO_CAT_FORCE_COLOR=1"
+set "PYTHONPATH=%CD%\src"
 
 if not exist ".venv\Scripts\python.exe" (
     echo.
@@ -19,7 +20,7 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-".venv\Scripts\python.exe" "src\config_and_run.py"
+".venv\Scripts\python.exe" -m photo_cat.config_and_run
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """
 build_neighbors_index.py  (streaming + low-memory + resumable + optimized)
 
@@ -112,9 +113,9 @@ from scipy.spatial import cKDTree
 from tqdm import tqdm
 from numpy.typing import NDArray
 
-from logger_setup import get_logger
-from load_config import load_config
-from pipeline_display import ActivityBar, progress_bar, tqdm_options
+from .logger_setup import get_logger
+from .load_config import load_config
+from .pipeline_display import ActivityBar, progress_bar, tqdm_options
 
 
 logger = get_logger(__name__)

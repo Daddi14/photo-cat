@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "photo-cat"
+version = "1.1.0"
+description = "A GUI-assisted photometric contamination analysis tool."
+authors = ["PHOTO-CAT contributors"]
+readme = "README.md"
+license = "GPL-3.0-only"
+packages = [
+    { include = "photo_cat", from = "src" }
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.14"
+numpy = ">=1.24"
+pandas = ">=2.0"
+scipy = ">=1.10"
+tqdm = ">=4.64"
+PyYAML = ">=6.0"
+pyarrow = ">=12.0"
+dask = { version = ">=2023.0", extras = ["dataframe"] }
+
+[tool.poetry.scripts]
+photo-cat = "photo_cat.config_and_run:main"
+photo-cat-configure = "photo_cat.configure_gui:main"
+photo-cat-install = "photo_cat.install:main"
+photo-cat-build-index = "photo_cat.build_neighbors_index:main"
+photo-cat-query-contamination = "photo_cat.query_contamination_from_index:main"
+photo-cat-doctor = "photo_cat.doctor:main"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"

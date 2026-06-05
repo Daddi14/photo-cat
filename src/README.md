@@ -1,20 +1,10 @@
-# Source code
+# Source layout
 
-This folder contains the Python source code for PHOTO-CAT.
+PHOTO-CAT uses a standard Python `src/` package layout.
 
-Normal users do not need to open this folder. They should use the launcher in the project root:
+- `photo_cat/` contains the importable application package.
+- Package/module names use lowercase `snake_case`.
+- Classes use `PascalCase`.
+- Developer entry points are defined in `pyproject.toml`.
 
-```text
-START_WINDOWS.bat
-START_UNIX.sh
-```
-
-Important entry points:
-
-```text
-configure_gui.py                 Graphical configurator for config.yaml.
-config_and_run.py                Runs the selected pipeline steps.
-build_neighbors_index.py         Builds the neighbor index.
-query_contamination_from_index.py Queries contamination from the index.
-install.py                       Creates/updates the local virtual environment.
-```
+End users should still start PHOTO-CAT from `START_WINDOWS.bat` or `START_UNIX.sh`.

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """
 Small beginner-friendly GUI for editing config.yaml.
 
 This script is intentionally simple and uses tkinter from the Python standard
-library. PyYAML is installed by install.py through requirements.txt.
+library. Runtime dependencies are installed from pyproject.toml into the local .venv.
 """
 
 import csv
@@ -20,7 +21,8 @@ from tkinter import filedialog, messagebox, ttk
 import yaml
 
 
-SRC_DIR = Path(__file__).resolve().parent
+PACKAGE_DIR = Path(__file__).resolve().parent
+SRC_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = SRC_DIR.parent
 CONFIG_PATH = PROJECT_DIR / "config.yaml"
 PROJECT_DISPLAY_NAME = "PHOTO-CAT - Photometric Contamination Analyzer Tool"
@@ -1271,6 +1273,8 @@ class ConfigGui(tk.Tk):
         env = os.environ.copy()
         env["PHOTO_CAT_PROJECT_DIR"] = str(PROJECT_DIR)
         env["PHOTO_CAT_CONFIG"] = str(CONFIG_PATH)
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(SRC_DIR) if (not existing_pythonpath) else str(SRC_DIR) + os.pathsep + existing_pythonpath
 
         if (os.name == "nt"):
             runner_path = PROJECT_DIR / "scripts" / "run_pipeline_windows.bat"
@@ -1283,7 +1287,7 @@ class ConfigGui(tk.Tk):
                 )
             else:
                 process = subprocess.Popen(
-                    [str(python_exe), str(SRC_DIR / "config_and_run.py")],
+                    [str(python_exe), "-m", "photo_cat.config_and_run"],
                     cwd=PROJECT_DIR,
                     env=env,
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
@@ -1305,7 +1309,7 @@ class ConfigGui(tk.Tk):
                 self.open_unix_terminal(runner_path, env)
         else:
             process = subprocess.Popen(
-                [str(python_exe), str(SRC_DIR / "config_and_run.py")],
+                [str(python_exe), "-m", "photo_cat.config_and_run"],
                 cwd=PROJECT_DIR,
                 env=env,
                 start_new_session=True,
@@ -1442,6 +1446,11 @@ class ConfigGui(tk.Tk):
         self.geometry(f"{width}x{height}+{x}+{y}")
 
 
-if (__name__ == "__main__"):
+def main() -> int:
     app = ConfigGui()
     app.mainloop()
+    return 0
+
+
+if (__name__ == "__main__"):
+    raise SystemExit(main())

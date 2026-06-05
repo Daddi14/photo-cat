@@ -19,6 +19,7 @@ if (Test-Path $VersionFile) {
 $env:PHOTO_CAT_PROJECT_DIR = $ProjectDir
 $env:PHOTO_CAT_CONFIG = Join-Path $ProjectDir "config.yaml"
 $env:PHOTO_CAT_VERSION = $ProgramVersion
+$env:PYTHONPATH = Join-Path $ProjectDir "src"
 
 $TitleLine = ("=" * 72)
 $SoftLine = ("-" * 72)
@@ -26,6 +27,13 @@ $SoftLine = ("-" * 72)
 $LogDir = Join-Path $ProjectDir "logs"
 $SetupLog = Join-Path $LogDir "setup_windows.log"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+
+$RuntimeDir = Join-Path $ProjectDir ".runtime"
+$RuntimeToolsDir = Join-Path $RuntimeDir "tools"
+$RuntimePythonDir = Join-Path $RuntimeDir "python"
+$RuntimeDownloadsDir = Join-Path $RuntimeDir "downloads"
+$RuntimeUvDir = Join-Path $RuntimeToolsDir "uv"
+$PreferredRuntimePython = "3.12"
 
 $Mode = "ALL"
 if ($ModeArg -ieq "--install-only") {
@@ -217,8 +225,16 @@ function Test-PythonCommand {
     )
 
     try {
-        $versionCheck = "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)"
-        & $Command @PrefixArgs -c $versionCheck *> $null
+        $healthCheck = @"
+import sys
+if not ((3, 10) <= sys.version_info[:2] <= (3, 13)):
+    raise SystemExit(1)
+import venv
+import ensurepip
+import tkinter
+raise SystemExit(0)
+"@
+        & $Command @PrefixArgs -c $healthCheck *> $null
 
         if ($LASTEXITCODE -eq 0) {
             return [pscustomobject]@{
@@ -236,19 +252,20 @@ function Test-PythonCommand {
 }
 
 function Find-Python {
-    $candidate = Test-PythonCommand -Command "py" -PrefixArgs @("-3")
-    if ($null -ne $candidate) {
-        return $candidate
+    $launcherVersions = @("3.13", "3.12", "3.11", "3.10")
+    foreach ($version in $launcherVersions) {
+        $candidate = Test-PythonCommand -Command "py" -PrefixArgs @("-$version")
+        if ($null -ne $candidate) {
+            return $candidate
+        }
     }
 
-    $candidate = Test-PythonCommand -Command "python" -PrefixArgs @()
-    if ($null -ne $candidate) {
-        return $candidate
-    }
-
-    $candidate = Test-PythonCommand -Command "python3" -PrefixArgs @()
-    if ($null -ne $candidate) {
-        return $candidate
+    $directCommands = @("python3.13", "python3.12", "python3.11", "python3.10", "python", "python3")
+    foreach ($command in $directCommands) {
+        $candidate = Test-PythonCommand -Command $command -PrefixArgs @()
+        if ($null -ne $candidate) {
+            return $candidate
+        }
     }
 
     return $null
@@ -299,49 +316,107 @@ function Invoke-LoggedCommand {
     return ($exitCode -eq 0)
 }
 
-function Install-PythonWithWinget {
-    if ($null -eq (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-WarnLine "winget was not found. Trying the official Python installer instead."
-        return $false
+function Get-UvDownloadUrl {
+    $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+
+    if ($arch -eq "arm64") {
+        return "https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-pc-windows-msvc.zip"
     }
 
-    Write-Step "Step 1 of 3 - Install Python with winget"
-    Write-Note "This may take a few minutes. Detailed output is written to the setup log."
-
-    return Invoke-LoggedCommand `
-        -Command "winget" `
-        -Arguments @("install", "--id", "Python.Python.3.12", "-e", "--source", "winget", "--accept-package-agreements", "--accept-source-agreements") `
-        -Description "Installing Python with winget"
+    return "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip"
 }
 
-function Install-PythonWithOfficialInstaller {
-    $pythonVersion = "3.12.10"
-    $installerPath = Join-Path $env:TEMP "python-$pythonVersion-amd64.exe"
-    $pythonUrl = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-amd64.exe"
+function Get-LocalUv {
+    $uvExe = Join-Path $RuntimeUvDir "uv.exe"
+    if (Test-Path $uvExe) {
+        return $uvExe
+    }
 
-    Write-Step "Step 1 of 3 - Download Python from python.org"
+    Write-Step "Step 1 of 3 - Prepare local runtime manager"
+    Write-Note "Downloading a private runtime helper into the project folder."
+    Write-Note "This does not modify your system Python or your PATH."
 
+    New-Item -ItemType Directory -Force -Path $RuntimeDownloadsDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $RuntimeUvDir | Out-Null
+
+    $downloadUrl = Get-UvDownloadUrl
+    $archivePath = Join-Path $RuntimeDownloadsDir "uv.zip"
+    $extractPath = Join-Path $RuntimeDownloadsDir "uv-extract"
+
+    if (Test-Path $extractPath) {
+        Remove-Item -Recurse -Force $extractPath
+    }
+
+    Add-SetupLog "Downloading local uv runtime helper: $downloadUrl"
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri $pythonUrl -OutFile $installerPath
-    Write-Ok "Python installer downloaded."
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
 
-    Write-Step "Step 1 of 3 - Install Python for the current user"
+    Expand-Archive -Path $archivePath -DestinationPath $extractPath -Force
 
-    $args = @(
-        "/quiet",
-        "InstallAllUsers=0",
-        "PrependPath=1",
-        "Include_launcher=1",
-        "InstallLauncherAllUsers=0",
-        "Include_pip=1",
-        "Include_test=0"
-    )
+    $found = Get-ChildItem -Path $extractPath -Recurse -Filter "uv.exe" -File | Select-Object -First 1
+    if ($null -eq $found) {
+        throw "Could not find uv.exe after extracting the local runtime helper."
+    }
 
-    Add-SetupLog "Installing Python using official installer: $installerPath"
-    $process = Start-Process -FilePath $installerPath -ArgumentList $args -Wait -PassThru
-    Add-SetupLog "Python installer exit code: $($process.ExitCode)"
+    Copy-Item -Force $found.FullName $uvExe
+    Write-Ok "Local runtime helper is ready."
+    return $uvExe
+}
 
-    return ($process.ExitCode -eq 0)
+function Find-LocalRuntimePython {
+    if (-not (Test-Path $RuntimePythonDir)) {
+        return $null
+    }
+
+    $candidate = Get-ChildItem -Path $RuntimePythonDir -Recurse -Filter "python.exe" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch "\\Scripts\\python\.exe$" } |
+        Sort-Object FullName |
+        Select-Object -First 1
+
+    if ($null -eq $candidate) {
+        return $null
+    }
+
+    return Test-PythonCommand -Command $candidate.FullName -PrefixArgs @()
+}
+
+function Install-LocalPythonRuntime {
+    Write-WarnLine "No supported Python 3.10-3.13 with Tkinter was found."
+    Write-Note "PHOTO-CAT will download a private Python runtime into .runtime."
+    Write-Note "Your installed Python versions will not be modified."
+    Write-Host ""
+
+    $existing = Find-LocalRuntimePython
+    if ($null -ne $existing) {
+        Write-Ok "Local Python runtime found: $($existing.Display)"
+        return $existing
+    }
+
+    $uvExe = Get-LocalUv
+
+    Write-Step "Step 1 of 3 - Prepare local Python runtime"
+    Write-Note "Installing private Python $PreferredRuntimePython into the project folder."
+
+    New-Item -ItemType Directory -Force -Path $RuntimePythonDir | Out-Null
+
+    Add-SetupLog "Installing local Python runtime with uv."
+    Add-SetupLog "> $uvExe python install $PreferredRuntimePython --install-dir $RuntimePythonDir"
+
+    & $uvExe python install $PreferredRuntimePython --install-dir $RuntimePythonDir *>> $SetupLog
+    $exitCode = $LASTEXITCODE
+    Add-SetupLog "uv exit code: $exitCode"
+
+    if ($exitCode -ne 0) {
+        throw "Could not install the private PHOTO-CAT Python runtime. See the setup log for details."
+    }
+
+    $runtimePython = Find-LocalRuntimePython
+    if ($null -eq $runtimePython) {
+        throw "The private Python runtime was installed, but PHOTO-CAT could not find a usable python.exe inside .runtime."
+    }
+
+    Write-Ok "Local Python runtime is ready: $($runtimePython.Display)"
+    return $runtimePython
 }
 
 function Ensure-Python {
@@ -355,38 +430,8 @@ function Ensure-Python {
         return $python
     }
 
-    Write-WarnLine "Python 3.10+ was not found. PHOTO-CAT will try to install it automatically."
-    Write-Host ""
-
-    if (Install-PythonWithWinget) {
-        Refresh-PythonPath
-        $python = Find-Python
-        if ($null -ne $python) {
-            Write-ProgressBar -Percent 100 -Detail "[Python ready]" -Complete
-            Write-Ok "Python installed successfully: $($python.Display)"
-            return $python
-        }
-    }
-
-    if (Install-PythonWithOfficialInstaller) {
-        Refresh-PythonPath
-        $python = Find-Python
-        if ($null -ne $python) {
-            Write-ProgressBar -Percent 100 -Detail "[Python ready]" -Complete
-            Write-Ok "Python installed successfully: $($python.Display)"
-            return $python
-        }
-    }
-
-    throw @"
-Python could not be installed automatically.
-
-Manual fix:
-1. Install Python 3.10 or newer from https://www.python.org/downloads/
-2. During installation, tick "Add python.exe to PATH".
-3. Close this window.
-4. Double-click START_WINDOWS.bat again.
-"@
+    Write-ProgressBar -Percent 100 -Detail "[local runtime needed]" -Complete
+    return Install-LocalPythonRuntime
 }
 
 function Invoke-DetectedPython {
@@ -410,13 +455,13 @@ function Ensure-Libraries {
     )
 
     Write-Step "Step 2 of 3 - Prepare PHOTO-CAT dependencies"
-    Invoke-DetectedPython -Python $Python -Arguments @("src\install.py")
+    Invoke-DetectedPython -Python $Python -Arguments @("-m", "photo_cat.install")
 }
 
-function Invoke-VenvPython {
+function Invoke-VenvPythonModule {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$ScriptPath
+        [string]$ModuleName
     )
 
     $venvPython = Join-Path $ProjectDir ".venv\Scripts\python.exe"
@@ -424,7 +469,7 @@ function Invoke-VenvPython {
         throw "Virtual environment Python was not found: $venvPython"
     }
 
-    & $venvPython $ScriptPath
+    & $venvPython -m $ModuleName
     if ($LASTEXITCODE -ne 0) {
         throw "Command failed with exit code $LASTEXITCODE."
     }
@@ -433,13 +478,13 @@ function Invoke-VenvPython {
 function Configure-Tool {
     Write-Step "Step 3 of 3 - Open graphical configurator"
     Write-Note "Opening the graphical configurator..."
-    Invoke-VenvPython -ScriptPath "src\configure_gui.py"
+    Invoke-VenvPythonModule -ModuleName "photo_cat.configure_gui"
 }
 
 function Run-Tool {
     Write-Step "Step 3 of 3 - Run PHOTO-CAT pipeline"
     Write-Note "Running the PHOTO-CAT pipeline..."
-    Invoke-VenvPython -ScriptPath "src\config_and_run.py"
+    Invoke-VenvPythonModule -ModuleName "photo_cat.config_and_run"
 }
 
 function Finish-Install {

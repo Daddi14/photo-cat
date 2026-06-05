@@ -14,6 +14,7 @@ fi
 export PHOTO_CAT_PROJECT_DIR="$PROJECT_DIR"
 export PHOTO_CAT_CONFIG="$PROJECT_DIR/config.yaml"
 export PHOTO_CAT_VERSION="$PROGRAM_VERSION"
+export PYTHONPATH="$PROJECT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
 MODE="ALL"
 case "${1:-}" in
@@ -32,6 +33,13 @@ PYTHON_CMD=""
 OS_NAME="$(uname -s 2>/dev/null || echo Unknown)"
 LOG_DIR="$PROJECT_DIR/logs"
 SETUP_LOG="$LOG_DIR/setup_unix.log"
+RUNTIME_DIR="$PROJECT_DIR/.runtime"
+RUNTIME_TOOLS_DIR="$RUNTIME_DIR/tools"
+RUNTIME_PYTHON_DIR="$RUNTIME_DIR/python"
+RUNTIME_DOWNLOADS_DIR="$RUNTIME_DIR/downloads"
+RUNTIME_UV_DIR="$RUNTIME_TOOLS_DIR/uv"
+PREFERRED_RUNTIME_PYTHON="3.12"
+LOCAL_UV_PATH=""
 
 USE_COLOR=0
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -195,14 +203,19 @@ print_header() {
 python_is_usable() {
     "$1" - <<'PY' >/dev/null 2>&1
 import sys
-raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+if not ((3, 10) <= sys.version_info[:2] <= (3, 13)):
+    raise SystemExit(1)
+import venv
+import ensurepip
+import tkinter
+raise SystemExit(0)
 PY
 }
 
 find_python() {
     PYTHON_CMD=""
 
-    for candidate in python3.12 python3.11 python3.10 python3 python; do
+    for candidate in python3.13 python3.12 python3.11 python3.10 python3 python; do
         if command -v "$candidate" >/dev/null 2>&1; then
             if python_is_usable "$candidate"; then
                 PYTHON_CMD="$candidate"
@@ -214,87 +227,154 @@ find_python() {
     return 1
 }
 
-sudo_cmd() {
-    if [ "$(id -u)" -eq 0 ]; then
-        "$@"
-    elif command -v sudo >/dev/null 2>&1; then
-        sudo "$@"
-    else
-        fail "sudo was not found and administrator privileges are required."
-        return 1
-    fi
+uv_target_name() {
+    machine="$(uname -m 2>/dev/null || echo unknown)"
+
+    case "$OS_NAME:$machine" in
+        Darwin:arm64|Darwin:aarch64)
+            printf "%s\n" "uv-aarch64-apple-darwin.tar.gz"
+            return 0
+            ;;
+        Darwin:x86_64|Darwin:amd64)
+            printf "%s\n" "uv-x86_64-apple-darwin.tar.gz"
+            return 0
+            ;;
+        Linux:aarch64|Linux:arm64)
+            printf "%s\n" "uv-aarch64-unknown-linux-gnu.tar.gz"
+            return 0
+            ;;
+        Linux:x86_64|Linux:amd64)
+            printf "%s\n" "uv-x86_64-unknown-linux-gnu.tar.gz"
+            return 0
+            ;;
+    esac
+
+    return 1
 }
 
-install_python_macos() {
-    warn "Python 3.10+ was not found."
+download_file() {
+    url="$1"
+    output="$2"
 
-    if command -v brew >/dev/null 2>&1; then
-        step "Step 1 of 3 - Install Python with Homebrew"
-        note "This may take a few minutes. Homebrew output is shown because it may ask for system permissions."
-        echo
-        brew install python
+    if command -v curl >/dev/null 2>&1; then
+        curl -L "$url" -o "$output"
         return $?
     fi
 
-    echo
-    fail "Homebrew was not found, so Python cannot be installed automatically on this Mac."
-    echo
-    echo "Manual fix:"
-    echo "1. Download Python 3.10 or newer from python.org."
-    echo "2. Install it."
-    echo "3. Re-open Terminal in the PHOTO-CAT folder and run: sh START_UNIX.sh"
-    echo
-
-    if command -v open >/dev/null 2>&1; then
-        open "https://www.python.org/downloads/macos/" >/dev/null 2>&1 || true
+    if command -v wget >/dev/null 2>&1; then
+        wget -O "$output" "$url"
+        return $?
     fi
 
     return 1
 }
 
-install_python_linux() {
-    warn "Python 3.10+ was not found."
-    echo "PHOTO-CAT will try to install Python using your Linux package manager."
-    note "Package manager output is shown because it may ask for administrator permissions."
-    echo
-
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo_cmd apt-get update || return 1
-        sudo_cmd apt-get install -y python3 python3-venv python3-pip python3-tk || return 1
+get_local_uv() {
+    uv_path="$RUNTIME_UV_DIR/uv"
+    if [ -x "$uv_path" ]; then
+        LOCAL_UV_PATH="$uv_path"
         return 0
     fi
 
-    if command -v dnf >/dev/null 2>&1; then
-        sudo_cmd dnf install -y python3 python3-pip python3-tkinter || return 1
-        return 0
+    target="$(uv_target_name)" || {
+        fail "This platform is not supported by PHOTO-CAT's local runtime bootstrap."
+        return 1
+    }
+
+    step "Step 1 of 3 - Prepare local runtime manager"
+    note "Downloading a private runtime helper into the project folder."
+    note "This does not modify your system Python or your PATH."
+
+    mkdir -p "$RUNTIME_DOWNLOADS_DIR" "$RUNTIME_UV_DIR"
+    archive_path="$RUNTIME_DOWNLOADS_DIR/$target"
+    extract_path="$RUNTIME_DOWNLOADS_DIR/uv-extract"
+    download_url="https://github.com/astral-sh/uv/releases/latest/download/$target"
+
+    rm -rf "$extract_path"
+    mkdir -p "$extract_path"
+
+    append_log "Downloading local uv runtime helper: $download_url"
+
+    if ! download_file "$download_url" "$archive_path" >> "$SETUP_LOG" 2>&1; then
+        fail "Could not download the local runtime helper."
+        echo
+        echo "Manual fix: install Python 3.10-3.13 with Tkinter, then run: sh START_UNIX.sh"
+        echo
+        return 1
     fi
 
-    if command -v yum >/dev/null 2>&1; then
-        sudo_cmd yum install -y python3 python3-pip python3-tkinter || return 1
-        return 0
+    if ! tar -xzf "$archive_path" -C "$extract_path" >> "$SETUP_LOG" 2>&1; then
+        fail "Could not extract the local runtime helper."
+        return 1
     fi
 
-    if command -v pacman >/dev/null 2>&1; then
-        sudo_cmd pacman -Syu --needed python python-pip tk || return 1
-        return 0
+    found_uv="$(find "$extract_path" -type f -name uv -print | head -n 1)"
+    if [ -z "$found_uv" ]; then
+        fail "Could not find uv after extracting the local runtime helper."
+        return 1
     fi
 
-    if command -v zypper >/dev/null 2>&1; then
-        sudo_cmd zypper install -y python3 python3-pip python3-tk || return 1
-        return 0
+    cp "$found_uv" "$uv_path"
+    chmod +x "$uv_path"
+    ok "Local runtime helper is ready."
+    LOCAL_UV_PATH="$uv_path"
+    return 0
+}
+
+find_local_runtime_python() {
+    if [ ! -d "$RUNTIME_PYTHON_DIR" ]; then
+        return 1
     fi
 
-    if command -v apk >/dev/null 2>&1; then
-        sudo_cmd apk add python3 py3-pip py3-virtualenv tk || return 1
-        return 0
-    fi
+    while IFS= read -r candidate; do
+        if [ -n "$candidate" ] && [ -x "$candidate" ] && python_is_usable "$candidate"; then
+            PYTHON_CMD="$candidate"
+            return 0
+        fi
+    done <<EOF
+$(find "$RUNTIME_PYTHON_DIR" -type f \( -name python3 -o -name python \) -print 2>/dev/null | sort)
+EOF
 
-    fail "Could not detect a supported Linux package manager."
-    echo
-    echo "Manual fix: install Python 3.10+, pip, venv and tkinter using your distribution package manager."
-    echo
     return 1
 }
+
+install_local_python_runtime() {
+    warn "No supported Python 3.10-3.13 with Tkinter was found."
+    note "PHOTO-CAT will download a private Python runtime into .runtime."
+    note "Your installed Python versions will not be modified."
+    echo
+
+    if find_local_runtime_python; then
+        ok "Local Python runtime found: $PYTHON_CMD"
+        return 0
+    fi
+
+    get_local_uv || return 1
+    uv_path="$LOCAL_UV_PATH"
+
+    step "Step 1 of 3 - Prepare local Python runtime"
+    note "Installing private Python $PREFERRED_RUNTIME_PYTHON into the project folder."
+
+    mkdir -p "$RUNTIME_PYTHON_DIR"
+
+    append_log "Installing local Python runtime with uv."
+    append_log "> $uv_path python install $PREFERRED_RUNTIME_PYTHON --install-dir $RUNTIME_PYTHON_DIR"
+
+    if ! "$uv_path" python install "$PREFERRED_RUNTIME_PYTHON" --install-dir "$RUNTIME_PYTHON_DIR" >> "$SETUP_LOG" 2>&1; then
+        fail "Could not install the private PHOTO-CAT Python runtime."
+        echo "Detailed setup log: $SETUP_LOG"
+        return 1
+    fi
+
+    if find_local_runtime_python; then
+        ok "Local Python runtime is ready: $PYTHON_CMD"
+        return 0
+    fi
+
+    fail "The private Python runtime was installed, but PHOTO-CAT could not find a usable Python inside .runtime."
+    return 1
+}
+
 
 python_has_tkinter() {
     "$1" - <<'PYTK' >/dev/null 2>&1
@@ -303,79 +383,6 @@ raise SystemExit(0)
 PYTK
 }
 
-python_tk_formula_for() {
-    "$1" - <<'PYTK' 2>/dev/null
-import sys
-print(f"python-tk@{sys.version_info.major}.{sys.version_info.minor}")
-PYTK
-}
-
-install_tkinter_macos() {
-    if ! command -v brew >/dev/null 2>&1; then
-        fail "Tkinter is missing and Homebrew was not found."
-        echo
-        echo "Manual fix: install Python from python.org, then re-open Terminal and run: sh START_UNIX.sh"
-        echo
-        return 1
-    fi
-
-    venv_python="./.venv/bin/python"
-    tk_formula="$(python_tk_formula_for "$venv_python")"
-    if [ -z "$tk_formula" ]; then
-        tk_formula="python-tk"
-    fi
-
-    warn "Tkinter is missing from this Python installation."
-    note "PHOTO-CAT will install the matching Homebrew Tk package: $tk_formula"
-    echo
-
-    brew install "$tk_formula" || return 1
-    return 0
-}
-
-install_tkinter_linux() {
-    warn "Tkinter is missing from this Python installation."
-    echo "PHOTO-CAT will try to install the Tkinter package using your Linux package manager."
-    note "Package manager output is shown because it may ask for administrator permissions."
-    echo
-
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo_cmd apt-get update || return 1
-        sudo_cmd apt-get install -y python3-tk || return 1
-        return 0
-    fi
-
-    if command -v dnf >/dev/null 2>&1; then
-        sudo_cmd dnf install -y python3-tkinter || return 1
-        return 0
-    fi
-
-    if command -v yum >/dev/null 2>&1; then
-        sudo_cmd yum install -y python3-tkinter || return 1
-        return 0
-    fi
-
-    if command -v pacman >/dev/null 2>&1; then
-        sudo_cmd pacman -Syu --needed tk || return 1
-        return 0
-    fi
-
-    if command -v zypper >/dev/null 2>&1; then
-        sudo_cmd zypper install -y python3-tk || return 1
-        return 0
-    fi
-
-    if command -v apk >/dev/null 2>&1; then
-        sudo_cmd apk add tk || return 1
-        return 0
-    fi
-
-    fail "Could not detect a supported Linux package manager."
-    echo
-    echo "Manual fix: install the Tkinter package for your Python version, then run: sh START_UNIX.sh"
-    echo
-    return 1
-}
 
 ensure_gui_toolkit() {
     venv_python="./.venv/bin/python"
@@ -389,29 +396,10 @@ ensure_gui_toolkit() {
     fi
 
     progress_bar 100 "[GUI toolkit missing]" 1
-
-    case "$OS_NAME" in
-        Darwin)
-            install_tkinter_macos || return 1
-            ;;
-        Linux)
-            install_tkinter_linux || return 1
-            ;;
-        *)
-            fail "Tkinter is missing and this operating system is not supported by the automatic fixer."
-            return 1
-            ;;
-    esac
-
-    if python_has_tkinter "$venv_python"; then
-        ok "GUI toolkit is ready."
-        return 0
-    fi
-
-    fail "Tkinter is still missing after the automatic fix."
+    fail "Tkinter is missing from the Python used by PHOTO-CAT."
     echo
-    echo "Manual fix for macOS Homebrew Python: brew install $(python_tk_formula_for "$venv_python")"
-    echo "Then run: sh START_UNIX.sh"
+    echo "PHOTO-CAT no longer installs system packages automatically."
+    echo "Delete .venv and .runtime, then run START_UNIX.sh again so PHOTO-CAT can create a private local runtime."
     echo
     return 1
 }
@@ -426,46 +414,26 @@ ensure_python() {
         return 0
     fi
 
-    case "$OS_NAME" in
-        Darwin)
-            install_python_macos || return 1
-            ;;
-        Linux)
-            install_python_linux || return 1
-            ;;
-        *)
-            fail "Unsupported operating system: $OS_NAME"
-            echo "Use START_WINDOWS.bat on Windows, or START_UNIX.sh on macOS/Linux."
-            return 1
-            ;;
-    esac
-
-    if find_python; then
-        ok "Python installed successfully: $PYTHON_CMD"
-        progress_bar 100 "[Python ready]" 1
-        return 0
-    fi
-
-    fail "Python still was not found, or the installed version is older than 3.10."
-    return 1
+    progress_bar 100 "[local runtime needed]" 1
+    install_local_python_runtime || return 1
 }
 
 ensure_libraries() {
     step "Step 2 of 3 - Prepare PHOTO-CAT dependencies"
-    "$PYTHON_CMD" "src/install.py"
+    "$PYTHON_CMD" -m photo_cat.install
 }
 
 configure_tool() {
     step "Step 3 of 3 - Open graphical configurator"
     ensure_gui_toolkit || return 1
     note "Opening the graphical configurator..."
-    "./.venv/bin/python" "src/configure_gui.py"
+    "./.venv/bin/python" -m photo_cat.configure_gui
 }
 
 run_tool() {
     step "Step 3 of 3 - Run PHOTO-CAT pipeline"
     note "Running the PHOTO-CAT pipeline..."
-    "./.venv/bin/python" "src/config_and_run.py"
+    "./.venv/bin/python" -m photo_cat.config_and_run
 }
 
 finish_install() {

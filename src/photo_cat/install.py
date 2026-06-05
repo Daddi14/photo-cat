@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """
 Create a local virtual environment and install all required libraries.
 
@@ -19,11 +20,11 @@ from pathlib import Path
 
 
 MINIMUM_PYTHON_VERSION = (3, 10)
-PROJECT_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = Path(__file__).resolve().parents[2]
 VERSION_FILE = PROJECT_DIR / "VERSION"
 VENV_DIR = PROJECT_DIR / ".venv"
 VENV_PROJECT_MARKER_FILE = VENV_DIR / ".photo_cat_project_dir"
-REQUIREMENTS_FILE = PROJECT_DIR / "requirements.txt"
+PYPROJECT_FILE = PROJECT_DIR / "pyproject.toml"
 LOG_DIR = PROJECT_DIR / "logs"
 INSTALL_LOG_FILE = LOG_DIR / "install.log"
 
@@ -95,6 +96,18 @@ def write_info_line(label: str, value: object) -> None:
 
 def write_note(message: str) -> None:
     print(color(f"  {message}", Style.DIM))
+
+
+def write_header(title: str) -> None:
+    write_title_rule(Style.CYAN)
+    print(color(title, Style.BOLD + Style.CYAN))
+    write_title_rule(Style.CYAN)
+    print()
+    write_info_line("Version", PROGRAM_VERSION)
+    write_info_line("Project folder", PROJECT_DIR)
+    write_info_line("Virtual environment", VENV_DIR)
+    write_info_line("Installation log", INSTALL_LOG_FILE)
+    print()
 
 
 def write_step(index: int, total: int, message: str) -> None:
@@ -489,18 +502,184 @@ def print_failure_details() -> None:
         print("-" * 64)
 
 
-def read_requirements() -> list[str]:
-    requirements: list[str] = []
 
-    for raw_line in REQUIREMENTS_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
+
+def parse_quoted_string(value: str) -> str:
+    value = value.strip()
+    if ((len(value) >= 2) and (value[0] == value[-1]) and (value[0] in {"'", '"'})):
+        return value[1:-1]
+    return value
+
+
+def strip_inline_comment(value: str) -> str:
+    in_quote = ""
+    escaped = False
+
+    for index, char in enumerate(value):
+        if (escaped):
+            escaped = False
+            continue
+
+        if (char == "\\"):
+            escaped = True
+            continue
+
+        if (char in {"'", '"'}):
+            if (not in_quote):
+                in_quote = char
+            elif (in_quote == char):
+                in_quote = ""
+            continue
+
+        if ((char == "#") and (not in_quote)):
+            return value[:index].rstrip()
+
+    return value.strip()
+
+
+def parse_inline_poetry_table(value: str) -> dict[str, str]:
+    value = value.strip()
+    if ((not value.startswith("{")) or (not value.endswith("}"))):
+        return {}
+
+    body = value[1:-1].strip()
+    result: dict[str, str] = {}
+    parts: list[str] = []
+    current = []
+    depth = 0
+    in_quote = ""
+    escaped = False
+
+    for char in body:
+        if (escaped):
+            current.append(char)
+            escaped = False
+            continue
+
+        if (char == "\\"):
+            current.append(char)
+            escaped = True
+            continue
+
+        if (char in {"'", '"'}):
+            current.append(char)
+            if (not in_quote):
+                in_quote = char
+            elif (in_quote == char):
+                in_quote = ""
+            continue
+
+        if ((char == "[") and (not in_quote)):
+            depth += 1
+        elif ((char == "]") and (not in_quote)):
+            depth = max(0, depth - 1)
+
+        if ((char == ",") and (depth == 0) and (not in_quote)):
+            parts.append("".join(current).strip())
+            current = []
+            continue
+
+        current.append(char)
+
+    if (current):
+        parts.append("".join(current).strip())
+
+    for part in parts:
+        if ("=" not in part):
+            continue
+
+        key, raw_value = part.split("=", 1)
+        result[key.strip()] = raw_value.strip()
+
+    return result
+
+
+def parse_extras(value: str) -> list[str]:
+    value = value.strip()
+    if ((not value.startswith("[")) or (not value.endswith("]"))):
+        return []
+
+    extras = []
+    for raw_extra in value[1:-1].split(","):
+        extra = parse_quoted_string(raw_extra.strip())
+        if (extra):
+            extras.append(extra)
+
+    return extras
+
+
+def poetry_dependency_to_requirement(name: str, value: str) -> str:
+    value = strip_inline_comment(value)
+    package_name = name.strip().strip('"').strip("'")
+
+    if (not package_name):
+        return ""
+
+    if (package_name.lower() == "python"):
+        return ""
+
+    if (value.startswith("{")):
+        table = parse_inline_poetry_table(value)
+        if (parse_quoted_string(table.get("optional", "false")).lower() == "true"):
+            return ""
+
+        version = parse_quoted_string(table.get("version", "*")).strip()
+        extras = parse_extras(table.get("extras", "[]"))
+        if (extras):
+            package_name = f"{package_name}[{','.join(extras)}]"
+    else:
+        version = parse_quoted_string(value).strip()
+
+    if ((not version) or (version == "*")):
+        return package_name
+
+    if (version.startswith("@")):
+        return f"{package_name} {version}"
+
+    if (version.startswith("^")):
+        # Keep caret requirements readable in logs, but do not attempt to
+        # implement Poetry's full resolver here. PHOTO-CAT release metadata
+        # currently uses pip-compatible specifiers.
+        raise ValueError(
+            f"Dependency {name!r} uses Poetry caret syntax ({version}). "
+            "Use a pip-compatible specifier for the release launcher."
+        )
+
+    if (version.startswith("~") and (not version.startswith("~="))):
+        raise ValueError(
+            f"Dependency {name!r} uses Poetry tilde syntax ({version}). "
+            "Use a pip-compatible specifier for the release launcher."
+        )
+
+    return f"{package_name}{version}"
+
+
+def read_project_dependencies() -> list[str]:
+    dependencies: list[str] = []
+    in_dependencies = False
+
+    for raw_line in PYPROJECT_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw_line.strip()
 
         if ((not line) or line.startswith("#")):
             continue
 
-        requirements.append(line)
+        if (line.startswith("[") and line.endswith("]")):
+            in_dependencies = (line == "[tool.poetry.dependencies]")
+            continue
 
-    return requirements
+        if (not in_dependencies):
+            continue
+
+        if ("=" not in line):
+            continue
+
+        name, raw_value = line.split("=", 1)
+        requirement = poetry_dependency_to_requirement(name, raw_value)
+        if (requirement):
+            dependencies.append(requirement)
+
+    return dependencies
 
 
 def display_requirement_name(requirement: str) -> str:
@@ -509,52 +688,43 @@ def display_requirement_name(requirement: str) -> str:
     return (cleaned or requirement)
 
 
-def requirements_are_satisfied(python_exe: Path, requirements: list[str]) -> bool:
-    helper_code = r'''
+def project_package_is_ready(python_exe: Path) -> bool:
+    helper_code = r"""
 import importlib.metadata
+import subprocess
 import sys
 
+expected_version = sys.argv[1]
+
 try:
-    from pip._vendor.packaging.requirements import Requirement
-except Exception as exc:
-    print(f"Could not load requirement parser: {exc}")
+    installed_version = importlib.metadata.version("photo-cat")
+except importlib.metadata.PackageNotFoundError:
+    print("PHOTO-CAT package is not installed in the local environment.")
     raise SystemExit(1)
 
-missing = []
-
-for raw_requirement in sys.argv[1:]:
-    try:
-        requirement = Requirement(raw_requirement)
-
-        if ((requirement.marker is not None) and (not requirement.marker.evaluate())):
-            continue
-
-        if (requirement.url):
-            missing.append(raw_requirement)
-            continue
-
-        installed_version = importlib.metadata.version(requirement.name)
-
-        if ((requirement.specifier) and (installed_version not in requirement.specifier)):
-            missing.append(f"{raw_requirement} (installed: {installed_version})")
-    except Exception as exc:
-        missing.append(f"{raw_requirement} ({exc})")
-
-if (missing):
-    print("Missing or outdated requirements:")
-    for requirement in missing:
-        print(f"- {requirement}")
+if installed_version != expected_version:
+    print(f"PHOTO-CAT package version mismatch: installed {installed_version}, expected {expected_version}.")
     raise SystemExit(1)
 
-raise SystemExit(0)
-'''
+check = subprocess.run(
+    [sys.executable, "-m", "pip", "check"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+)
+
+if check.stdout:
+    print(check.stdout.rstrip())
+
+raise SystemExit(check.returncode)
+"""
 
     append_log("=" * 80)
-    append_log("Checking installed requirements")
+    append_log("Checking installed PHOTO-CAT package")
     append_log("=" * 80)
 
     process = subprocess.run(
-        [str(python_exe), "-c", helper_code, *requirements],
+        [str(python_exe), "-c", helper_code, PROGRAM_VERSION],
         cwd=PROJECT_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -570,20 +740,22 @@ raise SystemExit(0)
     return (process.returncode == 0)
 
 
-def show_dependency_check_progress(requirements: list[str]) -> None:
-    total = max(1, len(requirements))
+def show_project_check_progress(dependencies: list[str]) -> None:
+    total = max(1, len(dependencies) + 1)
 
-    for index, requirement in enumerate(requirements, start=1):
+    for index, requirement in enumerate(dependencies, start=1):
         package_name = display_requirement_name(requirement)
         percent = int(round((index / total) * 100.0))
         detail = f"{index}/{total} [{package_name}]"
-        progress_bar(percent, detail, complete=(index == total))
+        progress_bar(percent, detail, complete=False)
+
+    progress_bar(100, f"{total}/{total} [photo-cat]", complete=True)
 
 
-def install_packages_one_by_one(python_exe: Path, requirements: list[str]) -> bool:
-    total = len(requirements)
+def install_project_dependencies(python_exe: Path, dependencies: list[str]) -> bool:
+    total = max(1, len(dependencies) + 1)
 
-    for index, requirement in enumerate(requirements, start=1):
+    for index, requirement in enumerate(dependencies, start=1):
         package_name = display_requirement_name(requirement)
         start_percent = int(round(((index - 1) / total) * 100.0))
         end_percent = int(round((index / total) * 100.0))
@@ -596,18 +768,42 @@ def install_packages_one_by_one(python_exe: Path, requirements: list[str]) -> bo
                 "pip",
                 "install",
                 "--disable-pip-version-check",
+                "--upgrade",
                 requirement,
             ],
             f"Installing dependency: {requirement}",
             start_percent,
             end_percent,
             detail,
-            complete=(index == total),
+            complete=False,
         )):
             print_failure_details()
             return False
 
     return True
+
+
+def install_project_package(python_exe: Path, package_index: int, total: int) -> bool:
+    start_percent = int(round(((package_index - 1) / total) * 100.0))
+    end_percent = int(round((package_index / total) * 100.0))
+
+    return run_logged_with_progress(
+        [
+            str(python_exe),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--upgrade",
+            "--no-deps",
+            ".",
+        ],
+        "Installing PHOTO-CAT package",
+        start_percent,
+        end_percent,
+        f"{package_index}/{total} [photo-cat]",
+        complete=True,
+    )
 
 
 def main() -> int:
@@ -621,9 +817,11 @@ def main() -> int:
         print("Install Python from https://www.python.org/downloads/ and run this again.")
         return 1
 
-    if (not REQUIREMENTS_FILE.is_file()):
-        write_error(f"requirements.txt was not found here: {REQUIREMENTS_FILE}")
+    if (not PYPROJECT_FILE.is_file()):
+        write_error(f"pyproject.toml was not found here: {PYPROJECT_FILE}")
         return 1
+
+    write_header("PHOTO-CAT - dependency setup")
 
     write_step(1, 3, "Prepare local environment")
     progress_bar(0, "[virtual environment]")
@@ -692,25 +890,33 @@ def main() -> int:
 
     write_ok("Installation tools are ready.")
 
-    requirements = read_requirements()
-    if (not requirements):
-        write_error("requirements.txt is empty. There are no dependencies to install.")
+    try:
+        project_dependencies = read_project_dependencies()
+    except Exception as exc:
+        write_error("Could not read dependencies from pyproject.toml.")
+        print(f"Details: {exc}")
+        append_log(f"ERROR: could not read project dependencies: {exc}")
         return 1
 
-    dependencies_ready = requirements_are_satisfied(python_exe, requirements)
-    if (dependencies_ready):
-        write_step(3, 3, "Verify project dependencies")
-        write_note("All required dependencies are already available.")
-        show_dependency_check_progress(requirements)
-        write_ok("Dependencies are ready.")
+    package_ready = project_package_is_ready(python_exe)
+    if (package_ready):
+        write_step(3, 3, "Verify PHOTO-CAT package")
+        write_note("PHOTO-CAT and its dependencies are already available.")
+        show_project_check_progress(project_dependencies)
+        write_ok("PHOTO-CAT package is ready.")
     else:
-        write_step(3, 3, "Install project dependencies")
-        write_note("This may take a few minutes on the first run.")
+        write_step(3, 3, "Install PHOTO-CAT package")
+        write_note("Installing PHOTO-CAT and dependencies from pyproject.toml.")
 
-        if (not install_packages_one_by_one(python_exe, requirements)):
+        if (not install_project_dependencies(python_exe, project_dependencies)):
             return 1
 
-        write_ok("Dependencies installed successfully.")
+        total_items = max(1, len(project_dependencies) + 1)
+        if (not install_project_package(python_exe, total_items, total_items)):
+            print_failure_details()
+            return 1
+
+        write_ok("PHOTO-CAT package installed successfully.")
 
     print()
     write_title_rule(Style.GREEN)

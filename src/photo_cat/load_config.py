@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""Load and validate PHOTO-CAT configuration sections."""
+
 import os
 from pathlib import Path
 
@@ -5,7 +8,7 @@ import yaml
 from dataclasses import dataclass
 
 
-PROJECT_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = Path(__file__).resolve().parents[2]
 ROOT_CONFIG_PATH = PROJECT_DIR / "config.yaml"
 ENV_CONFIG_PATH = os.environ.get("PHOTO_CAT_CONFIG", "").strip()
 

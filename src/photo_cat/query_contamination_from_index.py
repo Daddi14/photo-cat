@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """
 query_contamination_from_index.py
 
@@ -99,11 +100,11 @@ from typing import Optional, Dict
 import numpy as np
 import pandas as pd
 
-from Target_Result import Target_Result
-from Contaminant import Contaminant
-from logger_setup import get_logger
-from load_config import load_config
-from pipeline_display import ActivityBar, progress_bar
+from .target_result import TargetResult
+from .contaminant import Contaminant
+from .logger_setup import get_logger
+from .load_config import load_config
+from .pipeline_display import ActivityBar, progress_bar
 
 
 logger = get_logger(__name__)
@@ -460,7 +461,7 @@ def loop_over_targets(
     Returns
     -------
     results : list[dict]
-        List of Target_Result.__dict__ for each processed target.
+        List of TargetResult.__dict__ for each processed target.
     """
     results = []
     n_sources = ra.shape[0]
@@ -523,7 +524,7 @@ def loop_over_targets(
         # No neighbors: quick exit with zero contaminants and zero extra flux.
         if start == end:
             results.append(
-                Target_Result(
+                TargetResult(
                     source_id=source_id_str,
                     ra=target_ra,
                     dec=target_dec,
@@ -544,7 +545,7 @@ def loop_over_targets(
         valid_mask = (contaminant_indices >= 0) & (contaminant_indices < n_sources)
         if not np.any(valid_mask):
             results.append(
-                Target_Result(
+                TargetResult(
                     source_id=source_id_str,
                     ra=target_ra,
                     dec=target_dec,
@@ -618,7 +619,7 @@ def loop_over_targets(
             )
 
         results.append(
-            Target_Result(
+            TargetResult(
                 source_id=source_id_str,
                 ra=target_ra,
                 dec=target_dec,
@@ -637,12 +638,12 @@ def loop_over_targets(
 # --- Save results to JSON ------------------------------------------------------
 def save_results_to_json(results: list, json_path: str) -> str:
     """
-    Save the list of Target_Result dicts to the specified JSON file.
+    Save the list of TargetResult dicts to the specified JSON file.
 
     Parameters
     ----------
     results : list[dict]
-        List of Target_Result.__dict__ entries.
+        List of TargetResult.__dict__ entries.
 
     json_path : str
         Output JSON path.
