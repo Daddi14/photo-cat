@@ -1,6 +1,12 @@
 <div align="center">
 
-<img src="assets/photo-cat-logo.png" alt="Logo PHOTO-CAT" width="200">
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/photo-cat-logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/photo-cat-logo-light.png">
+    <img src="assets/photo-cat-logo-colored.png" alt="Logo PHOTO-CAT" width="200">
+  </picture>
+</p>
 
 **Photometric Contamination Analyzer Tool**
 
@@ -118,7 +124,7 @@ Le pagine pronte per una GitHub Wiki sono disponibili in [docs/wiki/](docs/wiki/
 
 Per problemi comuni di avvio, dipendenze, Tkinter, CSV e ambienti virtuali, vedi [Risoluzione problemi](docs/Troubleshooting_IT.md).
 
-## Citazione e ringraziamenti
+## Citazione
 
 Includi la seguente citazione e il seguente ringraziamento in qualunque pubblicazione che utilizzi PHOTO-CAT.
 
@@ -131,6 +137,12 @@ Ringraziamento:
 `This research made use of PHOTO-CAT, a Python package for photometric contamination analysis (<paper reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
 
 Sostituisci `<paper reference>` con il riferimento finale dell’articolo quando disponibile.
+
+## Ringraziamenti
+
+Gli autori ringraziano:
+E. Drago per i contributi fondamentali all'implementazione del software, al processo di testing e al perfezionamento tecnico di PHOTO-CAT.
+J. Burgio per la progettazione e la creazione del logo e dell'identità visiva di PHOTO-CAT.
 
 ## Licenza
 
