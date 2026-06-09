@@ -8,7 +8,7 @@ Thank you for considering a contribution to PHOTO-CAT.
 2. Keep changes focused and easy to review.
 3. Do not commit generated files such as `.venv/`, `.runtime/`, `logs/`, `output/`, `data/output/`, `__pycache__/`, or `*.pyc`.
 4. Preserve the existing source layout under `src/photo_cat/`.
-5. Keep user-facing documentation in both English and Italian when applicable.
+5. Keep user-facing documentation in both English and Italian when applicable. XD
 
 ## Local checks
 
