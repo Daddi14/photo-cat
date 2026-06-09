@@ -8,8 +8,6 @@
   </picture>
 </p>
 
-# PHOTO-CAT
-
 [English](README.md) · [Italiano](README_IT.md)
 
 **Photometric Contamination Analyzer Tool**
