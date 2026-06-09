@@ -1,4 +1,6 @@
 @echo off
+REM SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
+REM SPDX-License-Identifier: GPL-3.0-only
 setlocal EnableExtensions
 cd /d "%~dp0"
 chcp 65001 >nul

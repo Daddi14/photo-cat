@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
 """
 Small beginner-friendly GUI for editing config.yaml.

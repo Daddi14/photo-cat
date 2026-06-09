@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
 """Shared console progress and color helpers."""
 

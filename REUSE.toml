@@ -1,0 +1,25 @@
+version = 1
+
+[[annotations]]
+path = [
+    ".gitattributes",
+    ".gitignore",
+    "VERSION",
+    "config.yaml",
+    "pyproject.toml",
+    "README.md",
+    "README_IT.md",
+    "START_HERE.txt",
+    "START_HERE_IT.txt",
+    "data/**",
+    "docs/**",
+]
+SPDX-FileCopyrightText = "2026 PHOTO-CAT contributors"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+[[annotations]]
+path = [
+    "assets/**",
+]
+SPDX-FileCopyrightText = "2026 PHOTO-CAT contributors"
+SPDX-License-Identifier = "GPL-3.0-only"

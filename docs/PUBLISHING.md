@@ -53,13 +53,16 @@ Recommended topics:
 ## Release checklist
 
 1. Update `VERSION`.
-2. Update release notes.
-3. Test Windows launch flow.
-4. Test macOS/Linux launch flow where possible.
-5. Test example catalogue and targets.
-6. Confirm `.runtime/`, `.venv/`, logs, and outputs are excluded.
-7. Create a clean release archive.
-8. Publish the GitHub release.
+2. Update `pyproject.toml`.
+3. Confirm `LICENSE` contains the full GPL-3.0 license text.
+4. Confirm `pyproject.toml` declares `GPL-3.0-only`.
+5. Update release notes.
+6. Test Windows launch flow.
+7. Test macOS/Linux launch flow where possible.
+8. Test example catalogue and targets.
+9. Confirm `.runtime/`, `.venv/`, logs, and outputs are excluded.
+10. Create a clean release archive.
+11. Publish the GitHub release.
 
 ## Release title format
 

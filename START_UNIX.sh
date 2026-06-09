@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
+# SPDX-License-Identifier: GPL-3.0-only
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
 

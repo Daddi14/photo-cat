@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
+# SPDX-License-Identifier: GPL-3.0-only
 param(
     [int]$Columns = 112,
     [int]$Lines = 52
