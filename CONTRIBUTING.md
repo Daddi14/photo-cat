@@ -16,6 +16,7 @@ Before submitting a pull request, run at least:
 
 ```bash
 python -m py_compile src/photo_cat/*.py
+pytest
 ```
 
 On macOS/Linux, also check shell launcher syntax:
@@ -47,4 +48,17 @@ SPDX-License-Identifier: GPL-3.0-only
 ```
 
 Files that cannot use visible headers should be covered by `REUSE.toml`.
-Maintainers preparing a release should follow [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
+
+
+## Command-line interface
+
+The unified CLI entry point is `photo-cat`. Keep GUI, CLI, and direct module behaviour aligned when changing pipeline behaviour.
+
+Useful development commands:
+
+```bash
+photo-cat run --config config.yaml
+photo-cat build-index --config config.yaml
+photo-cat query --config config.yaml
+photo-cat doctor
+```

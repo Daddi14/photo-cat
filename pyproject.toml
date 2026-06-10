@@ -29,12 +29,21 @@ pyarrow = ">=12.0"
 dask = { version = ">=2023.0", extras = ["dataframe"] }
 
 [tool.poetry.scripts]
-photo-cat = "photo_cat.config_and_run:main"
+photo-cat = "photo_cat.cli:main"
+photo-cat-run = "photo_cat.config_and_run:main"
 photo-cat-configure = "photo_cat.configure_gui:main"
 photo-cat-install = "photo_cat.install:main"
 photo-cat-build-index = "photo_cat.build_neighbors_index:main"
 photo-cat-query-contamination = "photo_cat.query_contamination_from_index:main"
 photo-cat-doctor = "photo_cat.doctor:main"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+build = ">=1.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

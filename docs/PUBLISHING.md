@@ -72,13 +72,16 @@ Recommended topics:
 3. Confirm `LICENSE` contains the full GPL-3.0 license text.
 4. Confirm `pyproject.toml` declares `GPL-3.0-only`.
 5. Confirm SPDX headers and `REUSE.toml` are current.
-6. Prepare GitHub release notes.
-7. Test Windows launch flow.
-8. Test macOS/Linux launch flow where possible.
-9. Test example catalogue and targets.
-10. Confirm generated folders, `.git/`, and `docs/wiki/` are excluded from the release archive.
-11. Create a clean release archive.
-12. Publish the GitHub release.
+6. Run the automated test suite with `pytest`.
+7. Confirm the GitHub Actions CI workflow passes on supported Python versions.
+8. Prepare GitHub release notes.
+9. Test Windows launch flow.
+10. Test macOS/Linux launch flow where possible.
+11. Test example catalogue and targets.
+12. Confirm generated folders, `.git/`, and `docs/wiki/` are excluded from the release archive.
+13. Create a clean release archive.
+14. Publish the GitHub release.
+15. Publish to TestPyPI first, then PyPI after the package is verified.
 
 ## Release title format
 
@@ -86,10 +89,33 @@ Use:
 
 `PHOTO-CAT vX.Y.Z`
 
+Example:
+
+`PHOTO-CAT v1.0.0`
+
 ## Release asset format
 
 Recommended release asset name:
 
 `photo-cat-vX.Y.Z.zip`
 
+Example:
+
+`photo-cat-v1.0.0.zip`
+
 A named ZIP is easier for non-technical users than relying only on GitHub’s automatic source-code archives.
+
+
+## Python package publishing
+
+The repository includes a GitHub Actions workflow for building and publishing the Python package.
+
+Recommended release flow:
+
+1. Confirm CI is passing.
+2. Build and publish to TestPyPI with the manual workflow.
+3. Install from TestPyPI in a clean environment and smoke-test the CLI.
+4. Publish the GitHub release.
+5. Publish to PyPI through the release workflow or a manual PyPI dispatch.
+
+The publishing workflow is designed for PyPI Trusted Publishing. Configure the `testpypi` and `pypi` environments in the GitHub repository before using it.

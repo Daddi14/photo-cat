@@ -51,6 +51,7 @@ Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più com
 - Crea un indice dei vicini da un catalogo fotometrico.
 - Interroga sorgenti potenzialmente contaminanti attorno ai target selezionati.
 - Configura le esecuzioni tramite interfaccia grafica.
+- Esegui lo stesso workflow da una CLI per automazione e sistemi remoti.
 - Usa un CSV di target oppure una lista manuale di source ID.
 - Valida file di input, nomi delle colonne, cartelle di output e percorsi dell’indice.
 - Mantiene le dipendenze isolate nella cartella `.venv` del progetto.
@@ -69,6 +70,8 @@ Questa distribuzione include i principali file e cartelle seguenti:
 - `config.yaml`, il file di configurazione gestito dalla GUI.
 - `data/`, CSV di esempio per test rapidi.
 - `docs/`, documentazione utente e manutentore.
+- `tests/`, test automatici per caricamento configurazione e pipeline di esempio.
+- `.github/workflows/`, workflow di integrazione continua e pubblicazione del pacchetto.
 - `scripts/`, helper dei launcher per piattaforma.
 - `src/`, codice sorgente Python di PHOTO-CAT.
 - `LICENSE`, testo completo della licenza GPL-3.0.
@@ -112,6 +115,22 @@ Se non è disponibile un Python adatto, PHOTO-CAT usa un runtime privato sotto `
 PHOTO-CAT non modifica `PATH` in modo permanente, non aggiorna Python dell’utente, non disinstalla Python dell’utente e non installa pacchetti nel Python di sistema.
 
 Vedi [Runtime e Python](docs/Runtime-and-Python_IT.md) per i dettagli.
+
+## Uso da riga di comando
+
+Dopo l’installazione del pacchetto, la CLI unificata è disponibile come `photo-cat`.
+
+Comandi comuni:
+
+```bash
+photo-cat configure
+photo-cat run --config config.yaml
+photo-cat build-index --config config.yaml
+photo-cat query --config config.yaml
+photo-cat doctor
+```
+
+I launcher nella root restano il punto di ingresso consigliato per gli utenti locali non tecnici. La CLI è pensata per automazione, macchine remote e workflow riproducibili.
 
 ## Documentazione
 

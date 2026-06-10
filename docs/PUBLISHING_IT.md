@@ -72,13 +72,16 @@ Topic consigliati:
 3. Conferma che `LICENSE` contenga il testo completo della licenza GPL-3.0.
 4. Conferma che `pyproject.toml` dichiari `GPL-3.0-only`.
 5. Conferma che header SPDX e `REUSE.toml` siano aggiornati.
-6. Prepara le note di rilascio GitHub.
-7. Testa il flusso launcher su Windows.
-8. Testa il flusso launcher su macOS/Linux dove possibile.
-9. Testa catalogo e target di esempio.
-10. Conferma che cartelle generate, `.git/` e `docs/wiki/` siano escluse dall’archivio release.
-11. Crea un archivio release pulito.
-12. Pubblica la release GitHub.
+6. Esegui la suite di test automatici con `pytest`.
+7. Conferma che il workflow CI di GitHub Actions passi sulle versioni Python supportate.
+8. Prepara le note di rilascio GitHub.
+9. Testa il flusso launcher su Windows.
+10. Testa il flusso launcher su macOS/Linux dove possibile.
+11. Testa catalogo e target di esempio.
+12. Conferma che cartelle generate, `.git/` e `docs/wiki/` siano escluse dall’archivio release.
+13. Crea un archivio release pulito.
+14. Pubblica la release GitHub.
+15. Pubblica prima su TestPyPI, poi su PyPI dopo la verifica del pacchetto.
 
 ## Formato titolo release
 
@@ -86,10 +89,33 @@ Usa:
 
 `PHOTO-CAT vX.Y.Z`
 
+Esempio:
+
+`PHOTO-CAT v1.0.0`
+
 ## Formato asset release
 
 Nome asset release consigliato:
 
 `photo-cat-vX.Y.Z.zip`
 
+Esempio:
+
+`photo-cat-v1.0.0.zip`
+
 Uno ZIP con nome esplicito è più semplice per utenti non tecnici rispetto ai soli archivi automatici del codice sorgente di GitHub.
+
+
+## Pubblicazione pacchetto Python
+
+Il repository include un workflow GitHub Actions per creare e pubblicare il pacchetto Python.
+
+Flusso release consigliato:
+
+1. Conferma che la CI sia verde.
+2. Crea e pubblica su TestPyPI con il workflow manuale.
+3. Installa da TestPyPI in un ambiente pulito e fai uno smoke test della CLI.
+4. Pubblica la release GitHub.
+5. Pubblica su PyPI tramite il workflow di release o una dispatch manuale verso PyPI.
+
+Il workflow di pubblicazione è pensato per PyPI Trusted Publishing. Configura gli environment `testpypi` e `pypi` nel repository GitHub prima di usarlo.

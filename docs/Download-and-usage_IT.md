@@ -43,6 +43,20 @@ Su macOS, avviare il launcher dal Terminale evita problemi causati da file coman
 
 Dopo aver configurato l’esecuzione, clicca `Save + run` dalla GUI. PHOTO-CAT apre una console della pipeline e mostra le fasi correnti, gli indicatori di progresso e il percorso di output.
 
+## Interfaccia a riga di comando
+
+Dopo l’installazione del pacchetto, PHOTO-CAT fornisce anche una CLI unificata.
+
+```bash
+photo-cat configure
+photo-cat run --config config.yaml
+photo-cat build-index --config config.yaml
+photo-cat query --config config.yaml
+photo-cat doctor
+```
+
+Usa la CLI per esecuzioni da script, macchine remote, cluster o workflow in cui non è pratico aprire la GUI.
+
 ## Aggiornare PHOTO-CAT
 
 Per aggiornare un’installazione esistente, sostituisci i file del progetto con quelli della nuova release mantenendo i tuoi dati e le cartelle di output.
