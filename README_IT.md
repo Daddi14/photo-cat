@@ -130,7 +130,7 @@ photo-cat query --config config.yaml
 photo-cat doctor
 ```
 
-I launcher nella root restano il punto di ingresso consigliato per gli utenti locali non tecnici. La CLI è pensata per automazione, macchine remote e workflow riproducibili.
+I launcher nella root restano il punto di ingresso consigliato per gli utenti locali non tecnici. La CLI è pensata per automazione, macchine remote e workflow riproducibili. Il comando doctor supporta sia controlli di pacchetto sia controlli della cartella progetto.
 
 ## Documentazione
 

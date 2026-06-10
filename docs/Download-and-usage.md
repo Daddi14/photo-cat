@@ -57,6 +57,8 @@ photo-cat doctor
 
 Use the CLI for scripted runs, remote machines, clusters, or workflows where opening the GUI is not practical.
 
+`photo-cat doctor` can be used after a normal package install to check Python, Tkinter, PHOTO-CAT, and required dependencies. When run inside a release/source project folder, it also checks project context such as `config.yaml` and `VERSION`.
+
 ## Updating PHOTO-CAT
 
 To update an existing installation, replace the project files with the new release files while keeping your own data and output folders.

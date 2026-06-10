@@ -12,12 +12,7 @@ import sys
 from pathlib import Path
 
 
-PROJECT_DIR = Path(__file__).resolve().parents[2]
-VERSION_FILE = PROJECT_DIR / "VERSION"
-CONFIG_PATH = Path(os.environ.get("PHOTO_CAT_CONFIG", str(PROJECT_DIR / "config.yaml"))).resolve()
-VENV_DIR = PROJECT_DIR / ".venv"
-RUNTIME_DIR = PROJECT_DIR / ".runtime"
-
+PACKAGE_NAME = "photo-cat"
 
 REQUIRED_IMPORTS = [
     ("numpy", "NumPy"),
@@ -30,19 +25,79 @@ REQUIRED_IMPORTS = [
 ]
 
 
-def read_version() -> str:
-    try:
-        return VERSION_FILE.read_text(encoding="utf-8", errors="replace").strip() or "unknown"
-    except Exception:
-        return "unknown"
-
-
 def status_line(ok: bool, label: str, detail: str = "") -> None:
     prefix = "[ OK ]" if ok else "[FAIL]"
-    if detail:
+    if (detail):
         print(f"{prefix} {label}: {detail}")
     else:
         print(f"{prefix} {label}")
+
+
+def info_line(label: str, detail: str = "") -> None:
+    if (detail):
+        print(f"[INFO] {label}: {detail}")
+    else:
+        print(f"[INFO] {label}")
+
+
+def candidate_project_dirs() -> list[Path]:
+    candidates = [Path.cwd().resolve()]
+
+    try:
+        source_candidate = Path(__file__).resolve().parents[2]
+        candidates.append(source_candidate)
+    except IndexError:
+        pass
+
+    unique_candidates: list[Path] = []
+    for candidate in candidates:
+        if (candidate not in unique_candidates):
+            unique_candidates.append(candidate)
+
+    return unique_candidates
+
+
+def find_project_dir() -> Path | None:
+    """Find a PHOTO-CAT source/release folder when doctor is run from one."""
+    for candidate in candidate_project_dirs():
+        source_layout = ((candidate / "pyproject.toml").is_file() and (candidate / "src" / "photo_cat").is_dir())
+        release_layout = ((candidate / "VERSION").is_file() and (candidate / "config.yaml").is_file() and (candidate / "scripts").is_dir())
+
+        if (source_layout or release_layout):
+            return candidate.resolve()
+
+    return None
+
+
+def read_project_version(project_dir: Path | None) -> str | None:
+    if (project_dir is None):
+        return None
+
+    version_file = project_dir / "VERSION"
+    try:
+        version = version_file.read_text(encoding="utf-8", errors="replace").strip()
+    except Exception:
+        return None
+
+    return version or None
+
+
+def installed_package_version() -> str | None:
+    try:
+        return importlib.metadata.version(PACKAGE_NAME)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def resolve_config_path(project_dir: Path | None) -> tuple[Path | None, bool]:
+    config_from_env = os.environ.get("PHOTO_CAT_CONFIG")
+    if (config_from_env):
+        return Path(os.path.expanduser(config_from_env)).resolve(), True
+
+    if (project_dir is not None):
+        return (project_dir / "config.yaml").resolve(), False
+
+    return None, False
 
 
 def check_python_version() -> bool:
@@ -55,6 +110,7 @@ def check_python_version() -> bool:
 def check_tkinter() -> bool:
     try:
         import tkinter  # noqa: F401
+
         status_line(True, "Tkinter")
         return True
     except Exception as exc:
@@ -62,17 +118,20 @@ def check_tkinter() -> bool:
         return False
 
 
-def check_package_version() -> bool:
-    expected = read_version()
-    try:
-        installed = importlib.metadata.version("photo-cat")
-    except importlib.metadata.PackageNotFoundError:
+def check_package_version(project_dir: Path | None) -> bool:
+    installed = installed_package_version()
+    expected = read_project_version(project_dir)
+
+    if (installed is None):
         status_line(False, "PHOTO-CAT package", "not installed in this environment")
         return False
 
+    if (expected is None):
+        status_line(True, "PHOTO-CAT package", f"installed {installed}")
+        return True
+
     ok = (installed == expected)
-    detail = f"installed {installed}, expected {expected}"
-    status_line(ok, "PHOTO-CAT package", detail)
+    status_line(ok, "PHOTO-CAT package", f"installed {installed}, expected {expected}")
     return ok
 
 
@@ -90,45 +149,74 @@ def check_imports() -> bool:
     return all_ok
 
 
-def check_project_files() -> bool:
-    checks = [
-        ("Project folder", PROJECT_DIR.is_dir(), str(PROJECT_DIR)),
-        ("config.yaml", CONFIG_PATH.is_file(), str(CONFIG_PATH)),
-        ("VERSION", VERSION_FILE.is_file(), str(VERSION_FILE)),
-        (".venv", VENV_DIR.is_dir(), str(VENV_DIR)),
-    ]
+def check_project_context(project_dir: Path | None) -> bool:
+    config_path, explicit_config = resolve_config_path(project_dir)
 
-    runtime_detail = str(RUNTIME_DIR) if RUNTIME_DIR.exists() else "not present, only needed when no suitable system Python exists"
-    checks.append((".runtime", True, runtime_detail))
+    if (project_dir is None):
+        info_line("Project folder", "not checked in package-install mode")
 
-    all_ok = True
-    for label, ok, detail in checks:
-        status_line(ok, label, detail)
-        all_ok = all_ok and ok
+        if (config_path is None):
+            info_line("config.yaml", "not checked; pass --config when validating a run configuration")
+            info_line(".venv", "not checked in package-install mode")
+            info_line(".runtime", "not checked in package-install mode")
+            return True
+
+        ok = config_path.is_file()
+        status_line(ok, "config.yaml", str(config_path))
+        info_line(".venv", "not checked in package-install mode")
+        info_line(".runtime", "not checked in package-install mode")
+        return ok
+
+    status_line(True, "Project folder", str(project_dir))
+
+    version_file = project_dir / "VERSION"
+    version_ok = version_file.is_file()
+    status_line(version_ok, "VERSION", str(version_file))
+
+    all_ok = version_ok
+
+    if (config_path is not None):
+        config_ok = config_path.is_file()
+        label = "config.yaml" if (not explicit_config) else "config"
+        status_line(config_ok, label, str(config_path))
+        all_ok = all_ok and config_ok
+
+    venv_dir = project_dir / ".venv"
+    if (venv_dir.exists()):
+        status_line(venv_dir.is_dir(), ".venv", str(venv_dir))
+        all_ok = all_ok and venv_dir.is_dir()
+    else:
+        info_line(".venv", "not present; run a launcher to create the local environment")
+
+    runtime_dir = project_dir / ".runtime"
+    runtime_detail = str(runtime_dir) if runtime_dir.exists() else "not present; only needed when no suitable system Python exists"
+    info_line(".runtime", runtime_detail)
 
     return all_ok
 
 
 def main() -> int:
+    project_dir = find_project_dir()
+
     print("PHOTO-CAT environment check")
     print("=" * 72)
 
     checks = [
         check_python_version(),
         check_tkinter(),
-        check_package_version(),
+        check_package_version(project_dir),
         check_imports(),
-        check_project_files(),
+        check_project_context(project_dir),
     ]
 
     print("=" * 72)
 
-    if all(checks):
+    if (all(checks)):
         print("PHOTO-CAT environment looks ready.")
         return 0
 
     print("PHOTO-CAT environment check found issues.")
-    print("Run START_WINDOWS.bat or START_UNIX.sh again to repair the local environment.")
+    print("Review the failed checks above. If running from a release folder, run START_WINDOWS.bat or START_UNIX.sh again to repair the local environment.")
     return 1
 
 
