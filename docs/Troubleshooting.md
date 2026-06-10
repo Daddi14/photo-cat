@@ -45,3 +45,15 @@ Run the build stage again if files are missing, the catalogue changed, or the in
 ## Output path problems
 
 Make sure the configured output directory is writable and not inside a protected system folder.
+
+## `photo-cat doctor` reports missing project files after PyPI install
+
+When PHOTO-CAT is installed from PyPI, `photo-cat doctor` runs in package-install mode. In this mode, project files such as `config.yaml`, `VERSION`, `.venv/`, and `.runtime/` are not required next to the installed package.
+
+To validate a specific run configuration, pass it explicitly:
+
+```bash
+photo-cat doctor --config config.yaml
+```
+
+When `photo-cat doctor` is run from an extracted release/source folder, it also checks project context files such as `config.yaml` and `VERSION`.

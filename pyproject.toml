@@ -1,10 +1,14 @@
 [tool.poetry]
 name = "photo-cat"
-version = "1.0.0"
+version = "1.0.1"
 description = "A GUI-assisted photometric contamination analysis tool."
-authors = ["PHOTO-CAT contributors"]
+authors = ["Gabriele Galletta <gabriele.galletta@inaf.it>", "PHOTO-CAT contributors"]
 readme = "README.md"
 license = "GPL-3.0-only"
+homepage = "https://github.com/Daddi14/photo-cat"
+repository = "https://github.com/Daddi14/photo-cat"
+documentation = "https://github.com/Daddi14/photo-cat/tree/main/docs"
+keywords = ["astronomy", "photometry", "contamination", "gaia"]
 classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Programming Language :: Python :: 3",

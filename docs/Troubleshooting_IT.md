@@ -45,3 +45,15 @@ Esegui di nuovo la fase di build se mancano file, il catalogo è cambiato o la c
 ## Problemi con il percorso di output
 
 Assicurati che la cartella di output configurata sia scrivibile e non sia dentro una cartella di sistema protetta.
+
+## `photo-cat doctor` segnala file progetto mancanti dopo installazione da PyPI
+
+Quando PHOTO-CAT è installato da PyPI, `photo-cat doctor` viene eseguito in modalità pacchetto. In questa modalità, file progetto come `config.yaml`, `VERSION`, `.venv/` e `.runtime/` non sono richiesti accanto al pacchetto installato.
+
+Per validare una configurazione specifica, passala esplicitamente:
+
+```bash
+photo-cat doctor --config config.yaml
+```
+
+Quando `photo-cat doctor` viene eseguito da una cartella release/sorgente estratta, controlla anche i file di contesto del progetto come `config.yaml` e `VERSION`.

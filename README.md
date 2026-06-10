@@ -130,7 +130,7 @@ photo-cat query --config config.yaml
 photo-cat doctor
 ```
 
-The root launchers remain the recommended entry point for non-technical local users. The CLI is intended for automation, remote machines, and reproducible workflows.
+The root launchers remain the recommended entry point for non-technical local users. The CLI is intended for automation, remote machines, and reproducible workflows. The doctor command supports both package-install checks and project-folder checks.
 
 ## Documentation
 
