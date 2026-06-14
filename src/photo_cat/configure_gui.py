@@ -25,7 +25,7 @@ import yaml
 PACKAGE_DIR = Path(__file__).resolve().parent
 SRC_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = SRC_DIR.parent
-CONFIG_PATH = PROJECT_DIR / "config.yaml"
+CONFIG_PATH = Path(os.environ.get("PHOTO_CAT_CONFIG", str(PROJECT_DIR / "config.yaml"))).resolve()
 PROJECT_DISPLAY_NAME = "PHOTO-CAT - Photometric Contamination Analyzer Tool"
 PROJECT_SHORT_NAME = "PHOTO-CAT"
 

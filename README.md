@@ -14,7 +14,7 @@
 
 PHOTO-CAT builds a neighbour index from an astronomical catalogue and queries nearby sources that may contaminate selected photometric targets.
 
-[Download and usage](docs/Download-and-usage.md) · [Input data](docs/Input-data.md) · [Troubleshooting](docs/Troubleshooting.md)
+[Download and usage](docs/Download-and-usage.md) · [Command line](docs/Command-line.md) · [Input data](docs/Input-data.md) · [Troubleshooting](docs/Troubleshooting.md)
 
 ![Python](https://img.shields.io/badge/python-3.10--3.13-blue)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
@@ -51,7 +51,7 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Build a neighbour index from a photometric catalogue.
 - Query potential contaminating sources around selected targets.
 - Configure runs through a graphical interface.
-- Run the same workflow from a command-line interface for automation and remote systems.
+- Run the same workflow from a command-line interface for automation and remote systems, with direct overrides for every config value.
 - Use either a targets CSV or a manual list of source IDs.
 - Validate input files, column names, output folders, and index paths.
 - Keep dependencies isolated inside the project `.venv` folder.
@@ -125,12 +125,13 @@ Common commands:
 ```bash
 photo-cat configure
 photo-cat run --config config.yaml
-photo-cat build-index --config config.yaml
-photo-cat query --config config.yaml
+photo-cat run --config config.yaml --input-catalog data/catalog.csv --ra-column RAJ2000 --dec-column DEJ2000 --mag-column Gmag --field-of-view-arcsec 60 --delta-mag 4
+photo-cat build-index --config config.yaml --input-catalog data/catalog.csv --out-dir output/index
+photo-cat query --config config.yaml --index-dir output/index --targets-input data/targets.csv --field-of-view-arcsec 47 --delta-mag 5
 photo-cat doctor
 ```
 
-The root launchers remain the recommended entry point for non-technical local users. The CLI is intended for automation, remote machines, and reproducible workflows. The doctor command supports both package-install checks and project-folder checks.
+The root launchers remain the recommended entry point for non-technical local users. The CLI is intended for automation, remote machines, and reproducible workflows. It supports direct runtime overrides for every value in `config.yaml`; see [Command-line usage](docs/Command-line.md). The doctor command supports both package-install checks and project-folder checks.
 
 ## Documentation
 

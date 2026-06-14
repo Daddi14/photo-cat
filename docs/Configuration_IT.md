@@ -40,3 +40,16 @@ Usala quando l’indice esiste già e devi solo interrogare target o modificare 
 `Save + run` scrive le impostazioni correnti della GUI in `config.yaml`, poi avvia la pipeline in una console separata.
 
 La console della pipeline mostra il progresso e il percorso finale dell’output.
+
+
+## Override CLI
+
+Ogni valore in `config.yaml` può anche essere sovrascritto da riga di comando per una singola esecuzione.
+
+Esempio:
+
+```bash
+photo-cat run --config config.yaml --field-of-view-arcsec 60 --delta-mag 4
+```
+
+Il file YAML non viene modificato permanentemente. Per tutti i flag di override disponibili e gli esempi, vedi [Uso da riga di comando](Command-line_IT.md).

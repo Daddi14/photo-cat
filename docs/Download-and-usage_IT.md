@@ -55,7 +55,7 @@ photo-cat query --config config.yaml
 photo-cat doctor
 ```
 
-Usa la CLI per esecuzioni da script, macchine remote, cluster o workflow in cui non è pratico aprire la GUI.
+Usa la CLI per esecuzioni da script, macchine remote, cluster o workflow in cui non è pratico aprire la GUI. Per il riferimento completo degli override, vedi [Uso da riga di comando](Command-line_IT.md).
 
 `photo-cat doctor` può essere usato dopo una normale installazione del pacchetto per controllare Python, Tkinter, PHOTO-CAT e le dipendenze richieste. Quando viene eseguito dentro una cartella progetto/release, controlla anche il contesto del progetto come `config.yaml` e `VERSION`.
 

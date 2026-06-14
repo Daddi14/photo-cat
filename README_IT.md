@@ -14,7 +14,7 @@
 
 PHOTO-CAT crea un indice dei vicini a partire da un catalogo astronomico e interroga le sorgenti vicine che possono contaminare target fotometrici selezionati.
 
-[Download e utilizzo](docs/Download-and-usage_IT.md) · [Dati di input](docs/Input-data_IT.md) · [Risoluzione problemi](docs/Troubleshooting_IT.md)
+[Download e utilizzo](docs/Download-and-usage_IT.md) · [Riga di comando](docs/Command-line_IT.md) · [Dati di input](docs/Input-data_IT.md) · [Risoluzione problemi](docs/Troubleshooting_IT.md)
 
 ![Python](https://img.shields.io/badge/python-3.10--3.13-blue)
 ![Piattaforme](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
@@ -51,7 +51,7 @@ Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più com
 - Crea un indice dei vicini da un catalogo fotometrico.
 - Interroga sorgenti potenzialmente contaminanti attorno ai target selezionati.
 - Configura le esecuzioni tramite interfaccia grafica.
-- Esegui lo stesso workflow da una CLI per automazione e sistemi remoti.
+- Esegui lo stesso workflow da una CLI per automazione e sistemi remoti, con override diretti per ogni valore di configurazione.
 - Usa un CSV di target oppure una lista manuale di source ID.
 - Valida file di input, nomi delle colonne, cartelle di output e percorsi dell’indice.
 - Mantiene le dipendenze isolate nella cartella `.venv` del progetto.
@@ -125,12 +125,13 @@ Comandi comuni:
 ```bash
 photo-cat configure
 photo-cat run --config config.yaml
-photo-cat build-index --config config.yaml
-photo-cat query --config config.yaml
+photo-cat run --config config.yaml --input-catalog data/catalog.csv --ra-column RAJ2000 --dec-column DEJ2000 --mag-column Gmag --field-of-view-arcsec 60 --delta-mag 4
+photo-cat build-index --config config.yaml --input-catalog data/catalog.csv --out-dir output/index
+photo-cat query --config config.yaml --index-dir output/index --targets-input data/targets.csv --field-of-view-arcsec 47 --delta-mag 5
 photo-cat doctor
 ```
 
-I launcher nella root restano il punto di ingresso consigliato per gli utenti locali non tecnici. La CLI è pensata per automazione, macchine remote e workflow riproducibili. Il comando doctor supporta sia controlli di pacchetto sia controlli della cartella progetto.
+I launcher nella root restano il punto di ingresso consigliato per gli utenti locali non tecnici. La CLI è pensata per automazione, macchine remote e workflow riproducibili. Supporta override diretti di runtime per ogni valore di `config.yaml`; vedi [Uso da riga di comando](docs/Command-line_IT.md). Il comando doctor supporta sia controlli di pacchetto sia controlli della cartella progetto.
 
 ## Documentazione
 

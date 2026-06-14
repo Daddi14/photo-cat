@@ -40,3 +40,16 @@ Use this when the index already exists and you only need to query targets or adj
 `Save + run` writes the current GUI settings to `config.yaml`, then starts the pipeline in a separate console.
 
 The pipeline console shows progress and the final output path.
+
+
+## CLI overrides
+
+Every value in `config.yaml` can also be overridden from the command line for a single run.
+
+Example:
+
+```bash
+photo-cat run --config config.yaml --field-of-view-arcsec 60 --delta-mag 4
+```
+
+The YAML file is not permanently modified. For all available override flags and examples, see [Command-line usage](Command-line.md).
