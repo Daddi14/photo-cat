@@ -31,9 +31,10 @@ La pipeline runtime ha tre confini:
 
 I test sono raggruppati per scopo:
 
-- I **test di regressione** proteggono CLI, pipeline e comportamento dei risultati pubblici.
-- I **test unitari** verificano helper puri come validazione di percorsi/configurazione, conversioni di coordinate, risoluzione degli ID e calcoli di flusso.
+- I **test di regressione** (`@pytest.mark.regression`) proteggono CLI, pipeline e comportamento dei risultati pubblici.
+- I **test unitari** (`@pytest.mark.unit`) verificano helper puri come validazione di percorsi/configurazione, conversioni di coordinate, risoluzione degli ID e calcoli di flusso.
 - I **test di integrazione** usano il catalogo e i target di esempio inclusi per verificare insieme build e query.
+- I **report di coverage** individuano i percorsi non testati; guidano le priorità ma non sostituiscono le asserzioni sul comportamento.
 
 Gli input temporanei condivisi appartengono a `tests/conftest.py`. I test devono includere una docstring quando il risultato atteso dipende da una regola scientifica, da una convenzione numerica o da un comportamento di compatibilità non ovvio.
 

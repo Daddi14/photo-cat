@@ -207,6 +207,32 @@ def require_file(path_value: str | None, label: str) -> str | None:
     return path_value
 
 
+def validate_output_directory(path_value: str, label: str) -> str:
+    """Reject output paths that already point to a regular file."""
+    output_path = Path(path_value)
+
+    if (output_path.exists() and not output_path.is_dir()):
+        raise ValueError(
+            f"{label} must be a directory, but it points to an existing file:\n{output_path}\n\n"
+            "Choose a new output folder or remove/rename the conflicting file."
+        )
+
+    return str(output_path)
+
+
+def validate_output_filename(value: str, label: str) -> str:
+    """Require an output filename rather than a path outside the configured output folder."""
+    filename = require_text(value, label)
+
+    if (filename in {".", ".."} or "/" in filename or "\\" in filename):
+        raise ValueError(
+            f"{label} must be a filename only, not a path: {filename}\n"
+            "Use --out-dir/config out_dir to choose the folder."
+        )
+
+    return filename
+
+
 def column_name(columns: dict[str, Any], legacy_usecolumns: list[Any], key: str, index: int, default: str) -> str:
     """Resolve one catalogue column name from the modern mapping, legacy list, or default."""
     if (columns.get(key) is not None):
@@ -254,8 +280,11 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
 
     return BuildConfig(
         input_catalog=input_catalog,
-        out_dir=out_dir,
-        KDTREE_FILENAME=require_text(io.get("KDTREE_FILENAME"), "build_neighbors_index.io.KDTREE_FILENAME", "ckdtree.pkl"),
+        out_dir=validate_output_directory(out_dir, "build_neighbors_index.io.out_dir"),
+        KDTREE_FILENAME=validate_output_filename(
+            require_text(io.get("KDTREE_FILENAME"), "build_neighbors_index.io.KDTREE_FILENAME", "ckdtree.pkl"),
+            "build_neighbors_index.io.KDTREE_FILENAME",
+        ),
         use_dask=parse_bool(settings.get("use_dask"), "build_neighbors_index.settings.use_dask", True),
         calculate_separations=parse_bool(
             settings.get("calculate_separations"),

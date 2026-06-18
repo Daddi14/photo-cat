@@ -14,6 +14,7 @@ from photo_cat.query_contamination_from_index import (
 )
 
 
+@pytest.mark.unit
 def test_source_id_from_internal_id_handles_numeric_and_special_catalogue_ids() -> None:
     """Public results must preserve numeric IDs and original string identifiers."""
     real_ids = np.array([1001, -1], dtype=np.int64)
@@ -24,6 +25,7 @@ def test_source_id_from_internal_id_handles_numeric_and_special_catalogue_ids() 
     assert source_id_from_internal_id(3, real_ids, special_names) == ""
 
 
+@pytest.mark.unit
 def test_valid_neighbor_indices_discards_invalid_one_based_ids() -> None:
     """Corrupt or stale index entries must not read beyond catalogue array boundaries."""
     indices = valid_neighbor_indices(np.array([1, 3, 0, 4, -2]), number_of_sources=3)
@@ -31,6 +33,7 @@ def test_valid_neighbor_indices_discards_invalid_one_based_ids() -> None:
     assert indices.tolist() == [0, 2]
 
 
+@pytest.mark.unit
 def test_calculate_flux_fraction_extra_uses_pogson_flux_ratio() -> None:
     """A contaminant one magnitude fainter contributes 10**-0.4 of target flux."""
     result = calculate_flux_fraction_extra(

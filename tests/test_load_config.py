@@ -12,6 +12,7 @@ import pytest
 from photo_cat.load_config import BuildConfig, ExecutionConfig, QueryConfig, load_config, resolve_config_path
 
 
+@pytest.mark.unit
 def test_resolve_config_path_prefers_runtime_environment(write_config: Callable[[], Path], monkeypatch: pytest.MonkeyPatch) -> None:
     """A runtime config path must override the repository default without changing the checkout."""
     config_path = write_config()
@@ -20,6 +21,7 @@ def test_resolve_config_path_prefers_runtime_environment(write_config: Callable[
     assert resolve_config_path() == config_path.resolve()
 
 
+@pytest.mark.unit
 def test_load_build_config_resolves_paths(write_config: Callable[[], Path], tmp_path: Path) -> None:
     """Build config converts relative user paths to paths anchored at config.yaml."""
     config = load_config("build_neighbors_index", str(write_config()))
@@ -31,6 +33,7 @@ def test_load_build_config_resolves_paths(write_config: Callable[[], Path], tmp_
     assert config.usecolumns == ["source_id", "ra", "dec", "phot_g_mean_mag"]
 
 
+@pytest.mark.unit
 def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_path: Path) -> None:
     """Query and execution sections remain separate public configuration contracts."""
     config_path = write_config()
@@ -48,6 +51,7 @@ def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_
     assert execution.run_query is True
 
 
+@pytest.mark.unit
 def test_load_config_rejects_unknown_section(write_config: Callable[[], Path]) -> None:
     """Unknown config sections should fail before a pipeline stage starts."""
     with pytest.raises(ValueError, match="Unknown configuration section"):
@@ -63,6 +67,7 @@ def test_load_config_rejects_unknown_section(write_config: Callable[[], Path]) -
         ("field_of_view_arcsec: 0", "field_of_view_arcsec must be greater than 0.0"),
     ],
 )
+@pytest.mark.unit
 def test_load_config_rejects_invalid_setting_types_and_ranges(
     write_config: Callable[[str | None], Path],
     config_text: str,

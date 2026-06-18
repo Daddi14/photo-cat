@@ -43,6 +43,22 @@ photo-cat run --config configs/run.yaml --input-catalog data/catalog.csv
 
 `data/catalog.csv` is resolved from the folder where the command is executed.
 
+
+## Input and output errors
+
+CLI commands return a non-zero status and print an `ERROR:` message to standard error when a configuration file, catalogue, targets CSV, index folder, or output path is invalid.
+
+Examples:
+
+```bash
+photo-cat build-index --config missing.yaml
+photo-cat build-index --config config.yaml --input-catalog data/missing_catalog.csv
+```
+
+`out_dir` must be a directory. It cannot reuse the path of an existing file. `KDTREE_FILENAME` must be a filename only; set `--out-dir` to choose the output folder.
+
+For `photo-cat query`, the selected index folder must contain the completed index files. The query result path is created under `INDEX_DIR/output`; a file named `output` in that folder is treated as an error rather than being overwritten.
+
 ## Full pipeline with direct overrides
 
 ```bash

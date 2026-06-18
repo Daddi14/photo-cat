@@ -14,6 +14,7 @@ from photo_cat.build_neighbors_index import (
 )
 
 
+@pytest.mark.unit
 def test_neighbor_indices_without_self_preserves_neighbour_order() -> None:
     """KDTree self-matches must be removed without reordering actual neighbour positions."""
     indices = neighbor_indices_without_self([3, 7, 3, 9], target_index=3)
@@ -22,6 +23,7 @@ def test_neighbor_indices_without_self_preserves_neighbour_order() -> None:
     assert indices.tolist() == [7, 9]
 
 
+@pytest.mark.unit
 def test_calculate_neighbor_separations_arcsec_uses_unit_vectors() -> None:
     """A one-degree great-circle separation must remain approximately 3600 arcseconds."""
     coords = np.array([
@@ -34,6 +36,7 @@ def test_calculate_neighbor_separations_arcsec_uses_unit_vectors() -> None:
     assert separations[0] == pytest.approx(3600.0, rel=1e-8)
 
 
+@pytest.mark.unit
 def test_compute_chord_radius_is_positive_for_positive_angular_radius() -> None:
     """The spatial KDTree radius must be positive for a valid angular search radius."""
     assert compute_chord_radius(120.0) > 0.0

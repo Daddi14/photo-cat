@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
+import numpy as np
 import pytest
 
 
@@ -79,7 +81,7 @@ execution:
 
 
 @pytest.fixture
-def write_config(tmp_path: Path, config_text: str) -> callable:
+def write_config(tmp_path: Path, config_text: str) -> Callable[[str | None], Path]:
     """Return a helper that writes a config and the minimal input CSV files it references."""
     def _write_config(text: str | None = None) -> Path:
         (tmp_path / "catalog.csv").write_text(
@@ -101,3 +103,27 @@ def cli_config_text(config_text: str) -> str:
         "    columns:\n",
         "    usecolumns:\n      - source_id\n      - ra\n      - dec\n      - phot_g_mean_mag\n    columns:\n",
     )
+
+
+@pytest.fixture
+def write_minimal_index(tmp_path: Path) -> Callable[[], Path]:
+    """Return an isolated index directory with numeric and special source-ID mappings."""
+    def _write_minimal_index() -> Path:
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        np.save(index_dir / "offsets.npy", np.array([0, 0, 0, 0], dtype=np.int64))
+        np.array([], dtype=np.int64).tofile(index_dir / "neighbors_ids.bin")
+        np.save(index_dir / "ra.npy", np.array([10.0, 11.0, 12.0], dtype=np.float64))
+        np.save(index_dir / "dec.npy", np.array([20.0, 21.0, 22.0], dtype=np.float64))
+        np.save(index_dir / "phot_g_mean_mag.npy", np.array([10.0, 11.0, 12.0], dtype=np.float64))
+        np.save(index_dir / "real_ids_int.npy", np.array([1001, 1002, -1], dtype=np.int64))
+        np.savez_compressed(
+            index_dir / "special_ids.npz",
+            internal_ids=np.array([3], dtype=np.int64),
+            names=np.array(["HD 216608A"], dtype=object),
+        )
+
+        return index_dir
+
+    return _write_minimal_index

@@ -96,6 +96,7 @@ import csv
 import os
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict
 
 import numpy as np
@@ -158,6 +159,21 @@ def validate_target_column(csv_path: str, target_source_id_column: str) -> None:
 
 
 def validate_index_directory(index_dir: str) -> None:
+    index_path = Path(index_dir)
+
+    if (not index_path.exists()):
+        raise FileNotFoundError(
+            "Query index folder was not found.\n\n"
+            f"Selected index folder:\n{index_path}\n\n"
+            "Run the build step first, or select the correct Output/index folder."
+        )
+
+    if (not index_path.is_dir()):
+        raise ValueError(
+            "Query index folder must be a directory, but it points to a file.\n\n"
+            f"Selected path:\n{index_path}"
+        )
+
     required_files = [
         "offsets.npy",
         "neighbors_ids.bin",
@@ -167,16 +183,38 @@ def validate_index_directory(index_dir: str) -> None:
         "real_ids_int.npy",
         "special_ids.npz",
     ]
-    missing_files = [name for name in required_files if (not os.path.isfile(os.path.join(index_dir, name)))]
+    missing_files = [name for name in required_files if (not (index_path / name).is_file())]
 
     if (missing_files):
         raise FileNotFoundError(
             "Query index folder is not ready.\n\n"
-            f"Selected index folder:\n{index_dir}\n\n"
+            f"Selected index folder:\n{index_path}\n\n"
             "Missing required index files:\n"
             + "\n".join(f"- {name}" for name in missing_files)
             + "\n\nRun the build step first, or select the correct Output/index folder."
         )
+
+
+def ensure_result_output_directory(index_dir: str) -> Path:
+    """Create the query-result folder or report a direct path conflict."""
+    output_dir = Path(index_dir) / "output"
+
+    if (output_dir.exists() and not output_dir.is_dir()):
+        raise ValueError(
+            "Query results output path must be a directory, but it points to a file.\n\n"
+            f"Conflicting path:\n{output_dir}\n\n"
+            "Remove/rename the file or select a different index folder."
+        )
+
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise OSError(
+            f"Could not create the query results output folder: {output_dir}"
+        ) from error
+
+    return output_dir
+
 
 # --- Helper: create output JSON path ------------------------------------------
 def create_output_json_path(
@@ -203,11 +241,10 @@ def create_output_json_path(
     else:
         base_name = "manual_targets"
 
-    output_dir = os.path.join(INDEX_DIR, "output")
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = ensure_result_output_directory(INDEX_DIR)
 
     filename = f"{base_name}_FoV{int(field_of_view_arcsec)}_dmag{int(delta_mag)}_{timestamp}.json"
-    return os.path.join(output_dir, filename)
+    return str(output_dir / filename)
 
 
 def find_numeric_internal_id(
@@ -221,6 +258,48 @@ def find_numeric_internal_id(
         return int(numeric_internal_ids_sorted[position])
 
     return None
+
+
+def resolve_target_internal_ids(
+    targets_real: list[str],
+    name_to_internal_special: Dict[str, int],
+    numeric_real_ids_sorted: np.ndarray,
+    numeric_internal_ids_sorted: np.ndarray,
+) -> tuple[list[int], list[str], list[str]]:
+    """Resolve configured public IDs into internal IDs and classify rejected values."""
+    targets_internal: list[int] = []
+    invalid_targets: list[str] = []
+    missing_targets: list[str] = []
+
+    for target_id in targets_real:
+        if (target_id in name_to_internal_special):
+            targets_internal.append(name_to_internal_special[target_id])
+            continue
+
+        try:
+            numeric_target_id = int(target_id)
+        except (ValueError, TypeError):
+            invalid_targets.append(str(target_id))
+            continue
+
+        internal_id = find_numeric_internal_id(
+            numeric_real_ids_sorted,
+            numeric_internal_ids_sorted,
+            numeric_target_id,
+        )
+        if (internal_id is None):
+            missing_targets.append(str(target_id))
+        else:
+            targets_internal.append(internal_id)
+
+    return targets_internal, invalid_targets, missing_targets
+
+
+def target_id_preview(values: list[str]) -> str:
+    """Format a short deterministic preview for target-ID errors and warnings."""
+    preview = ", ".join(values[:8])
+    suffix = "" if (len(values) <= 8) else f", ... (+{len(values) - 8} more)"
+    return preview + suffix
 
 
 # --- Load catalog and targets (low-memory path) --------------------------------
@@ -338,57 +417,40 @@ def load_catalog_arrays(
         )
 
     # --- Resolve target internal IDs (special IDs first, then numeric) ---
-    targets_internal: list[int] = []
-    invalid_targets: list[str] = []
-    missing_targets: list[str] = []
-
-    for t in targets_real:
-        if t in name_to_internal_special:
-            targets_internal.append(name_to_internal_special[t])
-            continue
-
-        try:
-            val = int(t)
-        except (ValueError, TypeError):
-            invalid_targets.append(str(t))
-            continue
-
-        internal = find_numeric_internal_id(
-            numeric_real_ids_sorted,
-            numeric_internal_ids_sorted,
-            val,
-        )
-        if internal is not None:
-            targets_internal.append(internal)
-        else:
-            missing_targets.append(str(t))
+    targets_internal, invalid_targets, missing_targets = resolve_target_internal_ids(
+        targets_real,
+        name_to_internal_special,
+        numeric_real_ids_sorted,
+        numeric_internal_ids_sorted,
+    )
 
     if (invalid_targets):
-        preview = ", ".join(invalid_targets[:8])
-        suffix = "" if (len(invalid_targets) <= 8) else f", ... (+{len(invalid_targets) - 8} more)"
         logger.warning(
-            "Skipped %d target value(s) because they were neither numeric source_id values nor recognised special IDs. Examples: %s%s",
+            "Skipped %d target value(s) because they were neither numeric source_id values nor recognised special IDs. Examples: %s",
             len(invalid_targets),
-            preview,
-            suffix
+            target_id_preview(invalid_targets),
         )
 
     if (missing_targets):
-        preview = ", ".join(missing_targets[:8])
-        suffix = "" if (len(missing_targets) <= 8) else f", ... (+{len(missing_targets) - 8} more)"
         logger.warning(
-            "Skipped %d target value(s) because they were not found in the built index. Examples: %s%s",
+            "Skipped %d target value(s) because they were not found in the built index. Examples: %s",
             len(missing_targets),
-            preview,
-            suffix
+            target_id_preview(missing_targets),
         )
 
     logger.info("Loaded %d target(s) for analysis.", len(targets_internal))
 
     if (not targets_internal):
+        details: list[str] = []
+        if (invalid_targets):
+            details.append(f"Unrecognised target values: {target_id_preview(invalid_targets)}")
+        if (missing_targets):
+            details.append(f"Target values not found in the index: {target_id_preview(missing_targets)}")
+
         raise ValueError(
             "None of the configured targets were found in the built index.\n\n"
-            "Make sure Targets CSV/source_id values come from the same catalog used to build the index."
+            + "\n".join(details)
+            + "\n\nMake sure Targets CSV/source_id values come from the same catalog used to build the index."
         )
 
     return ra, dec, gmag, real_ids_int, internal_to_special_name, targets_internal
@@ -650,7 +712,7 @@ def save_results_to_json(results: list, json_path: str) -> str:
     json_path : str
         Path to the written JSON file.
     """
-    with open(json_path, "w") as f:
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     return json_path
 
