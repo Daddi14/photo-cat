@@ -19,27 +19,41 @@ I test di regressione devono proteggere queste interfacce mentre il codice inter
 
 ## Fasi della pipeline
 
-La pipeline runtime ha tre confini:
+La pipeline runtime ha cinque confini espliciti:
 
-1. **Configurazione**: interpreta YAML, risolve i percorsi e valida tipi e intervalli delle impostazioni.
-2. **Build/index**: carica il catalogo e crea l'indice dei vicini riprendibile.
-3. **Query/contaminazione**: legge l'indice e produce risultati di contaminazione per i target configurati.
+1. **Caricamento del documento di configurazione**: legge YAML e stabilisce la directory del file config senza creare cartelle runtime né aprire risorse scientifiche.
+2. **Configurazione derivata**: applica gli override CLI a una copia profonda della mappa, lasciando invariato il documento caricato.
+3. **Interpretazione e validazione runtime**: crea impostazioni tipizzate, valida file e directory e risolve percorsi nominati prima dell'esecuzione della fase.
+4. **Build/index**: carica il catalogo e crea l'indice dei vicini riprendibile.
+5. **Query/contaminazione**: valida i percorsi dell'indice, poi apre gli array e produce risultati di contaminazione per i target configurati.
 
-`config_and_run.py` è limitato all'orchestrazione della pipeline. Stabilisce quali fasi sono abilitate e invoca i moduli build e query; non esegue direttamente calcoli scientifici.
+`config_and_run.py` è limitato all'orchestrazione della pipeline. Stabilisce quali fasi sono abilitate e invoca i moduli build e query con un percorso config esplicito; non modifica la directory di lavoro del chiamante né esegue direttamente calcoli scientifici.
 
 ## Mappa delle responsabilità dei moduli
 
 | Modulo | Responsabilità attuale | Rischio per i contratti durante il refactoring |
 |---|---|---|
 | `path_policy.py` | Risolve i percorsi runtime non-GUI, valida i confini del filesystem e denomina i file dell’indice/query. | Regole per percorsi relativi, contenimento degli output e layout della directory dell’indice. |
-| `load_config.py` | Interpreta YAML e valida dataclass di configurazione tipizzate usando la politica dei percorsi condivisa. | Chiavi di configurazione, valori predefiniti, messaggi di validazione e percorsi relativi al file config. |
-| `cli.py` e `cli_overrides.py` | Interpretano i comandi CLI documentati e creano override runtime temporanei usando la politica dei percorsi condivisa. | Nomi dei comandi, opzioni, override relativi alla directory di lavoro, stati di uscita e convenzione `ERROR:`. |
-| `config_and_run.py` | Seleziona e invoca le fasi della pipeline abilitate. | Ordine build-prima-query e flag delle fasi. |
+| `load_config.py` | Carica documenti YAML isolati, interpreta impostazioni tipizzate e valida separatamente gli input runtime usando la politica dei percorsi condivisa. | Chiavi di configurazione, valori predefiniti, messaggi di validazione, percorsi relativi al file config e assenza di perdita di stato tra caricamenti. |
+| `cli.py` e `cli_overrides.py` | Interpretano i comandi CLI documentati, derivano config temporanee per gli override e circoscrivono lo stato d’ambiente della GUI legacy. | Nomi dei comandi, opzioni, override relativi alla directory di lavoro, stati di uscita, convenzione `ERROR:` e isolamento degli override. |
+| `config_and_run.py` | Seleziona le fasi abilitate e passa un unico percorso config esplicito ai processi figli. | Ordine build-prima-query, flag delle fasi e isolamento dell’ambiente/directory di lavoro del chiamante. |
 | `build_neighbors_index.py` | Carica cataloghi e crea l'indice dei vicini riutilizzabile. | Layout della directory dell'indice e convenzioni numeriche dei vicini. |
 | `query_contamination_from_index.py` | Legge un indice e scrive risultati JSON di contaminazione per target. | Campi JSON, gestione degli ID target e convenzioni di flusso/separazione. |
 | `doctor.py` | Riporta diagnostiche per pacchetto e progetto sorgente. | Comportamento diagnostico in modalità pacchetto installato e cartella progetto. |
 
 Il refactoring futuro dovrebbe iniziare estraendo una sola responsabilità focalizzata da un modulo, quindi proteggendo il confine pubblico circostante con test di regressione. La politica dei percorsi è ora separata dall’esecuzione runtime non-GUI: configurazione e CLI risolvono i percorsi rispetto a una directory base esplicita, mentre la query consuma `IndexPaths` nominati e validati senza ricostruire inline i nomi dei file dell’indice.
+
+## Confine del ciclo di vita della configurazione
+
+Lo stato della configurazione è separato intenzionalmente dall'esecuzione runtime:
+
+- `load_configuration_document()` legge una mappa YAML e registra la directory usata per i percorsi relativi al file config. Non crea cartelle, non apre array dell'indice e non modifica lo stato dell'ambiente di processo.
+- I lettori delle sezioni restituiscono copie profonde, quindi interpretare una sezione o derivare override CLI non può modificare un caricamento successivo.
+- `load_config(..., validate_runtime=False)` permette interpretazione e validazione tipizzata senza controllare file di input; la modalità runtime predefinita valida poi file richiesti e target di output prima dell'avvio.
+- Gli override CLI creano un YAML temporaneo solo quando serve per mantenere l'interfaccia file-based esistente dei moduli. Il valore `PHOTO_CAT_CONFIG` del processo padre non viene modificato.
+- I processi figli della pipeline ricevono la config selezionata attraverso una copia dell'ambiente. Il processo padre mantiene directory di lavoro e ambiente originali.
+
+Questo ciclo rende deterministici i comandi ripetuti nello stesso processo Python e mantiene la creazione delle risorse dopo i confini di interpretazione e validazione.
 
 ## Confine della politica dei percorsi
 
@@ -51,6 +65,17 @@ La risoluzione dei percorsi è separata intenzionalmente dall’esecuzione scien
 - Il modulo query valida un oggetto `IndexPaths` prima di aprire memory map o eseguire lavoro numerico.
 
 Questo rende le regole del filesystem testabili in modo indipendente ed evita di modificare la directory di lavoro del processo soltanto per interpretare un percorso.
+
+## Revisione delle responsabilità
+
+La revisione v1.6.0 applica le parti pratiche di SOLID senza aggiungere pattern solo per il loro nome:
+
+- **Responsabilità singola:** `load_config.py` ora separa caricamento del documento, interpretazione delle sezioni e validazione degli input runtime; `path_policy.py` gestisce la creazione esplicita delle directory runtime; la preparazione della query predispone percorsi validati prima dell'elaborazione numerica.
+- **Direzione esplicita delle dipendenze:** il codice CLI passa un percorso config ai moduli runtime. Il codice pipeline passa tale percorso solo agli ambienti dei processi figli, invece di dipendere da una modifica dell'ambiente del processo padre.
+- **Confine pubblico stabile:** build, query e diagnostica continuano a esporre gli stessi comandi documentati, chiavi di configurazione, layout dei risultati e convenzioni degli errori.
+- **Responsabilità ancora concentrate:** persistenza della GUI, ciclo checkpoint/output finale della build, interpretazione target/persistenza JSON della query e controlli operativi di installer/doctor restano i prossimi candidati per lavoro isolato.
+
+Strategy e Chain of Responsibility non sono ancora giustificati: il codice attuale ha una modalità build, una modalità query e un unico ciclo di validazione ordinato, non politiche intercambiabili.
 
 ## Mappa dei refactoring rimanenti
 
@@ -74,7 +99,7 @@ I test sono raggruppati per scopo:
 - I **test di integrazione** usano il catalogo e i target di esempio inclusi per verificare insieme build e query.
 - I **report di coverage** individuano i percorsi non testati; guidano le priorità ma non sostituiscono le asserzioni sul comportamento.
 
-Gli input temporanei condivisi appartengono a `tests/conftest.py`. Ogni test è classificato esplicitamente con `@pytest.mark.regression` o `@pytest.mark.unit`; la CI usa una gestione rigorosa dei marker. I test devono includere una docstring quando il risultato atteso dipende da una regola scientifica, da una convenzione numerica o da un comportamento di compatibilità non ovvio. Vedi [Workflow di sviluppo](Development_IT.md) e [Contratti pubblici](Public-Contracts_IT.md) per le regole rivolte ai contributori.
+Gli input temporanei condivisi appartengono a `tests/conftest.py`. I confini del ciclo di vita della configurazione e dello stato di processo sono coperti da `tests/test_configuration_lifecycle.py` e `tests/test_runtime_boundaries.py`. Ogni test è classificato esplicitamente con `@pytest.mark.regression` o `@pytest.mark.unit`; la CI usa una gestione rigorosa dei marker. I test devono includere una docstring quando il risultato atteso dipende da una regola scientifica, da una convenzione numerica o da un comportamento di compatibilità non ovvio. Vedi [Workflow di sviluppo](Development_IT.md) e [Contratti pubblici](Public-Contracts_IT.md) per le regole rivolte ai contributori.
 
 ## Indicazioni per il refactoring
 

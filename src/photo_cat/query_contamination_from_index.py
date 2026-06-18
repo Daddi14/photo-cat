@@ -96,6 +96,7 @@ import csv
 import os
 import json
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Optional, Dict
 
 import numpy as np
@@ -104,7 +105,7 @@ import pandas as pd
 from .target_result import TargetResult
 from .contaminant import Contaminant
 from .logger_setup import get_logger
-from .load_config import load_config
+from .load_config import QueryConfig, load_config
 from .pipeline_display import ActivityBar, progress_bar
 from .path_policy import (
     IndexPaths,
@@ -164,9 +165,30 @@ def validate_target_column(csv_path: str, target_source_id_column: str) -> None:
 
 
 
+@dataclass(frozen=True)
+class QueryRuntimePlan:
+    """Validated query paths and output location prepared before numerical work begins."""
+
+    config: QueryConfig
+    paths: IndexPaths
+    output_json: Path
+
+
 def validate_index_directory(index_dir: str) -> IndexPaths:
     """Validate an index directory and return its named runtime paths."""
     return validate_index_paths(index_paths(index_dir))
+
+
+def prepare_query_runtime(config: QueryConfig) -> QueryRuntimePlan:
+    """Validate query filesystem inputs before opening arrays or memory maps."""
+    paths = validate_index_directory(config.INDEX_DIR)
+    output_json = query_output_json_path(
+        paths,
+        config.TARGETS_INPUT,
+        config.field_of_view_arcsec,
+        config.delta_mag,
+    )
+    return QueryRuntimePlan(config, paths, output_json)
 
 
 def ensure_result_output_directory(index_dir: str) -> Path:
@@ -668,21 +690,15 @@ def save_results_to_json(results: list, json_path: str) -> str:
 # MAIN EXECUTION
 # ============================================================
 
-def main() -> int:
-    # ---------------- CONFIG IMPORT ----------------
-    config_query = load_config("query_contamination_from_index")
+def main(config_path: str | Path | None = None) -> int:
+    """Run a contamination query after configuration and runtime-path validation succeed."""
+    config_query = load_config("query_contamination_from_index", config_path)
+    if (not isinstance(config_query, QueryConfig)):
+        raise RuntimeError("Failed to load query configuration.")
 
-    paths = validate_index_directory(config_query.INDEX_DIR)
-
-    # ---------------- OUTPUT PATH (JSON ONLY) ------
-    OUTPUT_JSON = str(
-        query_output_json_path(
-            paths,
-            config_query.TARGETS_INPUT,
-            config_query.field_of_view_arcsec,
-            config_query.delta_mag,
-        )
-    )
+    runtime_plan = prepare_query_runtime(config_query)
+    paths = runtime_plan.paths
+    output_json = str(runtime_plan.output_json)
 
     # ---------------- LOAD INDEX DATA --------------
     logger.info("Loading index data...")
@@ -728,7 +744,7 @@ def main() -> int:
 
     # ---------------- SAVE RESULTS -----------------
     with ActivityBar("[saving JSON results]"):
-        json_path = save_results_to_json(results, OUTPUT_JSON)
+        json_path = save_results_to_json(results, output_json)
 
     targets_with_contaminants = sum(r["num_contaminants"] > 0 for r in results)
     targets_without_contaminants = sum(r["num_contaminants"] == 0 for r in results)

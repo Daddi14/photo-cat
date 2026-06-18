@@ -7,6 +7,8 @@ PHOTO-CAT uses a standard Python `src/` package layout.
 - Classes use `PascalCase`.
 - `cli.py` provides the unified `photo-cat` command-line interface.
 - `path_policy.py` owns non-GUI runtime path resolution, filesystem validation, and index/query path naming.
+- `load_config.py` owns isolated configuration documents, typed parsing, and runtime-input validation boundaries.
+- `cli_overrides.py` derives disposable override configs without changing the base mapping or parent process environment.
 - Developer entry points are defined in `pyproject.toml`.
 - End-user launchers remain in the project root.
 

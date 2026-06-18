@@ -105,6 +105,18 @@ def validate_directory_target(path: Path, label: str) -> Path:
     return path
 
 
+def ensure_directory(path: str | Path, label: str) -> Path:
+    """Create a validated runtime directory after configuration parsing has completed."""
+    directory = validate_directory_target(Path(path), label)
+
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise OSError(f"Could not create {label}: {directory}") from error
+
+    return directory
+
+
 def validate_filename_only(value: str, label: str) -> str:
     """Require a child filename instead of a path that could escape its folder."""
     filename = str(value).strip()
@@ -173,14 +185,7 @@ def ensure_query_output_directory(paths: IndexPaths) -> Path:
             "Remove/rename the file or select a different index folder."
         )
 
-    try:
-        paths.output_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as error:
-        raise OSError(
-            f"Could not create the query results output folder: {paths.output_dir}"
-        ) from error
-
-    return paths.output_dir
+    return ensure_directory(paths.output_dir, "query results output folder")
 
 
 def query_output_json_path(

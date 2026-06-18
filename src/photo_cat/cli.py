@@ -6,10 +6,13 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import sys
+from contextlib import contextmanager
 from importlib import import_module
 from pathlib import Path
+from typing import Iterator
 
 from .cli_overrides import RuntimeConfigOverride, collect_overrides
 from .path_policy import resolve_user_path
@@ -34,19 +37,37 @@ def resolve_cli_config(config_path: str | None) -> Path | None:
     return resolve_user_path(config_path, Path.cwd())
 
 
-def invoke_module_main(module_name: str) -> int:
-    """Import a PHOTO-CAT stage module and execute its public ``main`` function."""
+@contextmanager
+def scoped_config_environment(config_path: Path | None) -> Iterator[None]:
+    """Temporarily expose a config path only for legacy GUI module initialization."""
+    previous_value = os.environ.get("PHOTO_CAT_CONFIG")
+
+    try:
+        if (config_path is None):
+            os.environ.pop("PHOTO_CAT_CONFIG", None)
+        else:
+            os.environ["PHOTO_CAT_CONFIG"] = str(config_path)
+        yield
+    finally:
+        if (previous_value is None):
+            os.environ.pop("PHOTO_CAT_CONFIG", None)
+        else:
+            os.environ["PHOTO_CAT_CONFIG"] = previous_value
+
+
+def invoke_module_main(module_name: str, config_path: Path | None) -> int:
+    """Import one CLI runtime module and pass its config path without global state."""
     module = import_module(f".{module_name}", package=__package__)
-    return int(module.main() or 0)
+    return int(module.main(config_path) or 0)
 
 
 def run_module_with_runtime_config(args: argparse.Namespace, module_name: str) -> int:
-    """Execute one CLI stage with an optional temporary configuration override file."""
+    """Execute one CLI stage with a disposable derived configuration when required."""
     config_path = resolve_cli_config(args.config)
     overrides = collect_overrides(args)
 
-    with RuntimeConfigOverride(config_path, overrides):
-        return invoke_module_main(module_name)
+    with RuntimeConfigOverride(config_path, overrides) as runtime_config_path:
+        return invoke_module_main(module_name, runtime_config_path)
 
 
 def run_pipeline(args: argparse.Namespace) -> int:
@@ -65,26 +86,27 @@ def run_query(args: argparse.Namespace) -> int:
 
 
 def run_configure(args: argparse.Namespace) -> int:
+    """Run the legacy GUI inside a scoped environment without leaking config state."""
     config_path = resolve_cli_config(args.config)
-    if (config_path is not None):
-        os.environ["PHOTO_CAT_CONFIG"] = str(config_path)
 
-    from . import configure_gui
+    with scoped_config_environment(config_path):
+        from . import configure_gui
 
-    return configure_gui.main()
+        configure_gui = importlib.reload(configure_gui)
+        return int(configure_gui.main() or 0)
 
 
 def run_doctor(args: argparse.Namespace) -> int:
+    """Run diagnostics with an explicit optional config path rather than an env mutation."""
     config_path = resolve_cli_config(args.config)
-    if (config_path is not None):
-        os.environ["PHOTO_CAT_CONFIG"] = str(config_path)
 
     from . import doctor
 
-    return doctor.main()
+    return int(doctor.main(config_path) or 0)
 
 
 def add_build_overrides(parser: argparse.ArgumentParser) -> None:
+    """Register documented build/index CLI overrides."""
     build_group = parser.add_argument_group("build/index overrides")
     build_group.add_argument("--input-catalog", help="catalogue CSV path")
     build_group.add_argument("--out-dir", help="output/index directory for the build step")
@@ -102,6 +124,7 @@ def add_build_overrides(parser: argparse.ArgumentParser) -> None:
 
 
 def add_query_overrides(parser: argparse.ArgumentParser) -> None:
+    """Register documented query/contamination CLI overrides."""
     query_group = parser.add_argument_group("query/contamination overrides")
     query_group.add_argument("--index-dir", help="existing output/index directory used by the query step")
     query_group.add_argument("--targets-input", help="targets CSV path")
@@ -113,6 +136,7 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
 
 
 def add_execution_overrides(parser: argparse.ArgumentParser) -> None:
+    """Register documented stage-selection CLI overrides."""
     execution_group = parser.add_argument_group("execution overrides")
     execution_group.add_argument("--run-build", dest="run_build", action=argparse.BooleanOptionalAction, default=None, help="enable or disable the build stage")
     execution_group.add_argument("--run-query", dest="run_query", action=argparse.BooleanOptionalAction, default=None, help="enable or disable the query stage")
@@ -120,12 +144,14 @@ def add_execution_overrides(parser: argparse.ArgumentParser) -> None:
 
 
 def add_all_overrides(parser: argparse.ArgumentParser) -> None:
+    """Register every override accepted by the full pipeline command."""
     add_build_overrides(parser)
     add_query_overrides(parser)
     add_execution_overrides(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the public PHOTO-CAT command parser."""
     parser = argparse.ArgumentParser(
         prog="photo-cat",
         description="PHOTO-CAT photometric contamination analysis tools.",

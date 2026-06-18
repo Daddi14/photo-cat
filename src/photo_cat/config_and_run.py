@@ -92,14 +92,17 @@ def color(text: str, style: str) -> str:
 
 
 def write_rule(style: str = Style.CYAN) -> None:
+    """Write one visual rule in terminal output."""
     print(color("=" * RULE_WIDTH, style))
 
 
 def write_soft_rule() -> None:
+    """Write one subdued terminal rule."""
     print(color("-" * RULE_WIDTH, Style.GRAY))
 
 
 def write_info_line(label: str, value: object) -> None:
+    """Write one aligned pipeline-information line."""
     print(f"  {label:<{INFO_LABEL_WIDTH}}: {value}")
 
 
@@ -116,16 +119,19 @@ def write_header(title: str, config_path: Path) -> None:
 
 
 def write_step(index: int, total: int, message: str) -> None:
+    """Write a numbered pipeline-stage heading."""
     print()
     print(color(f"Step {index} of {total} - {message}", Style.CYAN))
     write_soft_rule()
 
 
 def write_success(message: str) -> None:
+    """Write a successful stage message."""
     print(color(message, Style.GREEN))
 
 
 def write_success_summary() -> None:
+    """Write the pipeline completion summary."""
     print()
     write_rule(Style.GREEN)
     print(color("PHOTO-CAT pipeline is complete.", Style.BOLD + Style.GREEN))
@@ -134,15 +140,20 @@ def write_success_summary() -> None:
     print()
 
 
-def compact_environment() -> dict[str, str]:
-    """Build a child-process environment for module stage execution."""
+def compact_environment(config_path: Path | None = None) -> dict[str, str]:
+    """Build a child-process environment without mutating the parent process."""
     env = {**os.environ}
     env.pop("NO_COLOR", None)
     env.setdefault("PHOTO_CAT_COMPACT_LOG", "1")
     existing_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = str(SRC_DIR) if (not existing_pythonpath) else str(SRC_DIR) + os.pathsep + existing_pythonpath
+
+    if (config_path is not None):
+        env["PHOTO_CAT_CONFIG"] = str(config_path)
+
     if (os.name == "nt"):
         env.setdefault("PHOTO_CAT_FORCE_COLOR", "1")
+
     return env
 
 
@@ -159,8 +170,13 @@ def resolve_pipeline_stages(config: ExecutionConfig) -> list[PipelineStage]:
     return stages
 
 
-def run_stage(stage: PipelineStage, step_index: int, step_total: int) -> None:
-    """Execute exactly one pipeline stage in a child Python process."""
+def run_stage(
+    stage: PipelineStage,
+    step_index: int,
+    step_total: int,
+    config_path: Path | None = None,
+) -> None:
+    """Execute one stage in a child process with an explicit configuration context."""
     script_path = PACKAGE_DIR / f"{stage.module_name}.py"
     if (not script_path.is_file()):
         raise FileNotFoundError(f"Required script was not found: {script_path}")
@@ -171,7 +187,7 @@ def run_stage(stage: PipelineStage, step_index: int, step_total: int) -> None:
         [sys.executable, "-m", f"photo_cat.{stage.module_name}"],
         check=False,
         cwd=PROJECT_DIR,
-        env=compact_environment(),
+        env=compact_environment(config_path),
     )
 
     if (result.returncode != 0):
@@ -184,31 +200,41 @@ def run_stage(stage: PipelineStage, step_index: int, step_total: int) -> None:
     write_success(f"Completed: {stage.activity_label}")
 
 
-def run_pipeline_stages(stages: list[PipelineStage], runner: Callable[[PipelineStage, int, int], None] = run_stage) -> None:
+def run_pipeline_stages(
+    stages: list[PipelineStage],
+    runner: Callable[[PipelineStage, int, int], None] = run_stage,
+) -> None:
     """Run an already-resolved pipeline plan with an injectable stage runner."""
     total = len(stages)
     for index, stage in enumerate(stages, start=1):
         runner(stage, index, total)
 
 
-def main() -> int:
-    """Load the execution plan, then orchestrate build and query stages."""
-    enable_windows_ansi()
-    os.chdir(PROJECT_DIR)
+def run_configured_pipeline(stages: list[PipelineStage], config_path: Path) -> None:
+    """Run stages while scoping the resolved config path to child process environments."""
+    run_pipeline_stages(
+        stages,
+        lambda stage, index, total: run_stage(stage, index, total, config_path),
+    )
 
-    config_path = resolve_config_path()
-    execution_config = load_config(EXECUTION_SECTION)
+
+def main(config_path: str | Path | None = None) -> int:
+    """Load an execution plan and orchestrate stages without changing process cwd or env."""
+    enable_windows_ansi()
+
+    resolved_config_path = resolve_config_path(config_path)
+    execution_config = load_config(EXECUTION_SECTION, resolved_config_path)
     if (not isinstance(execution_config, ExecutionConfig)):
         raise RuntimeError("Failed to load execution configuration.")
 
     stages = resolve_pipeline_stages(execution_config)
-    write_header("PHOTO-CAT - Pipeline", config_path)
+    write_header("PHOTO-CAT - Pipeline", resolved_config_path)
 
     if (not stages):
         logger.warning("Both run_build and run_query are false. Nothing to do.")
         return 0
 
-    run_pipeline_stages(stages)
+    run_configured_pipeline(stages, resolved_config_path)
     write_success_summary()
     return 0
 

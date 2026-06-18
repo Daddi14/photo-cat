@@ -42,6 +42,9 @@ Documented keys inside these sections, relative-path behaviour, and validation r
 - An explicit CLI `--config` path and direct CLI path overrides resolve relative to the working directory where `photo-cat` is invoked.
 - Query result files are created only under `INDEX_DIR/output`; a file occupying that path is a validation error.
 - Index directory validation happens before numerical query execution opens index arrays or memory maps.
+- Reading or validating a configuration must not create output directories, change the caller working directory, or permanently modify `PHOTO_CAT_CONFIG`.
+- Direct CLI overrides are derived for one command only and do not rewrite the source `config.yaml`.
+- Pipeline child processes receive the selected config explicitly; repeated commands in one process must not inherit an earlier override.
 
 ## Build-index outputs
 

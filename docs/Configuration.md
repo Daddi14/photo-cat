@@ -58,4 +58,4 @@ Example:
 photo-cat run --config config.yaml --field-of-view-arcsec 60 --delta-mag 4
 ```
 
-The YAML file is not permanently modified. For all available override flags and examples, see [Command-line usage](Command-line.md).
+The YAML file is not permanently modified. CLI overrides are derived for one command, while the original loaded configuration remains unchanged. Configuration parsing and validation do not create output folders; build and query runtime resources are created only after validation succeeds. For all available override flags and examples, see [Command-line usage](Command-line.md).

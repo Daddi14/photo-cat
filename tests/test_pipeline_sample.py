@@ -55,15 +55,11 @@ execution:
 def test_sample_pipeline_builds_index_and_queries_expected_results(
     tmp_path: Path,
     sample_inputs,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Protect public scientific output while internal build/query functions are refactored."""
     config_path = write_pipeline_config(tmp_path, sample_inputs)
-    monkeypatch.setenv("PHOTO_CAT_CONFIG", str(config_path))
-    monkeypatch.setenv("PHOTO_CAT_COMPACT_LOG", "1")
-
-    assert build_neighbors_index.main() == 0
-    assert query_contamination_from_index.main() == 0
+    assert build_neighbors_index.main(config_path) == 0
+    assert query_contamination_from_index.main(config_path) == 0
 
     result_files = sorted((tmp_path / "output" / "output").glob("*.json"))
     assert len(result_files) == 1

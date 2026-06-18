@@ -89,7 +89,14 @@ def installed_package_version() -> str | None:
         return None
 
 
-def resolve_config_path(project_dir: Path | None) -> tuple[Path | None, bool]:
+def resolve_config_path(
+    project_dir: Path | None,
+    explicit_config_path: str | Path | None = None,
+) -> tuple[Path | None, bool]:
+    """Resolve explicit, environment, and project-local config paths in that order."""
+    if (explicit_config_path is not None):
+        return Path(os.path.expanduser(str(explicit_config_path))).resolve(), True
+
     config_from_env = os.environ.get("PHOTO_CAT_CONFIG")
     if (config_from_env):
         return Path(os.path.expanduser(config_from_env)).resolve(), True
@@ -149,8 +156,9 @@ def check_imports() -> bool:
     return all_ok
 
 
-def check_project_context(project_dir: Path | None) -> bool:
-    config_path, explicit_config = resolve_config_path(project_dir)
+def check_project_context(project_dir: Path | None, explicit_config_path: str | Path | None = None) -> bool:
+    """Check project resources with an explicit config selection when supplied."""
+    config_path, explicit_config = resolve_config_path(project_dir, explicit_config_path)
 
     if (project_dir is None):
         info_line("Project folder", "not checked in package-install mode")
@@ -195,7 +203,8 @@ def check_project_context(project_dir: Path | None) -> bool:
     return all_ok
 
 
-def main() -> int:
+def main(config_path: str | Path | None = None) -> int:
+    """Run diagnostics without requiring callers to mutate PHOTO_CAT_CONFIG."""
     project_dir = find_project_dir()
 
     print("PHOTO-CAT environment check")
@@ -206,7 +215,7 @@ def main() -> int:
         check_tkinter(),
         check_package_version(project_dir),
         check_imports(),
-        check_project_context(project_dir),
+        check_project_context(project_dir, config_path),
     ]
 
     print("=" * 72)
