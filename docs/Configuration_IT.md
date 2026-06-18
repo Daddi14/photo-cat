@@ -42,6 +42,12 @@ Usala quando l’indice esiste già e devi solo interrogare target o modificare 
 La console della pipeline mostra il progresso e il percorso finale dell’output.
 
 
+## Validazione prima dell’elaborazione
+
+Prima di avviare una build o una query costosa, PHOTO-CAT valida la struttura della configurazione e i tipi delle principali impostazioni. I raggi di ricerca e il campo visivo devono essere positivi, le dimensioni di chunk e buffer devono essere interi positivi e le impostazioni booleane devono essere true o false.
+
+I percorsi dei file e le intestazioni CSV vengono poi controllati dalla fase build o query interessata, così il messaggio di errore può identificare l’input coinvolto.
+
 ## Override CLI
 
 Ogni valore in `config.yaml` può anche essere sovrascritto da riga di comando per una singola esecuzione.

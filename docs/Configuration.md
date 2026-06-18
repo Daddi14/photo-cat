@@ -42,6 +42,12 @@ Use this when the index already exists and you only need to query targets or adj
 The pipeline console shows progress and the final output path.
 
 
+## Validation before processing
+
+Before PHOTO-CAT starts an expensive build or query, it validates the configuration structure and the main setting types. Search radii and fields of view must be positive, chunk and buffer sizes must be positive integers, and boolean settings must be true or false.
+
+File paths and CSV headers are then checked by the relevant build or query stage so the error message can identify the affected input.
+
 ## CLI overrides
 
 Every value in `config.yaml` can also be overridden from the command line for a single run.

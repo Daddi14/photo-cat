@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
-"""
-Run the full photometric contamination pipeline from config.yaml.
+"""Run the configurable PHOTO-CAT build and query pipeline."""
 
-Pipeline:
-  1. build_neighbors_index.py
-  2. query_contamination_from_index.py
-"""
+from __future__ import annotations
 
 import ctypes
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
-import yaml
-
+from .load_config import EXECUTION_SECTION, ExecutionConfig, load_config, resolve_config_path
 from .logger_setup import get_logger
 
 
@@ -24,7 +21,6 @@ logger = get_logger(__name__)
 PACKAGE_DIR = Path(__file__).resolve().parent
 SRC_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = SRC_DIR.parent
-CONFIG_PATH = Path(os.environ.get("PHOTO_CAT_CONFIG", str(PROJECT_DIR / "config.yaml"))).resolve()
 VERSION_FILE = PROJECT_DIR / "VERSION"
 RULE_WIDTH = 72
 INFO_LABEL_WIDTH = 18
@@ -33,6 +29,19 @@ try:
     PROGRAM_VERSION = VERSION_FILE.read_text(encoding="utf-8", errors="replace").strip() or "unknown"
 except Exception:
     PROGRAM_VERSION = "unknown"
+
+
+@dataclass(frozen=True)
+class PipelineStage:
+    """One public pipeline stage with its module and display labels."""
+
+    module_name: str
+    title: str
+    activity_label: str
+
+
+BUILD_STAGE = PipelineStage("build_neighbors_index", "Build neighbour index", "Build neighbour index")
+QUERY_STAGE = PipelineStage("query_contamination_from_index", "Query contamination", "Query contamination")
 
 
 class Style:
@@ -48,6 +57,7 @@ class Style:
 
 
 def enable_windows_ansi() -> None:
+    """Enable ANSI console formatting on supported Windows terminals."""
     if (os.name != "nt"):
         return
 
@@ -63,6 +73,7 @@ def enable_windows_ansi() -> None:
 
 
 def supports_color() -> bool:
+    """Return whether this invocation should emit ANSI colour codes."""
     if (os.environ.get("NO_COLOR")):
         return False
 
@@ -73,6 +84,7 @@ USE_COLOR = supports_color()
 
 
 def color(text: str, style: str) -> str:
+    """Apply a terminal style only when colour output is supported."""
     if (not USE_COLOR):
         return text
 
@@ -91,14 +103,15 @@ def write_info_line(label: str, value: object) -> None:
     print(f"  {label:<{INFO_LABEL_WIDTH}}: {value}")
 
 
-def write_header(title: str) -> None:
+def write_header(title: str, config_path: Path) -> None:
+    """Print the pipeline header without loading or mutating configuration."""
     write_rule(Style.CYAN)
     print(color(title, Style.BOLD + Style.CYAN))
     write_rule(Style.CYAN)
     print()
     write_info_line("Version", PROGRAM_VERSION)
     write_info_line("Project folder", PROJECT_DIR)
-    write_info_line("Configuration", CONFIG_PATH)
+    write_info_line("Configuration", config_path)
     print()
 
 
@@ -121,7 +134,8 @@ def write_success_summary() -> None:
     print()
 
 
-def compact_environment() -> dict:
+def compact_environment() -> dict[str, str]:
+    """Build a child-process environment for module stage execution."""
     env = {**os.environ}
     env.pop("NO_COLOR", None)
     env.setdefault("PHOTO_CAT_COMPACT_LOG", "1")
@@ -132,26 +146,29 @@ def compact_environment() -> dict:
     return env
 
 
-def load_execution_config() -> dict:
-    if (not CONFIG_PATH.is_file()):
-        raise FileNotFoundError(f"config.yaml was not found here: {CONFIG_PATH}")
+def resolve_pipeline_stages(config: ExecutionConfig) -> list[PipelineStage]:
+    """Translate execution configuration into the ordered pipeline plan."""
+    stages: list[PipelineStage] = []
 
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        config = (yaml.safe_load(f) or {})
+    if (config.run_build):
+        stages.append(BUILD_STAGE)
 
-    return (config.get("execution", {}) or {})
+    if (config.run_query):
+        stages.append(QUERY_STAGE)
+
+    return stages
 
 
-def run_step(module_name: str, step_index: int, step_total: int, step_title: str, activity_label: str) -> None:
-    script_path = PACKAGE_DIR / f"{module_name}.py"
-
+def run_stage(stage: PipelineStage, step_index: int, step_total: int) -> None:
+    """Execute exactly one pipeline stage in a child Python process."""
+    script_path = PACKAGE_DIR / f"{stage.module_name}.py"
     if (not script_path.is_file()):
         raise FileNotFoundError(f"Required script was not found: {script_path}")
 
-    write_step(step_index, step_total, step_title)
+    write_step(step_index, step_total, stage.title)
 
     result = subprocess.run(
-        [sys.executable, "-m", f"photo_cat.{module_name}"],
+        [sys.executable, "-m", f"photo_cat.{stage.module_name}"],
         check=False,
         cwd=PROJECT_DIR,
         env=compact_environment(),
@@ -159,50 +176,39 @@ def run_step(module_name: str, step_index: int, step_total: int, step_title: str
 
     if (result.returncode != 0):
         raise RuntimeError(
-            f"{module_name}.py failed.\n"
+            f"{stage.module_name}.py failed.\n"
             "Read the error message above, fix the configuration in the GUI, then run again."
         )
 
     print()
-    write_success(f"Completed: {activity_label}")
+    write_success(f"Completed: {stage.activity_label}")
+
+
+def run_pipeline_stages(stages: list[PipelineStage], runner: Callable[[PipelineStage, int, int], None] = run_stage) -> None:
+    """Run an already-resolved pipeline plan with an injectable stage runner."""
+    total = len(stages)
+    for index, stage in enumerate(stages, start=1):
+        runner(stage, index, total)
 
 
 def main() -> int:
+    """Load the execution plan, then orchestrate build and query stages."""
     enable_windows_ansi()
     os.chdir(PROJECT_DIR)
-    write_header("PHOTO-CAT - Pipeline")
 
-    pipeline_cfg = load_execution_config()
-    run_build = bool(pipeline_cfg.get("run_build", True))
-    run_query = bool(pipeline_cfg.get("run_query", True))
+    config_path = resolve_config_path()
+    execution_config = load_config(EXECUTION_SECTION)
+    if (not isinstance(execution_config, ExecutionConfig)):
+        raise RuntimeError("Failed to load execution configuration.")
 
-    if (not run_build and not run_query):
+    stages = resolve_pipeline_stages(execution_config)
+    write_header("PHOTO-CAT - Pipeline", config_path)
+
+    if (not stages):
         logger.warning("Both run_build and run_query are false. Nothing to do.")
         return 0
 
-    stage_total = int(run_build) + int(run_query)
-    stage_index = 0
-
-    if (run_build):
-        stage_index += 1
-        run_step(
-            "build_neighbors_index",
-            stage_index,
-            stage_total,
-            "Build neighbour index",
-            "Build neighbour index",
-        )
-
-    if (run_query):
-        stage_index += 1
-        run_step(
-            "query_contamination_from_index",
-            stage_index,
-            stage_total,
-            "Query contamination",
-            "Query contamination",
-        )
-
+    run_pipeline_stages(stages)
     write_success_summary()
     return 0
 

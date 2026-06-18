@@ -50,6 +50,15 @@ SPDX-License-Identifier: GPL-3.0-only
 Files that cannot use visible headers should be covered by `REUSE.toml`.
 
 
+## Test structure
+
+Shared temporary input files and reusable config helpers live in `tests/conftest.py`.
+
+- Keep user-visible CLI and pipeline behaviour protected by regression tests.
+- Add focused unit tests when extracting a pure helper from build or query code.
+- Add a short docstring when a test depends on a scientific convention, numerical tolerance, or non-obvious compatibility behaviour.
+- Do not tie tests to private implementation details that are expected to change during refactoring.
+
 ## Command-line interface
 
 The unified CLI entry point is `photo-cat`. Keep GUI, CLI, and direct module behaviour aligned when changing pipeline behaviour.
