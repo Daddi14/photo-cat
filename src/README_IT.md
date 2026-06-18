@@ -10,3 +10,8 @@ PHOTO-CAT usa un layout Python standard `src/`.
 - I launcher per utenti finali restano nella cartella root del progetto.
 
 Gli utenti finali devono continuare ad avviare PHOTO-CAT con `START_WINDOWS.bat` o `START_UNIX.sh`.
+
+## Risorse per i contributori
+
+- [Workflow di sviluppo](../docs/Development_IT.md)
+- [Contratti pubblici](../docs/Public-Contracts_IT.md)

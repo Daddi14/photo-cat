@@ -148,6 +148,8 @@ Maintainer documentation:
 
 - [Publishing PHOTO-CAT](docs/PUBLISHING.md)
 - [Architecture and testing boundaries](docs/Architecture.md)
+- [Public contracts](docs/Public-Contracts.md)
+- [Development workflow](docs/Development.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Troubleshooting
