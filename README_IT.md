@@ -147,6 +147,8 @@ Documentazione utente:
 Documentazione manutentori:
 
 - [Pubblicazione PHOTO-CAT](docs/PUBLISHING_IT.md)
+- [Architettura e confini dei test](docs/Architecture_IT.md)
+- [Contribuire](CONTRIBUTING.md)
 
 ## Risoluzione problemi
 

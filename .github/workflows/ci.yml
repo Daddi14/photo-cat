@@ -33,7 +33,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install .
-          python -m pip install pytest
+          python -m pip install pytest pytest-cov
 
       - name: Compile source files
         run: python -m py_compile src/photo_cat/*.py
@@ -41,5 +41,5 @@ jobs:
       - name: Check shell launcher syntax
         run: bash -n START_UNIX.sh scripts/*.sh
 
-      - name: Run tests
-        run: pytest
+      - name: Run tests with coverage report
+        run: pytest --cov=photo_cat --cov-report=term-missing

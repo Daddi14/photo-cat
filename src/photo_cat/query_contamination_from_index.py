@@ -96,6 +96,7 @@ import csv
 import os
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict
 
 import numpy as np
@@ -158,6 +159,21 @@ def validate_target_column(csv_path: str, target_source_id_column: str) -> None:
 
 
 def validate_index_directory(index_dir: str) -> None:
+    index_path = Path(index_dir)
+
+    if (not index_path.exists()):
+        raise FileNotFoundError(
+            "Query index folder was not found.\n\n"
+            f"Selected index folder:\n{index_path}\n\n"
+            "Run the build step first, or select the correct Output/index folder."
+        )
+
+    if (not index_path.is_dir()):
+        raise ValueError(
+            "Query index folder must be a directory, but it points to a file.\n\n"
+            f"Selected path:\n{index_path}"
+        )
+
     required_files = [
         "offsets.npy",
         "neighbors_ids.bin",
@@ -167,16 +183,38 @@ def validate_index_directory(index_dir: str) -> None:
         "real_ids_int.npy",
         "special_ids.npz",
     ]
-    missing_files = [name for name in required_files if (not os.path.isfile(os.path.join(index_dir, name)))]
+    missing_files = [name for name in required_files if (not (index_path / name).is_file())]
 
     if (missing_files):
         raise FileNotFoundError(
             "Query index folder is not ready.\n\n"
-            f"Selected index folder:\n{index_dir}\n\n"
+            f"Selected index folder:\n{index_path}\n\n"
             "Missing required index files:\n"
             + "\n".join(f"- {name}" for name in missing_files)
             + "\n\nRun the build step first, or select the correct Output/index folder."
         )
+
+
+def ensure_result_output_directory(index_dir: str) -> Path:
+    """Create the query-result folder or report a direct path conflict."""
+    output_dir = Path(index_dir) / "output"
+
+    if (output_dir.exists() and not output_dir.is_dir()):
+        raise ValueError(
+            "Query results output path must be a directory, but it points to a file.\n\n"
+            f"Conflicting path:\n{output_dir}\n\n"
+            "Remove/rename the file or select a different index folder."
+        )
+
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise OSError(
+            f"Could not create the query results output folder: {output_dir}"
+        ) from error
+
+    return output_dir
+
 
 # --- Helper: create output JSON path ------------------------------------------
 def create_output_json_path(
@@ -203,11 +241,65 @@ def create_output_json_path(
     else:
         base_name = "manual_targets"
 
-    output_dir = os.path.join(INDEX_DIR, "output")
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = ensure_result_output_directory(INDEX_DIR)
 
     filename = f"{base_name}_FoV{int(field_of_view_arcsec)}_dmag{int(delta_mag)}_{timestamp}.json"
-    return os.path.join(output_dir, filename)
+    return str(output_dir / filename)
+
+
+def find_numeric_internal_id(
+    numeric_real_ids_sorted: np.ndarray,
+    numeric_internal_ids_sorted: np.ndarray,
+    real_id: int,
+) -> int | None:
+    """Return the internal ID for a numeric source ID using binary search."""
+    position = np.searchsorted(numeric_real_ids_sorted, real_id)
+    if (position < numeric_real_ids_sorted.size and numeric_real_ids_sorted[position] == real_id):
+        return int(numeric_internal_ids_sorted[position])
+
+    return None
+
+
+def resolve_target_internal_ids(
+    targets_real: list[str],
+    name_to_internal_special: Dict[str, int],
+    numeric_real_ids_sorted: np.ndarray,
+    numeric_internal_ids_sorted: np.ndarray,
+) -> tuple[list[int], list[str], list[str]]:
+    """Resolve configured public IDs into internal IDs and classify rejected values."""
+    targets_internal: list[int] = []
+    invalid_targets: list[str] = []
+    missing_targets: list[str] = []
+
+    for target_id in targets_real:
+        if (target_id in name_to_internal_special):
+            targets_internal.append(name_to_internal_special[target_id])
+            continue
+
+        try:
+            numeric_target_id = int(target_id)
+        except (ValueError, TypeError):
+            invalid_targets.append(str(target_id))
+            continue
+
+        internal_id = find_numeric_internal_id(
+            numeric_real_ids_sorted,
+            numeric_internal_ids_sorted,
+            numeric_target_id,
+        )
+        if (internal_id is None):
+            missing_targets.append(str(target_id))
+        else:
+            targets_internal.append(internal_id)
+
+    return targets_internal, invalid_targets, missing_targets
+
+
+def target_id_preview(values: list[str]) -> str:
+    """Format a short deterministic preview for target-ID errors and warnings."""
+    preview = ", ".join(values[:8])
+    suffix = "" if (len(values) <= 8) else f", ... (+{len(values) - 8} more)"
+    return preview + suffix
 
 
 # --- Load catalog and targets (low-memory path) --------------------------------
@@ -303,16 +395,6 @@ def load_catalog_arrays(
 
     logger.info(f"Prepared numeric mapping for {numeric_real_ids_sorted.size:,} real IDs.")
 
-    def numeric_real_to_internal(real_id_int: int) -> Optional[int]:
-        """
-        Find internal_id for a numeric real_id using a binary search over the sorted
-        arrays (numeric_real_ids_sorted / numeric_internal_ids_sorted).
-        """
-        pos = np.searchsorted(numeric_real_ids_sorted, real_id_int)
-        if pos < numeric_real_ids_sorted.size and numeric_real_ids_sorted[pos] == real_id_int:
-            return int(numeric_internal_ids_sorted[pos])
-        return None
-
     # --- Load target list (real IDs as strings) ---
     if TARGETS_INPUT is not None:
         validate_target_column(TARGETS_INPUT, target_source_id_column)
@@ -335,53 +417,40 @@ def load_catalog_arrays(
         )
 
     # --- Resolve target internal IDs (special IDs first, then numeric) ---
-    targets_internal: list[int] = []
-    invalid_targets: list[str] = []
-    missing_targets: list[str] = []
-
-    for t in targets_real:
-        if t in name_to_internal_special:
-            targets_internal.append(name_to_internal_special[t])
-            continue
-
-        try:
-            val = int(t)
-        except (ValueError, TypeError):
-            invalid_targets.append(str(t))
-            continue
-
-        internal = numeric_real_to_internal(val)
-        if internal is not None:
-            targets_internal.append(internal)
-        else:
-            missing_targets.append(str(t))
+    targets_internal, invalid_targets, missing_targets = resolve_target_internal_ids(
+        targets_real,
+        name_to_internal_special,
+        numeric_real_ids_sorted,
+        numeric_internal_ids_sorted,
+    )
 
     if (invalid_targets):
-        preview = ", ".join(invalid_targets[:8])
-        suffix = "" if (len(invalid_targets) <= 8) else f", ... (+{len(invalid_targets) - 8} more)"
         logger.warning(
-            "Skipped %d target value(s) because they were neither numeric source_id values nor recognised special IDs. Examples: %s%s",
+            "Skipped %d target value(s) because they were neither numeric source_id values nor recognised special IDs. Examples: %s",
             len(invalid_targets),
-            preview,
-            suffix
+            target_id_preview(invalid_targets),
         )
 
     if (missing_targets):
-        preview = ", ".join(missing_targets[:8])
-        suffix = "" if (len(missing_targets) <= 8) else f", ... (+{len(missing_targets) - 8} more)"
         logger.warning(
-            "Skipped %d target value(s) because they were not found in the built index. Examples: %s%s",
+            "Skipped %d target value(s) because they were not found in the built index. Examples: %s",
             len(missing_targets),
-            preview,
-            suffix
+            target_id_preview(missing_targets),
         )
 
     logger.info("Loaded %d target(s) for analysis.", len(targets_internal))
 
     if (not targets_internal):
+        details: list[str] = []
+        if (invalid_targets):
+            details.append(f"Unrecognised target values: {target_id_preview(invalid_targets)}")
+        if (missing_targets):
+            details.append(f"Target values not found in the index: {target_id_preview(missing_targets)}")
+
         raise ValueError(
             "None of the configured targets were found in the built index.\n\n"
-            "Make sure Targets CSV/source_id values come from the same catalog used to build the index."
+            + "\n".join(details)
+            + "\n\nMake sure Targets CSV/source_id values come from the same catalog used to build the index."
         )
 
     return ra, dec, gmag, real_ids_int, internal_to_special_name, targets_internal
@@ -413,7 +482,175 @@ def separation_arcsec(
     return np.rad2deg(angle) * 3600.0
 
 
-# --- Main processing loop ------------------------------------------------------
+# --- Target processing helpers -------------------------------------------------
+def source_id_from_internal_id(
+    internal_id: int,
+    real_ids_int: np.ndarray,
+    internal_to_special_name: dict[int, str],
+) -> str:
+    """Resolve an internal 1-based ID to the original external source ID."""
+    special_name = internal_to_special_name.get(internal_id)
+    if (special_name is not None):
+        return special_name
+
+    index = internal_id - 1
+    if (index < 0 or index >= real_ids_int.shape[0]):
+        return ""
+
+    numeric_id = int(real_ids_int[index])
+    return str(numeric_id) if (numeric_id >= 0) else ""
+
+
+def empty_target_result(source_id: str, ra: float, dec: float, magnitude: float) -> dict:
+    """Create the stable no-contaminant result shape used by query output."""
+    return TargetResult(
+        source_id=source_id,
+        ra=ra,
+        dec=dec,
+        phot_g_mean_mag=(magnitude if np.isfinite(magnitude) else None),
+        flux_fraction_extra=0.0,
+        num_contaminants=0,
+        contaminants=[],
+    ).__dict__
+
+
+def valid_neighbor_indices(neighbor_internal_ids: np.ndarray, number_of_sources: int) -> np.ndarray:
+    """Convert 1-based neighbour IDs to valid zero-based catalogue positions."""
+    candidate_indices = np.asarray(neighbor_internal_ids, dtype=np.int64) - 1
+    return candidate_indices[(candidate_indices >= 0) & (candidate_indices < number_of_sources)]
+
+
+def calculate_flux_fraction_extra(
+    target_magnitude: float,
+    contaminant_magnitudes: np.ndarray,
+    inside_field_of_view: np.ndarray,
+) -> float:
+    """Return extra contaminant flux as a percentage of the target flux."""
+    if (not np.isfinite(target_magnitude) or not np.any(inside_field_of_view)):
+        return 0.0
+
+    target_flux = 10.0 ** (-0.4 * target_magnitude)
+    if (not np.isfinite(target_flux) or target_flux <= 0.0):
+        return 0.0
+
+    magnitudes_in_fov = contaminant_magnitudes[inside_field_of_view]
+    valid_magnitudes = magnitudes_in_fov[np.isfinite(magnitudes_in_fov)]
+    if (valid_magnitudes.size == 0):
+        return 0.0
+
+    contaminant_fluxes = 10.0 ** (-0.4 * valid_magnitudes)
+    return float((contaminant_fluxes.sum() / target_flux) * 100.0)
+
+
+def build_contaminant_records(
+    contaminant_indices: np.ndarray,
+    contaminant_magnitudes: np.ndarray,
+    contaminant_separations: np.ndarray,
+    selected_mask: np.ndarray,
+    ra: np.ndarray,
+    dec: np.ndarray,
+    real_ids_int: np.ndarray,
+    internal_to_special_name: dict[int, str],
+) -> list[dict]:
+    """Build public contaminant records from selected catalogue positions."""
+    contaminants: list[dict] = []
+
+    for local_index in np.flatnonzero(selected_mask):
+        catalogue_index = int(contaminant_indices[local_index])
+        magnitude = float(contaminant_magnitudes[local_index])
+        contaminants.append(
+            Contaminant(
+                source_id=source_id_from_internal_id(
+                    catalogue_index + 1,
+                    real_ids_int,
+                    internal_to_special_name,
+                ),
+                ra=float(ra[catalogue_index]),
+                dec=float(dec[catalogue_index]),
+                phot_g_mean_mag=(magnitude if np.isfinite(magnitude) else None),
+                sep_arcsec=float(contaminant_separations[local_index]),
+            ).__dict__
+        )
+
+    return contaminants
+
+
+def process_target(
+    internal_target: int,
+    offsets: np.ndarray,
+    neighbors_mm: np.ndarray,
+    ra: np.ndarray,
+    dec: np.ndarray,
+    gmag: Optional[np.ndarray],
+    real_ids_int: np.ndarray,
+    internal_to_special_name: dict[int, str],
+    field_of_view_arcsec: float,
+    delta_mag: float,
+) -> dict | None:
+    """Evaluate one target while keeping numerical work separate from loop orchestration."""
+    number_of_sources = ra.shape[0]
+    if (internal_target < 1 or internal_target > number_of_sources):
+        logger.warning("internal_target %s out of range; skipping.", internal_target)
+        return None
+
+    target_index = internal_target - 1
+    target_ra = float(ra[target_index])
+    target_dec = float(dec[target_index])
+    target_magnitude = float(gmag[target_index]) if (gmag is not None) else np.nan
+    source_id = source_id_from_internal_id(internal_target, real_ids_int, internal_to_special_name)
+
+    start = int(offsets[target_index])
+    end = int(offsets[target_index + 1])
+    if (start == end):
+        return empty_target_result(source_id, target_ra, target_dec, target_magnitude)
+
+    contaminant_indices = valid_neighbor_indices(neighbors_mm[start:end], number_of_sources)
+    if (contaminant_indices.size == 0):
+        return empty_target_result(source_id, target_ra, target_dec, target_magnitude)
+
+    contaminant_ra = ra[contaminant_indices]
+    contaminant_dec = dec[contaminant_indices]
+    if (gmag is None):
+        contaminant_magnitudes = np.full(contaminant_indices.shape, np.nan, dtype=np.float64)
+    else:
+        contaminant_magnitudes = np.asarray(gmag[contaminant_indices], dtype=np.float64)
+
+    contaminant_separations = separation_arcsec(
+        target_ra,
+        target_dec,
+        contaminant_ra,
+        contaminant_dec,
+    )
+    inside_field_of_view = contaminant_separations <= field_of_view_arcsec
+    flux_fraction_extra = calculate_flux_fraction_extra(
+        target_magnitude,
+        contaminant_magnitudes,
+        inside_field_of_view,
+    )
+
+    selected_mask = inside_field_of_view & ((contaminant_magnitudes - target_magnitude) <= delta_mag)
+    contaminants = build_contaminant_records(
+        contaminant_indices,
+        contaminant_magnitudes,
+        contaminant_separations,
+        selected_mask,
+        ra,
+        dec,
+        real_ids_int,
+        internal_to_special_name,
+    )
+
+    return TargetResult(
+        source_id=source_id,
+        ra=target_ra,
+        dec=target_dec,
+        phot_g_mean_mag=(target_magnitude if np.isfinite(target_magnitude) else None),
+        flux_fraction_extra=round(flux_fraction_extra, 2),
+        num_contaminants=len(contaminants),
+        contaminants=contaminants,
+    ).__dict__
+
+
 def loop_over_targets(
     offsets: np.ndarray,
     neighbors_mm: np.memmap,
@@ -424,217 +661,38 @@ def loop_over_targets(
     internal_to_special_name: dict[int, str],
     field_of_view_arcsec: float,
     delta_mag: float,
-    targets_internal: list[int]
-) -> list:
-    """
-    Main contamination loop using compact arrays and memmapped neighbors.
-
-    Parameters
-    ----------
-    offsets : numpy.ndarray
-        CSR offsets array (N+1,). For row i, neighbors are in slice:
-            neighbors_mm[offsets[i] : offsets[i+1]]
-
-    neighbors_mm : numpy.memmap
-        Memmapped neighbors_ids.bin, containing internal_ids of neighbors.
-
-    ra, dec : numpy.ndarray
-        float64 arrays (or memmaps) of length N, indexed by (internal_id - 1).
-
-    gmag : numpy.ndarray or None
-        float64 array (or memmap) of G magnitudes; None if not available.
-
-    real_ids_int : numpy.memmap
-        int64 array of length N, numeric real IDs or -1 for special IDs.
-
-    internal_to_special_name : dict[int, str]
-        Mapping from internal_id to special string source_id.
-
-    field_of_view_arcsec : float
-        FoV radius used to select contaminants.
-
-    delta_mag : float
-        Magnitude difference threshold for selecting contaminants.
-
-    targets_internal : list[int]
-        List of internal_ids for the targets to process.
-
-    Returns
-    -------
-    results : list[dict]
-        List of TargetResult.__dict__ for each processed target.
-    """
-    results = []
-    n_sources = ra.shape[0]
-
-    def internal_to_real_string(internal_id: int) -> str:
-        """
-        Convert a internal_id (1..N) to its real external source_id string.
-
-        Logic:
-            - if internal_id in internal_to_special_name -> use special string
-            - else use real_ids_int[internal_id - 1] if >= 0
-        """
-        name = internal_to_special_name.get(internal_id)
-        if name is not None:
-            return name
-
-        idx = internal_id - 1
-        val = int(real_ids_int[idx])
-        if val >= 0:
-            return str(val)
-
-        return ""
-
+    targets_internal: list[int],
+) -> list[dict]:
+    """Evaluate configured targets while leaving one-target logic independently testable."""
     total_targets = len(targets_internal)
-    if (total_targets <= 0):
+    if (total_targets == 0):
         progress_bar(100, "[processing targets]", complete=True)
-        return results
+        return []
 
-    processed_targets = 0
+    results: list[dict] = []
+    for processed_count, internal_target in enumerate(targets_internal, start=1):
+        result = process_target(
+            int(internal_target),
+            offsets,
+            neighbors_mm,
+            ra,
+            dec,
+            gmag,
+            real_ids_int,
+            internal_to_special_name,
+            field_of_view_arcsec,
+            delta_mag,
+        )
+        if (result is not None):
+            results.append(result)
 
-    def update_target_progress() -> None:
-        nonlocal processed_targets
-        processed_targets += 1
         progress_bar(
-            int(round((processed_targets / float(total_targets)) * 100.0)),
+            int(round((processed_count / float(total_targets)) * 100.0)),
             "[processing targets]",
-            complete=(processed_targets == total_targets),
+            complete=(processed_count == total_targets),
         )
-
-    for internal_target in targets_internal:
-        internal_target = int(internal_target)
-
-        # Sanity check: internal_id must be in [1, N].
-        if internal_target < 1 or internal_target > n_sources:
-            logger.warning(f"internal_target {internal_target} out of range; skipping.")
-            update_target_progress()
-            continue
-
-        target_index = internal_target - 1
-
-        start = int(offsets[target_index])
-        end = int(offsets[target_index + 1])
-
-        target_ra = float(ra[target_index])
-        target_dec = float(dec[target_index])
-        target_mag = float(gmag[target_index]) if gmag is not None else np.nan
-
-        source_id_str = internal_to_real_string(internal_target)
-
-        # No neighbors: quick exit with zero contaminants and zero extra flux.
-        if start == end:
-            results.append(
-                TargetResult(
-                    source_id=source_id_str,
-                    ra=target_ra,
-                    dec=target_dec,
-                    phot_g_mean_mag=(target_mag if np.isfinite(target_mag) else None),
-                    flux_fraction_extra=0.0,
-                    num_contaminants=0,
-                    contaminants=[]
-                ).__dict__
-            )
-            update_target_progress()
-            continue
-
-        # Extract internal_ids of neighbors for this target: shape (k,).
-        contaminant_internal_ids = neighbors_mm[start:end].astype(np.int64)
-        contaminant_indices = contaminant_internal_ids - 1  # convert to 0-based row indices
-
-        # Defensive mask: neighbors must reference valid rows in [0, N).
-        valid_mask = (contaminant_indices >= 0) & (contaminant_indices < n_sources)
-        if not np.any(valid_mask):
-            results.append(
-                TargetResult(
-                    source_id=source_id_str,
-                    ra=target_ra,
-                    dec=target_dec,
-                    phot_g_mean_mag=(target_mag if np.isfinite(target_mag) else None),
-                    flux_fraction_extra=0.0,
-                    num_contaminants=0,
-                    contaminants=[]
-                ).__dict__
-            )
-            update_target_progress()
-            continue
-
-        contaminant_indices = contaminant_indices[valid_mask]
-
-        contaminant_ra = ra[contaminant_indices]
-        contaminant_dec = dec[contaminant_indices]
-
-        if gmag is not None:
-            contaminant_magnitudes_all = gmag[contaminant_indices]
-        else:
-            contaminant_magnitudes_all = np.full_like(
-                contaminant_ra,
-                np.nan,
-                dtype=np.float64
-            )
-
-        # Angular separations (arcsec) between target and each neighbor.
-        contaminant_separations = separation_arcsec(
-            target_ra,
-            target_dec,
-            contaminant_ra,
-            contaminant_dec
-        )
-
-        # Mask contaminants inside the FoV.
-        mask_fov = contaminant_separations <= field_of_view_arcsec
-
-        # Compute target flux via Pogson's law (F ∝ 10^(-0.4 * mag)).
-        target_flux = 10.0 ** (-0.4 * target_mag) if np.isfinite(target_mag) else np.nan
-        flux_fraction_extra = 0.0
-
-        if np.isfinite(target_flux) and np.any(mask_fov):
-            magnitudes_in_fov = contaminant_magnitudes_all[mask_fov]
-            valid_magnitudes_mask = np.isfinite(magnitudes_in_fov)
-
-            if np.any(valid_magnitudes_mask):
-                contaminant_fluxes_all = 10.0 ** (-0.4 * magnitudes_in_fov[valid_magnitudes_mask])
-                if target_flux > 0.0:
-                    flux_fraction_extra = (contaminant_fluxes_all.sum() / target_flux) * 100.0
-                else:
-                    flux_fraction_extra = 0.0
-
-        # Δmag selection: keep contaminants with mag - mag_target <= delta_mag.
-        delta_g = contaminant_magnitudes_all - target_mag
-        sel_mask = mask_fov & (delta_g <= delta_mag)
-        sel_idx = np.where(sel_mask)[0]
-
-        contaminants = []
-        for i in sel_idx:
-            idx = int(contaminant_indices[i])
-            neighbor_internal_id = idx + 1
-
-            contaminants.append(
-                Contaminant(
-                    source_id=internal_to_real_string(neighbor_internal_id),
-                    ra=float(ra[idx]),
-                    dec=float(dec[idx]),
-                    phot_g_mean_mag=float(gmag[idx]) if gmag is not None else None,
-                    sep_arcsec=float(contaminant_separations[i])
-                ).__dict__
-            )
-
-        results.append(
-            TargetResult(
-                source_id=source_id_str,
-                ra=target_ra,
-                dec=target_dec,
-                phot_g_mean_mag=(target_mag if np.isfinite(target_mag) else None),
-                flux_fraction_extra=round(float(flux_fraction_extra), 2),
-                num_contaminants=len(contaminants),
-                contaminants=contaminants
-            ).__dict__
-        )
-
-        update_target_progress()
 
     return results
-
 
 # --- Save results to JSON ------------------------------------------------------
 def save_results_to_json(results: list, json_path: str) -> str:
@@ -654,7 +712,7 @@ def save_results_to_json(results: list, json_path: str) -> str:
     json_path : str
         Path to the written JSON file.
     """
-    with open(json_path, "w") as f:
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     return json_path
 

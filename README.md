@@ -147,6 +147,8 @@ User documentation:
 Maintainer documentation:
 
 - [Publishing PHOTO-CAT](docs/PUBLISHING.md)
+- [Architecture and testing boundaries](docs/Architecture.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Troubleshooting
 

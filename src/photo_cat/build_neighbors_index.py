@@ -106,7 +106,7 @@ import csv
 import os
 import pickle
 import sys
-from typing import List
+from typing import BinaryIO
 
 import numpy as np
 import pandas as pd
@@ -475,10 +475,7 @@ def resume_from_checkpoint(
         checkpoint_index = int(checkpoint["start_index"])
 
         if checkpoint_index >= number_of_stars_in_dataframe:
-            logger.info(
-                "Checkpoint indicates index already completed. Exiting without changes."
-            )
-            sys.exit(0)
+            logger.info("Checkpoint indicates index already completed.")
 
         offsets = checkpoint["offsets"]
         checkpoint_total = int(checkpoint["total"])
@@ -493,193 +490,142 @@ def resume_from_checkpoint(
     return checkpoint_index, offsets, checkpoint_total
 
 
+def neighbor_indices_without_self(neighbor_indices: list[int], target_index: int) -> NDArray[np.int64]:
+    """Convert KDTree results to int64 indices while removing the target itself."""
+    if (not neighbor_indices):
+        return np.empty(0, dtype=np.int64)
+
+    indices = np.asarray(neighbor_indices, dtype=np.int64)
+    return indices[indices != target_index]
+
+
+def calculate_neighbor_separations_arcsec(
+    coords: NDArray[np.float64],
+    target_index: int,
+    neighbor_indices: NDArray[np.int64],
+) -> NDArray[np.float64]:
+    """Calculate vectorized angular separations for one target's neighbours."""
+    target_vector = coords[target_index]
+    neighbor_vectors = coords[neighbor_indices]
+    dot_product = np.einsum("ij,j->i", neighbor_vectors, target_vector)
+    dot_product = np.clip(dot_product, -1.0, 1.0)
+    return (np.rad2deg(np.arccos(dot_product)) * 3600.0).astype(np.float64)
+
+
+def flush_neighbor_buffers(
+    neighbors_buffer: list[NDArray[np.int64]],
+    separations_buffer: list[NDArray[np.float64]],
+    neighbors_file: BinaryIO,
+    separations_file: BinaryIO | None,
+    calculate_separations: bool,
+) -> None:
+    """Write accumulated index buffers to disk and clear them in place."""
+    if (neighbors_buffer):
+        np.concatenate(neighbors_buffer).tofile(neighbors_file)
+        neighbors_buffer.clear()
+
+    if (calculate_separations and separations_buffer and separations_file is not None):
+        np.concatenate(separations_buffer).tofile(separations_file)
+        separations_buffer.clear()
+
+
+def write_checkpoint(checkpoint_path: str, start_index: int, offsets: NDArray[np.int64], total: int) -> None:
+    """Persist resumable CSR progress after complete output blocks."""
+    np.savez(
+        checkpoint_path,
+        start_index=start_index,
+        offsets=offsets,
+        total=total,
+    )
+
+
 def calculate_contaminants(
     checkpoint_index: int,
     number_of_stars_in_dataframe: int,
     chunk_size: int,
-    coords: np.ndarray,
+    coords: NDArray[np.float64],
     chord_radius: np.float64,
     coordinate_tree: cKDTree,
-    offsets: np.ndarray,
+    offsets: NDArray[np.int64],
     checkpoint_total: int,
     final_star_dataframe: pd.DataFrame,
-    neighbors_file,
-    separations_file,
+    neighbors_file: BinaryIO,
+    separations_file: BinaryIO | None,
     buffer_flush_interval: int,
     calculate_separations: bool,
-    checkpoint_path: str
-):
-    """
-    Main streaming loop: query neighbors for each star, write a CSR index
-    to disk, and periodically checkpoint progress.
-
-    Parameters
-    ----------
-    checkpoint_index : int
-        Starting index for this run (0 for fresh run, >0 when resuming).
-
-    number_of_stars_in_dataframe : int
-        Total number of stars N.
-
-    chunk_size : int
-        Number of stars per block to process per KDTree query_ball_point call.
-
-    coords : numpy.ndarray
-        (N, 3) unit vectors for each star.
-
-    chord_radius : float
-        cKDTree search radius in chord distance units.
-
-    coordinate_tree : cKDTree
-        KDTree built on coords.
-
-    offsets : numpy.ndarray
-        CSR offsets array, updated in-place.
-
-    checkpoint_total : int
-        Running total of neighbor entries written so far.
-
-    final_star_dataframe : pandas.DataFrame
-        Catalog with 'internal_id' column used to map row indices to internal IDs.
-
-    neighbors_file : file-like
-        Open binary file handle for neighbors_ids.tmp (to be renamed).
-
-    separations_file : file-like or None
-        Open binary file handle for neighbors_seps.tmp, or None if separations
-        are not being computed.
-
-    buffer_flush_interval : int
-        Number of processed blocks between flushes/checkpoints.
-
-    calculate_separations : bool
-        If True, also compute and buffer separations in arcsec.
-
-    checkpoint_path : str
-        Where to save np.savez checkpoints.
-    """
+    checkpoint_path: str,
+) -> tuple[pd.DataFrame, NDArray[np.int64], int]:
+    """Build the resumable CSR neighbour index without mixing I/O helper responsibilities."""
     logger.info("Building neighbor index (resumable mode)...")
 
     progress = tqdm(
         total=number_of_stars_in_dataframe,
         initial=checkpoint_index,
         unit="stars",
-        **tqdm_options("Building index")
+        **tqdm_options("Building index"),
     )
+    internal_ids = final_star_dataframe["internal_id"].to_numpy(dtype=np.int64)
+    neighbors_buffer: list[NDArray[np.int64]] = []
+    separations_buffer: list[NDArray[np.float64]] = []
+    blocks_since_flush = 0
 
-    # Python-side buffers to collect neighbors from several blocks before
-    # writing to disk. This amortizes tofile() calls.
-    neighbors_buffer = []
-    separations_buffer = []
-    buffer_index = 0
-
-    for start in range(checkpoint_index, number_of_stars_in_dataframe, chunk_size):
-        end = min(number_of_stars_in_dataframe, start + chunk_size)
-        block_coords = coords[start:end]
-
-        # query_ball_point returns, for each point in block_coords, a Python list
-        # of neighbor indices in the *global* coords array.
-        neighbors_indices_lists = coordinate_tree.query_ball_point(
-            block_coords,
-            r=chord_radius,
-            workers=-1
-        )
-
-        for i_neighbor, neighbor_indices_list in enumerate(neighbors_indices_lists):
-            target_star_index = start + i_neighbor
-
-            # If no neighbors, just propagate the previous total into offsets[i+1].
-            if not neighbor_indices_list:
-                offsets[target_star_index + 1] = checkpoint_total
-                continue
-
-            # Remove self index from neighbor list if present.
-            # (The KDTree may return the point itself as a neighbor.)
-            if target_star_index in neighbor_indices_list:
-                neighbor_indices_list.remove(target_star_index)
-
-            neighbor_indices_array = np.array(neighbor_indices_list, dtype=np.int64)
-
-            # After removing self, there may be no neighbors left.
-            if neighbor_indices_array.size == 0:
-                offsets[target_star_index + 1] = checkpoint_total
-                continue
-
-            # Map neighbor row indices back to internal_ids (1..N).
-            contaminant_ids = final_star_dataframe['internal_id'].values[
-                neighbor_indices_array
-            ].astype(np.int64)
-            neighbors_buffer.append(contaminant_ids)
-
-            if calculate_separations:
-                # Compute angular separations using dot products between unit vectors:
-                #   cos(theta) = u · v
-                # Then:
-                #   theta = arccos(clipped dot product)
-                # And convert to arcsec.
-                target_star_unit_vector = coords[target_star_index]
-                neighbor_unit_vectors = coords[neighbor_indices_array]
-
-                dot_product = np.dot(neighbor_unit_vectors, target_star_unit_vector)
-                dot_product = np.clip(dot_product, -1.0, 1.0)
-
-                angular_separations_rad = np.arccos(dot_product)
-                angular_separations_arcsecs = (
-                    np.rad2deg(angular_separations_rad) * 3600.0
-                ).astype(np.float64)
-
-                separations_buffer.append(angular_separations_arcsecs)
-
-            checkpoint_total += contaminant_ids.size
-            # CSR-style: offsets[i+1] is total neighbors up to and including star i.
-            offsets[target_star_index + 1] = checkpoint_total
-
-        buffer_index += 1
-        progress.update(end - start)
-
-        # Periodically flush buffered neighbors and separations, and write a
-        # checkpoint so an interrupted run can resume from 'end'.
-        if buffer_index >= buffer_flush_interval:
-            if neighbors_buffer:
-                np.concatenate(neighbors_buffer).tofile(neighbors_file)
-                neighbors_buffer.clear()
-
-            if calculate_separations and separations_buffer:
-                np.concatenate(separations_buffer).tofile(separations_file)
-                separations_buffer.clear()
-
-            buffer_index = 0
-
-            np.savez(
-                checkpoint_path,
-                start_index=end,
-                offsets=offsets,
-                total=checkpoint_total
+    try:
+        for start in range(checkpoint_index, number_of_stars_in_dataframe, chunk_size):
+            end = min(number_of_stars_in_dataframe, start + chunk_size)
+            neighbor_lists = coordinate_tree.query_ball_point(
+                coords[start:end],
+                r=chord_radius,
+                workers=-1,
             )
 
-    # Final flush after the last block.
-    if neighbors_buffer:
-        np.concatenate(neighbors_buffer).tofile(neighbors_file)
+            for local_index, neighbor_list in enumerate(neighbor_lists):
+                target_index = start + local_index
+                neighbor_indices = neighbor_indices_without_self(neighbor_list, target_index)
 
-    if calculate_separations and separations_buffer:
-        np.concatenate(separations_buffer).tofile(separations_file)
+                if (neighbor_indices.size == 0):
+                    offsets[target_index + 1] = checkpoint_total
+                    continue
 
-    neighbors_file.close()
-    if calculate_separations and separations_file is not None:
-        separations_file.close()
+                contaminant_ids = internal_ids[neighbor_indices]
+                neighbors_buffer.append(contaminant_ids)
 
-    # Final checkpoint: start_index == N means "complete".
-    np.savez(
-        checkpoint_path,
-        start_index=number_of_stars_in_dataframe,
-        offsets=offsets,
-        total=checkpoint_total
-    )
+                if (calculate_separations):
+                    separations_buffer.append(
+                        calculate_neighbor_separations_arcsec(coords, target_index, neighbor_indices)
+                    )
 
-    progress.close()
+                checkpoint_total += contaminant_ids.size
+                offsets[target_index + 1] = checkpoint_total
+
+            blocks_since_flush += 1
+            progress.update(end - start)
+
+            if (blocks_since_flush >= buffer_flush_interval):
+                flush_neighbor_buffers(
+                    neighbors_buffer,
+                    separations_buffer,
+                    neighbors_file,
+                    separations_file,
+                    calculate_separations,
+                )
+                write_checkpoint(checkpoint_path, end, offsets, checkpoint_total)
+                blocks_since_flush = 0
+
+        flush_neighbor_buffers(
+            neighbors_buffer,
+            separations_buffer,
+            neighbors_file,
+            separations_file,
+            calculate_separations,
+        )
+        write_checkpoint(checkpoint_path, number_of_stars_in_dataframe, offsets, checkpoint_total)
+    finally:
+        neighbors_file.close()
+        if (separations_file is not None):
+            separations_file.close()
+        progress.close()
 
     return final_star_dataframe, offsets, checkpoint_total
-
 
 def save_final_outputs(
     out_dir: str,
@@ -872,6 +818,10 @@ def main() -> int:
         checkpoint_path,
         number_of_stars_in_dataframe
     )
+
+    if (checkpoint_index >= number_of_stars_in_dataframe):
+        logger.info("Index checkpoint is already complete. Remove resume_checkpoint.npz to rebuild it.")
+        return 0
 
     # Open binary files in append mode if resuming, else write mode.
     neighbors_file = open(

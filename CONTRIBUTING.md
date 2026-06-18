@@ -17,6 +17,7 @@ Before submitting a pull request, run at least:
 ```bash
 python -m py_compile src/photo_cat/*.py
 pytest
+pytest --cov=photo_cat --cov-report=term-missing
 ```
 
 On macOS/Linux, also check shell launcher syntax:
@@ -49,6 +50,18 @@ SPDX-License-Identifier: GPL-3.0-only
 
 Files that cannot use visible headers should be covered by `REUSE.toml`.
 
+
+## Test structure
+
+Shared temporary input files and reusable config helpers live in `tests/conftest.py`.
+
+- Mark public CLI, pipeline, and result-contract tests with `@pytest.mark.regression`.
+- Mark isolated helper and validation tests with `@pytest.mark.unit`.
+- Keep user-visible CLI and pipeline behaviour protected by regression tests.
+- Add focused unit tests when extracting a pure helper from build or query code.
+- Add a short docstring when a test depends on a scientific convention, numerical tolerance, or non-obvious compatibility behaviour.
+- Run `pytest --cov=photo_cat --cov-report=term-missing` before a substantial change to understand which paths remain untested.
+- Do not tie tests to private implementation details that are expected to change during refactoring.
 
 ## Command-line interface
 

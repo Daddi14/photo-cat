@@ -1,67 +1,30 @@
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
-"""Tests for PHOTO-CAT configuration loading."""
+"""Tests for configuration parsing, path resolution and validation boundaries."""
+
+from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 import pytest
 
-from photo_cat.load_config import BuildConfig, QueryConfig, load_config, resolve_config_path
+from photo_cat.load_config import BuildConfig, ExecutionConfig, QueryConfig, load_config, resolve_config_path
 
 
-CONFIG_TEXT = """
-build_neighbors_index:
-  io:
-    input_catalog: catalog.csv
-    out_dir: output
-    KDTREE_FILENAME: ckdtree.pkl
-    columns:
-      source_id: source_id
-      ra: ra
-      dec: dec
-      phot_g_mean_mag: phot_g_mean_mag
-  settings:
-    use_dask: false
-    calculate_separations: false
-    max_radius_arcsec: 120.0
-    chunk_size: 2
-    buffer_flush_interval: 1
-query_contamination_from_index:
-  io:
-    INDEX_DIR: output
-    TARGETS_INPUT: targets.csv
-    targets: []
-    target_source_id_column: source_id
-  settings:
-    field_of_view_arcsec: 47.0
-    delta_mag: 5.0
-execution:
-  run_build: true
-  run_query: true
-"""
-
-
-def write_config_fixture(tmp_path: Path) -> Path:
-    (tmp_path / "catalog.csv").write_text(
-        "source_id,ra,dec,phot_g_mean_mag\n1001,10.0,20.0,10.0\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "targets.csv").write_text("source_id\n1001\n", encoding="utf-8")
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(CONFIG_TEXT, encoding="utf-8")
-    return config_path
-
-
-def test_resolve_config_path_prefers_runtime_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config_path = write_config_fixture(tmp_path)
+@pytest.mark.unit
+def test_resolve_config_path_prefers_runtime_environment(write_config: Callable[[], Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A runtime config path must override the repository default without changing the checkout."""
+    config_path = write_config()
     monkeypatch.setenv("PHOTO_CAT_CONFIG", str(config_path))
 
     assert resolve_config_path() == config_path.resolve()
 
 
-def test_load_build_config_resolves_paths(tmp_path: Path) -> None:
-    config_path = write_config_fixture(tmp_path)
-    config = load_config("build_neighbors_index", str(config_path))
+@pytest.mark.unit
+def test_load_build_config_resolves_paths(write_config: Callable[[], Path], tmp_path: Path) -> None:
+    """Build config converts relative user paths to paths anchored at config.yaml."""
+    config = load_config("build_neighbors_index", str(write_config()))
 
     assert isinstance(config, BuildConfig)
     assert config.input_catalog == str((tmp_path / "catalog.csv").resolve())
@@ -70,19 +33,60 @@ def test_load_build_config_resolves_paths(tmp_path: Path) -> None:
     assert config.usecolumns == ["source_id", "ra", "dec", "phot_g_mean_mag"]
 
 
-def test_load_query_config_resolves_paths(tmp_path: Path) -> None:
-    config_path = write_config_fixture(tmp_path)
-    config = load_config("query_contamination_from_index", str(config_path))
+@pytest.mark.unit
+def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_path: Path) -> None:
+    """Query and execution sections remain separate public configuration contracts."""
+    config_path = write_config()
+    query = load_config("query_contamination_from_index", str(config_path))
+    execution = load_config("execution", str(config_path))
 
-    assert isinstance(config, QueryConfig)
-    assert config.INDEX_DIR == str((tmp_path / "output").resolve())
-    assert config.TARGETS_INPUT == str((tmp_path / "targets.csv").resolve())
-    assert config.field_of_view_arcsec == 47.0
-    assert config.delta_mag == 5.0
+    assert isinstance(query, QueryConfig)
+    assert query.INDEX_DIR == str((tmp_path / "output").resolve())
+    assert query.TARGETS_INPUT == str((tmp_path / "targets.csv").resolve())
+    assert query.field_of_view_arcsec == 47.0
+    assert query.delta_mag == 5.0
+
+    assert isinstance(execution, ExecutionConfig)
+    assert execution.run_build is True
+    assert execution.run_query is True
 
 
-def test_load_config_rejects_unknown_section(tmp_path: Path) -> None:
-    config_path = write_config_fixture(tmp_path)
-
+@pytest.mark.unit
+def test_load_config_rejects_unknown_section(write_config: Callable[[], Path]) -> None:
+    """Unknown config sections should fail before a pipeline stage starts."""
     with pytest.raises(ValueError, match="Unknown configuration section"):
-        load_config("not_a_real_section", str(config_path))
+        load_config("not_a_real_section", str(write_config()))
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        ("use_dask: definitely", "use_dask must be true or false"),
+        ("max_radius_arcsec: 0", "max_radius_arcsec must be greater than 0.0"),
+        ("chunk_size: 0", "chunk_size must be a positive integer"),
+        ("field_of_view_arcsec: 0", "field_of_view_arcsec must be greater than 0.0"),
+    ],
+)
+@pytest.mark.unit
+def test_load_config_rejects_invalid_setting_types_and_ranges(
+    write_config: Callable[[str | None], Path],
+    config_text: str,
+    replacement: str,
+    message: str,
+) -> None:
+    """Malformed numeric and boolean settings fail at config parsing, not during expensive analysis."""
+    if (replacement.startswith("field_of_view_arcsec")):
+        modified = config_text.replace("field_of_view_arcsec: 47.0", replacement)
+        section = "query_contamination_from_index"
+    elif (replacement.startswith("use_dask")):
+        modified = config_text.replace("use_dask: false", replacement)
+        section = "build_neighbors_index"
+    elif (replacement.startswith("max_radius_arcsec")):
+        modified = config_text.replace("max_radius_arcsec: 120.0", replacement)
+        section = "build_neighbors_index"
+    else:
+        modified = config_text.replace("chunk_size: 2", replacement)
+        section = "build_neighbors_index"
+
+    with pytest.raises(ValueError, match=message):
+        load_config(section, str(write_config(modified)))
