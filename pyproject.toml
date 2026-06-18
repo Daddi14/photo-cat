@@ -48,6 +48,7 @@ build = ">=1.0"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = ["--strict-markers"]
 markers = [
     "regression: protects documented public CLI, pipeline, or result behaviour",
     "unit: verifies an isolated helper or validation boundary",
@@ -64,7 +65,7 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
-fail_under = 0
+fail_under = 65
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]
