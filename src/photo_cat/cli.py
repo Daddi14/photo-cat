@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from importlib import import_module
 from pathlib import Path
 
 from .cli_overrides import RuntimeConfigOverride, collect_overrides
@@ -38,38 +39,34 @@ def resolve_cli_config(config_path: str | None) -> Path | None:
     return path.resolve()
 
 
-def with_runtime_config(args: argparse.Namespace, callback):
-    """Run callback with an optional temporary config containing CLI overrides."""
+def invoke_module_main(module_name: str) -> int:
+    """Import a PHOTO-CAT stage module and execute its public ``main`` function."""
+    module = import_module(f".{module_name}", package=__package__)
+    return int(module.main() or 0)
+
+
+def run_module_with_runtime_config(args: argparse.Namespace, module_name: str) -> int:
+    """Execute one CLI stage with an optional temporary configuration override file."""
     config_path = resolve_cli_config(args.config)
     overrides = collect_overrides(args)
 
     with RuntimeConfigOverride(config_path, overrides):
-        return callback()
+        return invoke_module_main(module_name)
 
 
 def run_pipeline(args: argparse.Namespace) -> int:
-    def callback() -> int:
-        from . import config_and_run
-
-        return config_and_run.main()
-
-    return int(with_runtime_config(args, callback) or 0)
+    """Run the configured build/query pipeline."""
+    return run_module_with_runtime_config(args, "config_and_run")
 
 
 def run_build_index(args: argparse.Namespace) -> int:
-    def callback() -> int:
-        from . import build_neighbors_index
-
-        return build_neighbors_index.main()
-
-    return int(with_runtime_config(args, callback) or 0)
+    """Build a neighbour index using the configured or overridden inputs."""
+    return run_module_with_runtime_config(args, "build_neighbors_index")
 
 
 def run_query(args: argparse.Namespace) -> int:
-    def callback() -> int:
-        from . import query_contamination_from_index
-
-        return query_contamination_from_index.main()
+    """Query contamination using the configured or overridden inputs."""
+    return run_module_with_runtime_config(args, "query_contamination_from_index")
 
     return int(with_runtime_config(args, callback) or 0)
 
@@ -197,6 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run one CLI command and return a stable process status for expected user errors."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -210,7 +208,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
 
-    return int(args.func(args) or 0)
+    try:
+        return int(args.func(args) or 0)
+    except KeyboardInterrupt:
+        raise
+    except Exception as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
 
 
 if (__name__ == "__main__"):
@@ -218,6 +222,3 @@ if (__name__ == "__main__"):
         raise SystemExit(main())
     except KeyboardInterrupt:
         raise SystemExit(130)
-    except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        raise SystemExit(1)

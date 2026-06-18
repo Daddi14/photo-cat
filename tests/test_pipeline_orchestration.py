@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from photo_cat.config_and_run import BUILD_STAGE, QUERY_STAGE, resolve_pipeline_stages, run_pipeline_stages
 from photo_cat.load_config import ExecutionConfig
 
 
+@pytest.mark.unit
 def test_resolve_pipeline_stages_preserves_build_then_query_order() -> None:
     """The public pipeline contract always runs index construction before contamination queries."""
     stages = resolve_pipeline_stages(ExecutionConfig(True, True, True))
@@ -15,6 +18,7 @@ def test_resolve_pipeline_stages_preserves_build_then_query_order() -> None:
     assert stages == [BUILD_STAGE, QUERY_STAGE]
 
 
+@pytest.mark.unit
 def test_run_pipeline_stages_supports_a_test_runner_without_subprocesses() -> None:
     """Orchestration can be tested without invoking expensive build/query modules."""
     calls: list[tuple[str, int, int]] = []

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 from typing import Callable
 
@@ -13,6 +15,7 @@ from photo_cat import cli
 from photo_cat.cli_overrides import RuntimeConfigOverride, collect_overrides, load_base_config
 
 
+@pytest.mark.regression
 def test_cli_run_accepts_all_override_groups(tmp_path: Path, monkeypatch) -> None:
     """All documented runtime overrides must parse into the typed values consumed by config generation."""
     monkeypatch.chdir(tmp_path)
@@ -53,6 +56,7 @@ def test_cli_run_accepts_all_override_groups(tmp_path: Path, monkeypatch) -> Non
     assert overrides["replace_running_pipeline"] is False
 
 
+@pytest.mark.regression
 def test_runtime_config_override_writes_nested_yaml_values(
     tmp_path: Path,
     monkeypatch,
@@ -93,6 +97,7 @@ def test_runtime_config_override_writes_nested_yaml_values(
     assert not runtime_config_path.exists()
 
 
+@pytest.mark.regression
 def test_runtime_config_override_can_start_from_defaults(tmp_path: Path, monkeypatch) -> None:
     """CLI automation can start from defaults when a caller supplies all required runtime overrides."""
     monkeypatch.chdir(tmp_path)
@@ -109,6 +114,7 @@ def test_runtime_config_override_can_start_from_defaults(tmp_path: Path, monkeyp
         assert runtime_config["query_contamination_from_index"]["io"]["targets"] == ["1001", "1002"]
 
 
+@pytest.mark.regression
 def test_load_base_config_uses_defaults_when_config_is_missing(tmp_path: Path) -> None:
     """The override layer has independent defaults so remote automation need not copy repository config.yaml."""
     config, config_dir = load_base_config(tmp_path / "missing.yaml")

@@ -51,6 +51,7 @@ execution:
     return config_path
 
 
+@pytest.mark.regression
 def test_sample_pipeline_builds_index_and_queries_expected_results(
     tmp_path: Path,
     sample_inputs,

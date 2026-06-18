@@ -31,9 +31,10 @@ The runtime pipeline has three boundaries:
 
 Tests are grouped by intent:
 
-- **Regression tests** protect public CLI, pipeline, and result behaviour.
-- **Unit tests** target pure helpers such as path/config validation, coordinate conversions, ID resolution, and flux calculations.
+- **Regression tests** (`@pytest.mark.regression`) protect public CLI, pipeline, and result behaviour.
+- **Unit tests** (`@pytest.mark.unit`) target pure helpers such as path/config validation, coordinate conversions, ID resolution, and flux calculations.
 - **Integration tests** use the bundled example catalogue and targets to verify that the build and query stages work together.
+- **Coverage reports** identify untested paths; they guide prioritisation but do not replace behavioural assertions.
 
 Shared temporary inputs belong in `tests/conftest.py`. Tests should include a docstring when the expected result depends on a scientific rule, a numerical convention, or a non-obvious compatibility behaviour.
 
