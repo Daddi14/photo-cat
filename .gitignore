@@ -43,3 +43,4 @@ Thumbs.db
 # Keep repository examples tracked
 !data/example_catalog.csv
 !data/example_targets.csv
+/release_artifacts
