@@ -41,5 +41,5 @@ jobs:
       - name: Check shell launcher syntax
         run: bash -n START_UNIX.sh scripts/*.sh
 
-      - name: Run tests with coverage report
+      - name: Run tests with strict markers and coverage baseline
         run: pytest --cov=photo_cat --cov-report=term-missing

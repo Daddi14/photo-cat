@@ -1,41 +1,43 @@
+<!-- SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Contributing to PHOTO-CAT
 
 Thank you for considering a contribution to PHOTO-CAT.
 
-## Before opening a pull request
+## Start here
+
+Read these before making a non-trivial change:
+
+- [Development workflow](docs/Development.md)
+- [Architecture and testing boundaries](docs/Architecture.md)
+- [Public contracts](docs/Public-Contracts.md)
+- [Command-line usage](docs/Command-line.md)
+
+The Italian development and public-contract guides are available in [docs/Development_IT.md](docs/Development_IT.md) and [docs/Public-Contracts_IT.md](docs/Public-Contracts_IT.md).
+
+## Contribution principles
 
 1. Start from the latest `main` branch.
-2. Keep changes focused and easy to review.
-3. Do not commit generated files such as `.venv/`, `.runtime/`, `logs/`, `output/`, `data/output/`, `__pycache__/`, or `*.pyc`.
-4. Preserve the existing source layout under `src/photo_cat/`.
-5. Keep user-facing documentation in both English and Italian when applicable.
+2. Keep each pull request focused and easy to review.
+3. Preserve documented public behaviour unless the pull request explicitly describes a compatibility change.
+4. Add or update tests for changed behaviour.
+5. Keep English and Italian user-facing documentation structurally aligned.
+6. Do not commit generated files such as `.venv/`, `.runtime/`, logs, outputs, build artifacts, `__pycache__/`, or `*.pyc` files.
 
-## Local checks
+## Before opening a pull request
 
-Before submitting a pull request, run at least:
+At minimum, run:
 
 ```bash
 python -m py_compile src/photo_cat/*.py
 pytest
 pytest --cov=photo_cat --cov-report=term-missing
+photo-cat doctor
 ```
 
-On macOS/Linux, also check shell launcher syntax:
+Use `pytest -m regression` whenever a change can affect documented CLI, configuration, index, or output behaviour.
 
-```bash
-bash -n START_UNIX.sh scripts/*.sh
-```
-
-If possible, test the full user flow from a clean extracted folder:
-
-- Windows: `START_WINDOWS.bat`
-- macOS/Linux: `sh START_UNIX.sh`
-
-## Documentation changes
-
-When changing user-facing behaviour, update the relevant files in `docs/`.
-
-English and Italian documentation should stay structurally aligned. Do not keep duplicate documentation under `docs/wiki/`; GitHub Wiki content, if used, belongs to the separate wiki repository.
+For user-facing changes, update the relevant English and Italian documentation under `docs/`. For substantial changes, follow the full checklist in [Development workflow](docs/Development.md).
 
 ## Licensing
 

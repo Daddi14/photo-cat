@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use PHOTO-CAT in published work, please cite the project and replace the placeholder paper reference when the final paper is available."
 title: "PHOTO-CAT: Photometric Contamination Analyzer Tool"
-version: "1.1.0"
-date-released: "2026-06-10"
+version: "1.4.0"
+date-released: "2026-06-18"
 type: software
 authors:
   - name: "PHOTO-CAT contributors"
