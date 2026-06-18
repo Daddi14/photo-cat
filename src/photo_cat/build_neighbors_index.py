@@ -106,6 +106,7 @@ import csv
 import os
 import pickle
 import sys
+from pathlib import Path
 from typing import BinaryIO
 
 import numpy as np
@@ -116,6 +117,7 @@ from numpy.typing import NDArray
 
 from .logger_setup import get_logger
 from .load_config import load_config
+from .path_policy import ensure_directory
 from .pipeline_display import ActivityBar, progress_bar, tqdm_options
 
 
@@ -772,11 +774,12 @@ def save_final_outputs(
 # MAIN EXECUTION
 # ============================================================
 
-def main() -> int:
-    config_build = load_config("build_neighbors_index")
+def main(config_path: str | Path | None = None) -> int:
+    """Build an index only after configuration parsing and runtime validation succeed."""
+    config_build = load_config("build_neighbors_index", config_path)
 
-    # Ensure output directory exists.
-    os.makedirs(config_build.out_dir, exist_ok=True)
+    # Runtime directory creation happens after pure parsing and filesystem validation.
+    ensure_directory(config_build.out_dir, "build_neighbors_index.io.out_dir")
 
     # --- Load minimal catalog ---
     logger.info("Loading input catalog...")

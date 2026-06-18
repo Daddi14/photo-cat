@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
-"""Runtime configuration overrides used by the PHOTO-CAT CLI."""
+"""Derived runtime configuration used by the PHOTO-CAT CLI."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from .load_config import read_config_file
 from .path_policy import resolve_user_path
 
 
@@ -98,20 +99,15 @@ PATH_OVERRIDE_NAMES = {
 
 
 def load_base_config(config_path: Path | None) -> tuple[dict[str, Any], Path]:
-    """Load a base config and return the config plus the directory used for relative paths."""
+    """Load a private base config and the directory anchoring its relative values."""
     if (config_path is not None and config_path.is_file()):
-        with config_path.open("r", encoding="utf-8") as f:
-            loaded_config = (yaml.safe_load(f) or {})
-
-        if (not isinstance(loaded_config, dict)):
-            raise ValueError(f"Configuration file must contain a YAML mapping: {config_path}")
-
-        return loaded_config, config_path.parent.resolve()
+        return read_config_file(config_path), config_path.parent.resolve()
 
     return copy.deepcopy(DEFAULT_CONFIG), Path.cwd().resolve()
 
 
 def ensure_mapping(config: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    """Ensure a nested mapping path exists in an already-derived config copy."""
     current: dict[str, Any] = config
 
     for key in keys:
@@ -125,17 +121,19 @@ def ensure_mapping(config: dict[str, Any], keys: tuple[str, ...]) -> dict[str, A
 
 
 def set_nested_value(config: dict[str, Any], keys: tuple[str, ...], value: Any) -> None:
+    """Set one value in a derived configuration mapping."""
     parent = ensure_mapping(config, keys[:-1])
     parent[keys[-1]] = value
 
 
 def resolve_cli_path(value: str | None) -> str | None:
-    """Resolve CLI path override values relative to the current working directory."""
+    """Resolve CLI path overrides relative to the current working directory."""
     resolved_path = resolve_user_path(value, Path.cwd())
     return (None if (resolved_path is None) else str(resolved_path))
 
 
 def parse_csv_list(value: str | None) -> list[str]:
+    """Split one comma-separated CLI list without retaining empty values."""
     if (value is None):
         return []
 
@@ -143,6 +141,7 @@ def parse_csv_list(value: str | None) -> list[str]:
 
 
 def parse_targets(value: str | None) -> list[str]:
+    """Parse manual target identifiers using the common CLI-list policy."""
     return parse_csv_list(value)
 
 
@@ -174,7 +173,7 @@ def collect_overrides(args: Any) -> dict[str, Any]:
 
 
 def apply_overrides(config: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of config with CLI overrides applied."""
+    """Return a derived config without mutating the source mapping or nested values."""
     updated = copy.deepcopy(config)
 
     for name, value in overrides.items():
@@ -204,18 +203,21 @@ def apply_overrides(config: dict[str, Any], overrides: dict[str, Any]) -> dict[s
 
 
 class RuntimeConfigOverride:
-    """Context manager that writes a temporary config when CLI overrides are used."""
+    """Create a disposable derived config without mutating process environment state.
+
+    A temporary YAML file is only required because command modules retain a YAML
+    configuration-file interface. The file is created beside the base config so
+    existing config-relative paths preserve their documented meaning.
+    """
 
     def __init__(self, config_path: Path | None, overrides: dict[str, Any]):
         self.config_path = config_path
-        self.overrides = overrides
+        self.overrides = copy.deepcopy(overrides)
         self.runtime_config_path: Path | None = None
-        self.previous_config_environment: str | None = None
+        self._generated = False
 
     def __enter__(self) -> Path | None:
         if (not self.overrides):
-            if (self.config_path is not None):
-                os.environ["PHOTO_CAT_CONFIG"] = str(self.config_path)
             return self.config_path
 
         base_config, base_dir = load_base_config(self.config_path)
@@ -224,22 +226,16 @@ class RuntimeConfigOverride:
         temp_name = f".photo-cat-cli-{os.getpid()}-{uuid.uuid4().hex}.yaml"
         temp_dir = base_dir if base_dir.is_dir() else Path(tempfile.gettempdir())
         self.runtime_config_path = temp_dir / temp_name
+        self._generated = True
 
-        with self.runtime_config_path.open("w", encoding="utf-8") as f:
-            yaml.safe_dump(runtime_config, f, sort_keys=False, allow_unicode=True)
+        with self.runtime_config_path.open("w", encoding="utf-8") as file:
+            yaml.safe_dump(runtime_config, file, sort_keys=False, allow_unicode=True)
 
-        self.previous_config_environment = os.environ.get("PHOTO_CAT_CONFIG")
-        os.environ["PHOTO_CAT_CONFIG"] = str(self.runtime_config_path)
         return self.runtime_config_path
 
     def __exit__(self, exc_type, exc, traceback) -> None:
-        if (self.previous_config_environment is None):
-            os.environ.pop("PHOTO_CAT_CONFIG", None)
-        else:
-            os.environ["PHOTO_CAT_CONFIG"] = self.previous_config_environment
-
-        if (self.runtime_config_path is not None):
+        if (self._generated and self.runtime_config_path is not None):
             try:
-                self.runtime_config_path.unlink()
-            except FileNotFoundError:
+                self.runtime_config_path.unlink(missing_ok=True)
+            except OSError:
                 pass

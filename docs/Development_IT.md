@@ -63,7 +63,7 @@ Esegui la coverage localmente:
 pytest --cov=photo_cat --cov-report=term-missing
 ```
 
-La CI impone marker di test rigorosi e una baseline di coverage del 65%. La baseline protegge dalle regressioni, ma non significa che tutti i percorsi abbiano la stessa importanza scientifica. Le nuove modifiche devono aggiungere asserzioni significative, non test creati solo per aumentare la percentuale.
+La CI impone marker di test rigorosi e una baseline di coverage del 70%. La baseline protegge dalle regressioni, ma non significa che tutti i percorsi abbiano la stessa importanza scientifica. Le nuove modifiche devono aggiungere asserzioni significative, non test creati solo per aumentare la percentuale.
 
 ## Contratti pubblici e tipi di test
 
@@ -74,7 +74,9 @@ Leggi [Contratti pubblici](Public-Contracts_IT.md) prima di modificare un comand
 - Ogni test marcato deve avere un docstring conciso quando il suo intento tecnico, scientifico, numerico o di compatibilità non è evidente dal nome.
 - Mantieni i test centrati sul comportamento osservabile. Non legare i test di regressione alla struttura di helper privati che un refactoring può sostituire intenzionalmente.
 
-I dati di test condivisi e gli helper per configurazioni temporanee appartengono a `tests/conftest.py`. Le regole dei percorsi runtime sono coperte da `tests/test_path_policy.py`; preserva la distinzione tra percorsi relativi al file config e percorsi CLI relativi alla directory di lavoro.
+I dati di test condivisi e gli helper per configurazioni temporanee appartengono a `tests/conftest.py`. Le regole dei percorsi runtime sono coperte da `tests/test_path_policy.py`; l'isolamento della configurazione e dello stato di processo è coperto da `tests/test_configuration_lifecycle.py` e `tests/test_runtime_boundaries.py`. Preserva la distinzione tra percorsi relativi al file config e percorsi CLI relativi alla directory di lavoro.
+
+Quando modifichi il flusso di configurazione, verifica che l'interpretazione non crei cartelle di output, che gli override CLI non modifichino la config base e che le fasi figlie della pipeline ricevano la configurazione tramite un ambiente copiato esplicito, non tramite una modifica del processo padre.
 
 ## Verificare una modifica prima di aprire una pull request
 

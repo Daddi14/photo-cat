@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
-"""Parse, resolve and validate PHOTO-CAT configuration sections."""
+"""Parse, resolve, validate, and isolate PHOTO-CAT configuration state."""
 
 from __future__ import annotations
 
+import copy
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,8 @@ EXECUTION_SECTION = "execution"
 
 @dataclass(frozen=True)
 class BuildConfig:
+    """Validated build/index settings with paths resolved against config.yaml."""
+
     input_catalog: str
     out_dir: str
     KDTREE_FILENAME: str
@@ -47,6 +50,8 @@ class BuildConfig:
 
 @dataclass(frozen=True)
 class QueryConfig:
+    """Validated query settings with paths resolved against config.yaml."""
+
     INDEX_DIR: str
     TARGETS_INPUT: str | None
     field_of_view_arcsec: float
@@ -57,12 +62,49 @@ class QueryConfig:
 
 @dataclass(frozen=True)
 class ExecutionConfig:
+    """Pipeline stage-selection settings independent from runtime resources."""
+
     run_build: bool
     run_query: bool
     replace_running_pipeline: bool
 
 
-def resolve_config_path(config_path: str | None = None) -> Path:
+@dataclass(frozen=True)
+class ConfigurationDocument:
+    """One parsed configuration file and its immutable location context.
+
+    ``data`` is retained only as the source document. Section readers return deep
+    copies, so parsing and CLI-derived configuration cannot mutate the original
+    loaded YAML mapping or leak state into a later load.
+    """
+
+    path: Path
+    data: dict[str, Any]
+
+    @property
+    def directory(self) -> Path:
+        """Return the directory that anchors config-relative paths."""
+        return self.path.parent
+
+    def section(self, section: str) -> dict[str, Any]:
+        """Return an isolated copy of one supported configuration section."""
+        if (section not in self.data):
+            raise ValueError(f"Unknown configuration section: {section}")
+
+        return copy.deepcopy(require_mapping(self.data[section], f"Configuration section {section}"))
+
+
+@dataclass(frozen=True)
+class PipelineConfiguration:
+    """All independently parsed PHOTO-CAT sections from one configuration file."""
+
+    document: ConfigurationDocument
+    build: BuildConfig
+    query: QueryConfig
+    execution: ExecutionConfig
+
+
+def resolve_config_path(config_path: str | Path | None = None) -> Path:
     """Resolve explicit, environment, and project-default config locations."""
     return resolve_config_file_path(
         config_path,
@@ -73,7 +115,7 @@ def resolve_config_path(config_path: str | None = None) -> Path:
 
 
 def read_config_file(config_path: Path) -> dict[str, Any]:
-    """Read a YAML mapping from ``config_path`` with user-facing errors."""
+    """Read a YAML mapping from ``config_path`` without creating runtime resources."""
     if (not config_path.is_file()):
         raise FileNotFoundError(f"config.yaml was not found here: {config_path}")
 
@@ -84,6 +126,12 @@ def read_config_file(config_path: Path) -> dict[str, Any]:
         raise ValueError(f"config.yaml must contain a YAML mapping at the top level: {config_path}")
 
     return config
+
+
+def load_configuration_document(config_path: str | Path | None = None) -> ConfigurationDocument:
+    """Load one YAML document without validating inputs or creating output folders."""
+    resolved_path = resolve_config_path(config_path)
+    return ConfigurationDocument(resolved_path, read_config_file(resolved_path))
 
 
 def require_mapping(value: Any, label: str) -> dict[str, Any]:
@@ -187,6 +235,15 @@ def resolve_path(path_value: str | None, config_dir: Path) -> str | None:
     return (None if (resolved_path is None) else str(resolved_path))
 
 
+def resolve_required_path(path_value: str | None, label: str, config_dir: Path) -> str:
+    """Resolve a required path without touching the filesystem beyond path normalization."""
+    resolved_path = resolve_path(path_value, config_dir)
+    if (resolved_path is None):
+        raise ValueError(f"{label} cannot be empty.")
+
+    return resolved_path
+
+
 def require_file(path_value: str | None, label: str) -> str | None:
     """Return an existing file path or raise a direct user-facing error."""
     required_path = require_existing_file((None if (path_value is None) else Path(path_value)), label)
@@ -224,17 +281,9 @@ def validate_columns(columns: list[str]) -> None:
 
 
 def load_build_config(section_config: dict[str, Any], config_dir: Path) -> BuildConfig:
-    """Create a validated ``BuildConfig`` from the build configuration section."""
+    """Parse a build config without checking files or creating output directories."""
     io = require_mapping(section_config.get("io"), f"{BUILD_SECTION}.io")
     settings = require_mapping(section_config.get("settings"), f"{BUILD_SECTION}.settings")
-
-    input_catalog = require_file(resolve_path(io.get("input_catalog"), config_dir), "input_catalog")
-    if (input_catalog is None):
-        raise ValueError("build_neighbors_index.io.input_catalog cannot be empty.")
-
-    out_dir = resolve_path(io.get("out_dir"), config_dir)
-    if (out_dir is None):
-        raise ValueError("build_neighbors_index.io.out_dir cannot be empty.")
 
     columns = require_mapping(io.get("columns"), f"{BUILD_SECTION}.io.columns")
     legacy_usecolumns = io.get("usecolumns") or []
@@ -249,8 +298,12 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
     validate_columns(usecolumns)
 
     return BuildConfig(
-        input_catalog=input_catalog,
-        out_dir=validate_output_directory(out_dir, "build_neighbors_index.io.out_dir"),
+        input_catalog=resolve_required_path(
+            io.get("input_catalog"),
+            "build_neighbors_index.io.input_catalog",
+            config_dir,
+        ),
+        out_dir=resolve_required_path(io.get("out_dir"), "build_neighbors_index.io.out_dir", config_dir),
         KDTREE_FILENAME=validate_output_filename(
             require_text(io.get("KDTREE_FILENAME"), "build_neighbors_index.io.KDTREE_FILENAME", "ckdtree.pkl"),
             "build_neighbors_index.io.KDTREE_FILENAME",
@@ -282,31 +335,34 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
     )
 
 
+def validate_build_config_runtime(config: BuildConfig) -> BuildConfig:
+    """Validate build filesystem inputs after pure parsing has already succeeded."""
+    input_catalog = require_file(config.input_catalog, "input_catalog")
+    if (input_catalog is None):
+        raise RuntimeError("Build input catalog unexpectedly resolved to None.")
+
+    return replace(
+        config,
+        input_catalog=input_catalog,
+        out_dir=validate_output_directory(config.out_dir, "build_neighbors_index.io.out_dir"),
+    )
+
+
 def load_query_config(section_config: dict[str, Any], config_dir: Path) -> QueryConfig:
-    """Create a validated ``QueryConfig`` from the query configuration section."""
+    """Parse a query config without checking target files or opening an index."""
     io = require_mapping(section_config.get("io"), f"{QUERY_SECTION}.io")
     settings = require_mapping(section_config.get("settings"), f"{QUERY_SECTION}.settings")
 
-    index_dir = resolve_path(io.get("INDEX_DIR"), config_dir)
-    if (index_dir is None):
-        raise ValueError("query_contamination_from_index.io.INDEX_DIR cannot be empty.")
-
-    targets_input = require_file(resolve_path(io.get("TARGETS_INPUT"), config_dir), "TARGETS_INPUT")
+    targets_input = resolve_path(io.get("TARGETS_INPUT"), config_dir)
     targets = io.get("targets") or []
     if (not isinstance(targets, list)):
         raise ValueError("query_contamination_from_index.io.targets must be a list.")
-
-    target_source_id_column = require_text(
-        io.get("target_source_id_column"),
-        "query_contamination_from_index.io.target_source_id_column",
-        "source_id",
-    )
 
     if (targets_input is None and not targets):
         raise ValueError("No targets were configured. Set TARGETS_INPUT to a CSV file, or set targets to a list.")
 
     return QueryConfig(
-        INDEX_DIR=index_dir,
+        INDEX_DIR=resolve_required_path(io.get("INDEX_DIR"), "query_contamination_from_index.io.INDEX_DIR", config_dir),
         TARGETS_INPUT=targets_input,
         field_of_view_arcsec=parse_float(
             settings.get("field_of_view_arcsec"),
@@ -320,9 +376,19 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
             "query_contamination_from_index.settings.delta_mag",
             5.0,
         ),
-        targets=targets,
-        target_source_id_column=target_source_id_column,
+        targets=copy.deepcopy(targets),
+        target_source_id_column=require_text(
+            io.get("target_source_id_column"),
+            "query_contamination_from_index.io.target_source_id_column",
+            "source_id",
+        ),
     )
+
+
+def validate_query_config_runtime(config: QueryConfig) -> QueryConfig:
+    """Validate query target inputs after pure parsing and resolution succeed."""
+    targets_input = require_file(config.TARGETS_INPUT, "TARGETS_INPUT")
+    return replace(config, TARGETS_INPUT=targets_input)
 
 
 def load_execution_config(section_config: dict[str, Any]) -> ExecutionConfig:
@@ -338,24 +404,52 @@ def load_execution_config(section_config: dict[str, Any]) -> ExecutionConfig:
     )
 
 
-def load_config(section: str, config_path: str | None = None) -> BuildConfig | QueryConfig | ExecutionConfig:
-    """Load a supported configuration section as a validated dataclass."""
-    resolved_config_path = resolve_config_path(config_path)
-    config = read_config_file(resolved_config_path)
-
-    if (section not in config):
-        raise ValueError(f"Unknown configuration section: {section}")
-
-    section_config = require_mapping(config[section], f"Configuration section {section}")
-    config_dir = resolved_config_path.parent
+def load_config_from_document(
+    section: str,
+    document: ConfigurationDocument,
+    *,
+    validate_runtime: bool = True,
+) -> BuildConfig | QueryConfig | ExecutionConfig:
+    """Parse one isolated section from a document and optionally validate runtime inputs."""
+    section_config = document.section(section)
 
     if (section == BUILD_SECTION):
-        return load_build_config(section_config, config_dir)
+        config = load_build_config(section_config, document.directory)
+        return validate_build_config_runtime(config) if validate_runtime else config
 
     if (section == QUERY_SECTION):
-        return load_query_config(section_config, config_dir)
+        config = load_query_config(section_config, document.directory)
+        return validate_query_config_runtime(config) if validate_runtime else config
 
     if (section == EXECUTION_SECTION):
         return load_execution_config(section_config)
 
     raise ValueError(f"Unsupported configuration section: {section}")
+
+
+def load_config(
+    section: str,
+    config_path: str | Path | None = None,
+    *,
+    validate_runtime: bool = True,
+) -> BuildConfig | QueryConfig | ExecutionConfig:
+    """Load one supported section without leaking mutable state across loads."""
+    document = load_configuration_document(config_path)
+    return load_config_from_document(section, document, validate_runtime=validate_runtime)
+
+
+def load_pipeline_configuration(
+    config_path: str | Path | None = None,
+    *,
+    validate_runtime: bool = True,
+) -> PipelineConfiguration:
+    """Parse all supported sections from one YAML document with a shared path context."""
+    document = load_configuration_document(config_path)
+    build = load_config_from_document(BUILD_SECTION, document, validate_runtime=validate_runtime)
+    query = load_config_from_document(QUERY_SECTION, document, validate_runtime=validate_runtime)
+    execution = load_config_from_document(EXECUTION_SECTION, document, validate_runtime=validate_runtime)
+
+    if (not isinstance(build, BuildConfig) or not isinstance(query, QueryConfig) or not isinstance(execution, ExecutionConfig)):
+        raise RuntimeError("Failed to assemble the PHOTO-CAT pipeline configuration.")
+
+    return PipelineConfiguration(document, build, query, execution)

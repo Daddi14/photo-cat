@@ -63,7 +63,7 @@ Run coverage locally:
 pytest --cov=photo_cat --cov-report=term-missing
 ```
 
-CI enforces strict test markers and a coverage baseline of 65%. The baseline is a regression guard, not a claim that all code paths have equal scientific importance. New work should add meaningful assertions rather than tests written solely to increase the percentage.
+CI enforces strict test markers and a coverage baseline of 70%. The baseline is a regression guard, not a claim that all code paths have equal scientific importance. New work should add meaningful assertions rather than tests written solely to increase the percentage.
 
 ## Public contracts and test types
 
@@ -74,7 +74,9 @@ Read [Public contracts](Public-Contracts.md) before changing a command, configur
 - Every marked test needs a concise docstring when its technical, scientific, numerical, or compatibility intent is not obvious from the name.
 - Keep tests focused on observable behaviour. Do not bind regression tests to private helper structure that a refactor may deliberately replace.
 
-Shared test data and temporary-config helpers belong in `tests/conftest.py`. Runtime path rules are covered by `tests/test_path_policy.py`; preserve the distinction between config-relative and CLI-working-directory-relative paths.
+Shared test data and temporary-config helpers belong in `tests/conftest.py`. Runtime path rules are covered by `tests/test_path_policy.py`; configuration and process-state isolation are covered by `tests/test_configuration_lifecycle.py` and `tests/test_runtime_boundaries.py`. Preserve the distinction between config-relative and CLI-working-directory-relative paths.
+
+When changing configuration flow, verify that parsing does not create output folders, CLI overrides do not mutate the base config, and child pipeline stages receive configuration through an explicit copied environment rather than a parent-process mutation.
 
 ## Verifying a change before opening a pull request
 

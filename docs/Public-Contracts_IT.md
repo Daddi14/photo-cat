@@ -42,6 +42,9 @@ Le chiavi documentate in queste sezioni, il comportamento dei percorsi relativi 
 - Un percorso CLI esplicito `--config` e gli override diretti dei percorsi CLI sono risolti rispetto alla directory di lavoro da cui viene invocato `photo-cat`.
 - I file di risultato della query vengono creati solo sotto `INDEX_DIR/output`; un file che occupa quel percorso è un errore di validazione.
 - La validazione della directory dell’indice avviene prima che l’esecuzione numerica della query apra array dell’indice o memory map.
+- Leggere o validare una configurazione non deve creare directory di output, cambiare la directory di lavoro del chiamante o modificare in modo permanente `PHOTO_CAT_CONFIG`.
+- Gli override CLI diretti vengono derivati solo per un comando e non riscrivono il file `config.yaml` sorgente.
+- I processi figli della pipeline ricevono la config selezionata in modo esplicito; comandi ripetuti nello stesso processo non devono ereditare un override precedente.
 
 ## Output della build dell'indice
 

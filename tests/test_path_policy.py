@@ -87,3 +87,15 @@ def test_load_catalog_arrays_accepts_prevalidated_index_paths(write_minimal_inde
     *_, targets_internal = load_catalog_arrays(paths, targets=["1001"])
 
     assert targets_internal == [1]
+
+
+@pytest.mark.unit
+def test_ensure_directory_creates_a_validated_runtime_folder_only_when_called(tmp_path: Path) -> None:
+    """Runtime directory creation is explicit and remains separate from config/path parsing."""
+    from photo_cat.path_policy import ensure_directory
+
+    output_dir = tmp_path / "runtime-output"
+
+    assert not output_dir.exists()
+    assert ensure_directory(output_dir, "test output") == output_dir
+    assert output_dir.is_dir()
