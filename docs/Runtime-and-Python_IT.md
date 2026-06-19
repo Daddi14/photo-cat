@@ -44,6 +44,8 @@ PHOTO-CAT non:
 
 ## Rilevamento ambienti obsoleti
 
-Se `.venv/` viene spostato, è rotto o punta a un runtime Python rimosso, PHOTO-CAT lo ricrea automaticamente.
+Se `.venv/` viene spostato, è rotto, eliminato parzialmente o punta a un runtime Python rimosso, PHOTO-CAT lo ricrea automaticamente.
+
+`photo-cat doctor` segnala un ambiente locale non aggiornato come avviso recuperabile. I controlli automatici possono usare `photo-cat doctor --format json` e ispezionare la diagnostica `project_venv`.
 
 Questo aiuta in casi comuni come lo spostamento della cartella del progetto o la rimozione di un vecchio percorso framework Python da parte di Homebrew su macOS.

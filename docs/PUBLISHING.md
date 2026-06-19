@@ -87,11 +87,11 @@ Recommended topics:
 
 Use:
 
-`PHOTO-CAT vX.Y.Z`
+`vX.Y.Z`
 
 Example:
 
-`PHOTO-CAT v1.0.0`
+`v1.0.0`
 
 ## Release asset format
 
@@ -119,3 +119,5 @@ Recommended release flow:
 5. Publish to PyPI through the release workflow or a manual PyPI dispatch.
 
 The publishing workflow is designed for PyPI Trusted Publishing. Configure the `testpypi` and `pypi` environments in the GitHub repository before using it.
+
+After a successful TestPyPI upload, the package index can take a short time to expose the new version. Wait for clean-install verification instead of uploading the same version again. The maintainer release tool polls TestPyPI availability before continuing to GitHub Release and PyPI.

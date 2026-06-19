@@ -68,6 +68,8 @@ Regression tests should protect field names, result ordering where documented, a
 
 `photo-cat doctor` supports both installed-package mode and source-project mode. Its documented success/failure status and practical diagnostics are user-facing behaviour.
 
+`photo-cat doctor --format json` is a public automation contract. It emits one JSON document with schema version `1`, the stable top-level keys `schema_version`, `ok`, `checks`, and `summary`, and check statuses `pass`, `warn`, `fail`, or `info`. A diagnostic failure returns status `1`; warnings do not change a successful status `0`.
+
 The Windows and Unix launchers remain supported entry points for local non-technical use. Internal changes must not require users to understand the development virtual environment.
 
 ## Internal code may change

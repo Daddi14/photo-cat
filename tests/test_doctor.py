@@ -55,9 +55,9 @@ def test_main_package_mode_returns_success(monkeypatch) -> None:
     """The complete doctor command must succeed for normal PyPI package installs."""
     monkeypatch.delenv("PHOTO_CAT_CONFIG", raising=False)
     monkeypatch.setattr(doctor, "find_project_dir", lambda: None)
-    monkeypatch.setattr(doctor, "check_python_version", lambda: True)
-    monkeypatch.setattr(doctor, "check_tkinter", lambda: True)
-    monkeypatch.setattr(doctor, "check_imports", lambda: True)
+    monkeypatch.setattr(doctor, "check_python_version", lambda reporter=None: True)
+    monkeypatch.setattr(doctor, "check_tkinter", lambda reporter=None: True)
+    monkeypatch.setattr(doctor, "check_imports", lambda reporter=None: True)
     monkeypatch.setattr(doctor, "installed_package_version", lambda: "1.0.1")
 
     assert doctor.main() == 0

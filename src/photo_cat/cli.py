@@ -97,12 +97,12 @@ def run_configure(args: argparse.Namespace) -> int:
 
 
 def run_doctor(args: argparse.Namespace) -> int:
-    """Run diagnostics with an explicit optional config path rather than an env mutation."""
+    """Run diagnostics with explicit config and output-mode selection."""
     config_path = resolve_cli_config(args.config)
 
     from . import doctor
 
-    return int(doctor.main(config_path) or 0)
+    return int(doctor.main(config_path, args.format) or 0)
 
 
 def add_build_overrides(parser: argparse.ArgumentParser) -> None:
@@ -207,6 +207,12 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=OverrideHelpFormatter,
     )
     doctor_parser.add_argument("--config", help="optional configuration file for environment context")
+    doctor_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="diagnostic output format (default: text)",
+    )
     doctor_parser.set_defaults(func=run_doctor)
 
     return parser
