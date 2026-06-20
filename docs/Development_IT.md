@@ -63,7 +63,7 @@ Esegui la coverage localmente:
 pytest --cov=photo_cat --cov-report=term-missing
 ```
 
-La CI impone marker di test rigorosi e una baseline di coverage del 70%. La baseline protegge dalle regressioni, ma non significa che tutti i percorsi abbiano la stessa importanza scientifica. Le nuove modifiche devono aggiungere asserzioni significative, non test creati solo per aumentare la percentuale.
+La CI impone marker di test rigorosi e una baseline di coverage del 78%. La baseline protegge dalle regressioni, ma non significa che tutti i percorsi abbiano la stessa importanza scientifica. Le nuove modifiche devono aggiungere asserzioni significative, non test creati solo per aumentare la percentuale.
 
 ## Contratti pubblici e tipi di test
 

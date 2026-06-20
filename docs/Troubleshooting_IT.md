@@ -8,9 +8,15 @@ PHOTO-CAT controlla Tkinter prima di aprire la GUI e prova a gestire i casi comu
 
 ## `.venv` è rotto dopo aver spostato la cartella
 
-PHOTO-CAT rileva ambienti virtuali spostati o rotti e ricrea automaticamente `.venv/`.
+PHOTO-CAT rileva prima del riutilizzo gli ambienti virtuali spostati, non aggiornati o parzialmente eliminati. Ricrea automaticamente `.venv/` quando la posizione del progetto memorizzata non corrisponde più, quando un percorso incorporato punta ancora alla vecchia posizione oppure quando l'eseguibile Python manca o non può avviarsi.
 
-Se necessario, chiudi PHOTO-CAT, elimina `.venv/` e avvia di nuovo il launcher.
+Esegui:
+
+```bash
+photo-cat doctor
+```
+
+Un ambiente non aggiornato ma recuperabile viene mostrato come `[WARN]`. Per l'automazione usa `photo-cat doctor --format json` e controlla il check `project_venv`. Chiudi PHOTO-CAT, quindi avvia di nuovo lo starter Windows o Unix. Se il recupero non riesce a rimuovere la vecchia cartella, elimina manualmente `.venv/` e avvia di nuovo PHOTO-CAT.
 
 ## Un percorso Homebrew Python non esiste più
 

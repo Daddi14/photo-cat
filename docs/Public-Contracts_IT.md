@@ -68,6 +68,8 @@ I test di regressione devono proteggere i nomi dei campi, l'ordine dei risultati
 
 `photo-cat doctor` supporta sia la modalità pacchetto installato sia la modalità progetto sorgente. Il suo stato di successo/fallimento documentato e le diagnostiche pratiche sono comportamento visibile agli utenti.
 
+`photo-cat doctor --format json` è un contratto pubblico per l'automazione. Emette un unico documento JSON con schema versione `1`, le chiavi di primo livello stabili `schema_version`, `ok`, `checks` e `summary`, e stati dei controlli `pass`, `warn`, `fail` oppure `info`. Un errore diagnostico restituisce stato `1`; gli avvisi non modificano lo stato riuscito `0`.
+
 I launcher Windows e Unix rimangono punti di ingresso supportati per l'uso locale non tecnico. Le modifiche interne non devono richiedere agli utenti di comprendere l'ambiente virtuale di sviluppo.
 
 ## Il codice interno può cambiare

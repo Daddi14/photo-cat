@@ -63,7 +63,7 @@ Run coverage locally:
 pytest --cov=photo_cat --cov-report=term-missing
 ```
 
-CI enforces strict test markers and a coverage baseline of 70%. The baseline is a regression guard, not a claim that all code paths have equal scientific importance. New work should add meaningful assertions rather than tests written solely to increase the percentage.
+CI enforces strict test markers and a coverage baseline of 78%. The baseline is a regression guard, not a claim that all code paths have equal scientific importance. New work should add meaningful assertions rather than tests written solely to increase the percentage.
 
 ## Public contracts and test types
 

@@ -15,6 +15,45 @@ photo-cat query --config config.yaml
 photo-cat doctor
 ```
 
+## Diagnostica doctor per l'automazione
+
+Per impostazione predefinita `photo-cat doctor` stampa un report leggibile:
+
+```bash
+photo-cat doctor
+```
+
+Per l'automazione può produrre un singolo documento JSON leggibile da macchina:
+
+```bash
+photo-cat doctor --format json
+```
+
+Il report JSON usa la versione di schema `1` e contiene i seguenti campi di primo livello stabili:
+
+```json
+{
+  "schema_version": 1,
+  "ok": true,
+  "checks": [
+    {
+      "name": "python",
+      "status": "pass",
+      "message": "Python",
+      "detail": "3.13.0"
+    }
+  ],
+  "summary": {
+    "passed": 1,
+    "warnings": 0,
+    "failed": 0,
+    "information": 0
+  }
+}
+```
+
+`status` può essere `pass`, `warn`, `fail` oppure `info`. Il comando restituisce `0` quando nessun controllo fallisce e `1` quando uno o più controlli falliscono. Gli avvisi restano visibili nel JSON ma non cambiano uno stato di uscita riuscito. Il formato predefinito `text` resta invariato per l'uso interattivo.
+
 ## Modello di configurazione
 
 Il comando standard legge i valori da `config.yaml`:

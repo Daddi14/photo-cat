@@ -8,9 +8,15 @@ PHOTO-CAT checks for Tkinter before opening the GUI and attempts to handle commo
 
 ## `.venv` is broken after moving the folder
 
-PHOTO-CAT detects moved or broken virtual environments and rebuilds `.venv/` automatically.
+PHOTO-CAT detects moved, stale, or partially deleted virtual environments before reuse. It rebuilds `.venv/` automatically when its stored project location no longer matches, its embedded path still points to an old location, or its Python executable is missing or cannot start.
 
-If needed, close PHOTO-CAT, delete `.venv/`, and run the starter again.
+Run:
+
+```bash
+photo-cat doctor
+```
+
+A recoverable stale environment is reported as `[WARN]`. For automation, use `photo-cat doctor --format json` and inspect the `project_venv` check. Close PHOTO-CAT, then run the Windows or Unix starter again. If recovery cannot remove the old folder, delete `.venv/` manually and start PHOTO-CAT again.
 
 ## A Homebrew Python path no longer exists
 

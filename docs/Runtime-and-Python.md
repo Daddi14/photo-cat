@@ -44,6 +44,8 @@ PHOTO-CAT does not:
 
 ## Stale environment detection
 
-If `.venv/` is moved, broken, or points to a removed Python runtime, PHOTO-CAT rebuilds it automatically.
+If `.venv/` is moved, broken, partially deleted, or points to a removed Python runtime, PHOTO-CAT rebuilds it automatically.
+
+`photo-cat doctor` reports a stale local environment as a recoverable warning. Automated checks can use `photo-cat doctor --format json` and inspect the `project_venv` diagnostic.
 
 This helps with common cases such as moving the project folder or Homebrew removing an older Python framework path on macOS.

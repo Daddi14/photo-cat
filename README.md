@@ -131,7 +131,7 @@ photo-cat query --config config.yaml --index-dir output/index --targets-input da
 photo-cat doctor
 ```
 
-The root launchers remain the recommended entry point for non-technical local users. The CLI is intended for automation, remote machines, and reproducible workflows. It supports direct runtime overrides for every value in `config.yaml`; see [Command-line usage](docs/Command-line.md). The doctor command supports both package-install checks and project-folder checks.
+The root launchers remain the recommended entry point for non-technical local users. The CLI is intended for automation, remote machines, and reproducible workflows. It supports direct runtime overrides for every value in `config.yaml`; see [Command-line usage](docs/Command-line.md). The doctor command supports both package-install checks and project-folder checks. Use `photo-cat doctor --format json` for machine-readable automation diagnostics.
 
 ## Documentation
 

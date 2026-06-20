@@ -131,7 +131,7 @@ photo-cat query --config config.yaml --index-dir output/index --targets-input da
 photo-cat doctor
 ```
 
-I launcher nella root restano il punto di ingresso consigliato per gli utenti locali non tecnici. La CLI è pensata per automazione, macchine remote e workflow riproducibili. Supporta override diretti di runtime per ogni valore di `config.yaml`; vedi [Uso da riga di comando](docs/Command-line_IT.md). Il comando doctor supporta sia controlli di pacchetto sia controlli della cartella progetto.
+I launcher nella root restano il punto di ingresso consigliato per gli utenti locali non tecnici. La CLI è pensata per automazione, macchine remote e workflow riproducibili. Supporta override diretti di runtime per ogni valore di `config.yaml`; vedi [Uso da riga di comando](docs/Command-line_IT.md). Il comando doctor supporta sia controlli di pacchetto sia controlli della cartella progetto. Usa `photo-cat doctor --format json` per diagnostica leggibile da macchina nell’automazione.
 
 ## Documentazione
 

@@ -119,8 +119,11 @@ def read_config_file(config_path: Path) -> dict[str, Any]:
     if (not config_path.is_file()):
         raise FileNotFoundError(f"config.yaml was not found here: {config_path}")
 
-    with config_path.open("r", encoding="utf-8") as file:
-        config = yaml.safe_load(file) or {}
+    try:
+        with config_path.open("r", encoding="utf-8") as file:
+            config = yaml.safe_load(file) or {}
+    except yaml.YAMLError as error:
+        raise ValueError(f"config.yaml contains invalid YAML: {config_path}") from error
 
     if (not isinstance(config, dict)):
         raise ValueError(f"config.yaml must contain a YAML mapping at the top level: {config_path}")
