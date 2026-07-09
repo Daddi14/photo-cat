@@ -34,6 +34,7 @@ query_contamination_from_index:
   settings:
     field_of_view_arcsec: 47.0
     delta_mag: 5.0
+    include_missing_targets: false
 execution:
   run_build: true
   run_query: true

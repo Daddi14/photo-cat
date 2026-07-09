@@ -13,9 +13,11 @@ photo-cat run --config config.yaml
 photo-cat build-index --config config.yaml
 photo-cat query --config config.yaml
 photo-cat summarize output/index/output/result.json
+photo-cat export output/index/output/result.json --format csv --output output/result.csv
 photo-cat plot output/index/output/result.json --kind contaminant-counts
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat provenance data/catalog.csv --output output/catalog_provenance.json
 photo-cat doctor
 ```
 
@@ -93,7 +95,7 @@ PHOTO-CAT version, query settings, index manifest, processed target count, and
 model-scope notes. Keep those files with the catalogue-selection query or
 notebook that generated `data/my_catalog.csv`.
 
-## Summaries, plots, reports, and benchmarks
+## Summaries, exports, plots, reports, provenance, and benchmarks
 
 Summarize one query result:
 
@@ -110,6 +112,14 @@ photo-cat plot output/my_index/output/result.json --kind contaminant-counts --ou
 photo-cat plot output/my_index/output/result.json --kind flux --output output/flux.svg
 photo-cat plot output/my_index/output/result.json --kind separations --output output/separations.svg
 photo-cat plot output/my_index/output/result.json --kind sky-map --output output/sky-map.svg
+photo-cat plot output/my_index/output/result.json --kind sky-map --backend matplotlib --output output/sky-map.png
+```
+
+Export flat target tables:
+
+```bash
+photo-cat export output/my_index/output/result.json --format csv --output output/result.csv
+photo-cat export output/my_index/output/result.json --format parquet --output output/result.parquet
 ```
 
 Create a compact report:
@@ -128,8 +138,19 @@ photo-cat benchmark --config config.yaml --no-run-build --run-query --output out
 
 Benchmark JSON includes PHOTO-CAT version, Python/platform metadata, selected
 stage durations, status codes, and Python `tracemalloc` peak allocations. The
-allocation counter is reproducible and dependency-free, but it is not a complete
-native RSS measurement for NumPy/SciPy memory.
+allocation counter is reproducible and dependency-free. If `psutil` is installed,
+the benchmark also samples native RSS memory; otherwise RSS fields are present
+but marked unavailable.
+
+Capture catalogue provenance:
+
+```bash
+photo-cat provenance data/my_catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
+```
+
+Provenance JSON includes the catalogue path, SHA-256, byte size, row count,
+columns, null counts, numeric ranges for RA/Dec/magnitude columns, duplicate
+source-ID count, and optional ADQL/query-file checksum.
 
 ## Path handling
 
@@ -320,6 +341,7 @@ Boolean options support positive and negative forms:
 | `query_contamination_from_index.io.target_source_id_column` | `--target-source-id-column NAME` |
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--field-of-view-arcsec VALUE` |
 | `query_contamination_from_index.settings.delta_mag` | `--delta-mag VALUE` |
+| `query_contamination_from_index.settings.include_missing_targets` | `--include-missing-targets` / `--no-include-missing-targets` |
 | `execution.run_build` | `--run-build` / `--no-run-build` |
 | `execution.run_query` | `--run-query` / `--no-run-query` |
 | `execution.replace_running_pipeline` | `--replace-running-pipeline` / `--no-replace-running-pipeline` |

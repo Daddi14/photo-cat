@@ -53,6 +53,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "settings": {
             "field_of_view_arcsec": 47.0,
             "delta_mag": 5.0,
+            "include_missing_targets": False,
         },
     },
     "execution": {
@@ -82,6 +83,7 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "target_source_id_column": ("query_contamination_from_index", "io", "target_source_id_column"),
     "field_of_view_arcsec": ("query_contamination_from_index", "settings", "field_of_view_arcsec"),
     "delta_mag": ("query_contamination_from_index", "settings", "delta_mag"),
+    "include_missing_targets": ("query_contamination_from_index", "settings", "include_missing_targets"),
     "run_build": ("execution", "run_build"),
     "run_query": ("execution", "run_query"),
     "replace_running_pipeline": ("execution", "replace_running_pipeline"),

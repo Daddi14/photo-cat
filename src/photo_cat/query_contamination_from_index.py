@@ -204,6 +204,15 @@ class QueryRuntimePlan:
     output_json: Path
 
 
+@dataclass(frozen=True)
+class TargetRequest:
+    """One requested target, preserving unresolved IDs when requested."""
+
+    source_id: str
+    internal_id: int | None
+    status: str
+
+
 def validate_index_directory(index_dir: str) -> IndexPaths:
     """Validate an index directory and return its named runtime paths."""
     return validate_index_paths(index_paths(index_dir))
@@ -299,6 +308,40 @@ def resolve_target_internal_ids(
     return targets_internal, invalid_targets, missing_targets
 
 
+def resolve_target_requests(
+    targets_real: list[str],
+    name_to_internal_special: Dict[str, int],
+    numeric_real_ids_sorted: np.ndarray,
+    numeric_internal_ids_sorted: np.ndarray,
+) -> list[TargetRequest]:
+    """Resolve public target IDs while preserving invalid/missing rows."""
+    requests: list[TargetRequest] = []
+
+    for target_id in targets_real:
+        target_text = str(target_id)
+        if (target_text in name_to_internal_special):
+            requests.append(TargetRequest(target_text, name_to_internal_special[target_text], "found"))
+            continue
+
+        try:
+            numeric_target_id = int(target_text)
+        except (ValueError, TypeError):
+            requests.append(TargetRequest(target_text, None, "invalid_target_id"))
+            continue
+
+        internal_id = find_numeric_internal_id(
+            numeric_real_ids_sorted,
+            numeric_internal_ids_sorted,
+            numeric_target_id,
+        )
+        if (internal_id is None):
+            requests.append(TargetRequest(target_text, None, "missing_from_index"))
+        else:
+            requests.append(TargetRequest(target_text, internal_id, "found"))
+
+    return requests
+
+
 def target_id_preview(values: list[str]) -> str:
     """Format a short deterministic preview for target-ID errors and warnings."""
     preview = ", ".join(values[:8])
@@ -311,7 +354,8 @@ def load_catalog_arrays(
     INDEX_DIR: str | IndexPaths,
     TARGETS_INPUT: Optional[str] = None,
     targets: Optional[list] = None,
-    target_source_id_column: str = "source_id"
+    target_source_id_column: str = "source_id",
+    return_target_requests: bool = False,
 ):
     """
     Low-memory loader for index arrays and target IDs.
@@ -431,13 +475,15 @@ def load_catalog_arrays(
             "Use a Targets CSV with at least one configured Source ID value, or add source_id values under Manual targets in the GUI."
         )
 
-    # --- Resolve target internal IDs (special IDs first, then numeric) ---
-    targets_internal, invalid_targets, missing_targets = resolve_target_internal_ids(
+    target_requests = resolve_target_requests(
         targets_real,
         name_to_internal_special,
         numeric_real_ids_sorted,
         numeric_internal_ids_sorted,
     )
+    targets_internal = [request.internal_id for request in target_requests if request.internal_id is not None]
+    invalid_targets = [request.source_id for request in target_requests if request.status == "invalid_target_id"]
+    missing_targets = [request.source_id for request in target_requests if request.status == "missing_from_index"]
 
     if (invalid_targets):
         logger.warning(
@@ -455,7 +501,7 @@ def load_catalog_arrays(
 
     logger.info("Loaded %d target(s) for analysis.", len(targets_internal))
 
-    if (not targets_internal):
+    if (not targets_internal and not return_target_requests):
         details: list[str] = []
         if (invalid_targets):
             details.append(f"Unrecognised target values: {target_id_preview(invalid_targets)}")
@@ -467,6 +513,9 @@ def load_catalog_arrays(
             + "\n".join(details)
             + "\n\nMake sure Targets CSV/source_id values come from the same catalog used to build the index."
         )
+
+    if (return_target_requests):
+        return ra, dec, gmag, real_ids_int, internal_to_special_name, targets_internal, target_requests
 
     return ra, dec, gmag, real_ids_int, internal_to_special_name, targets_internal
 
@@ -531,6 +580,24 @@ def empty_target_result(source_id: str, ra: float, dec: float, magnitude: float)
         num_contaminants=0,
         contaminants=[],
     ).__dict__
+
+
+def unresolved_target_result(source_id: str, status: str) -> dict:
+    """Represent a requested target that could not be evaluated against the index."""
+    return {
+        "source_id": source_id,
+        "status": status,
+        "ra": None,
+        "dec": None,
+        "phot_g_mean_mag": None,
+        "flux_fraction_selected": None,
+        "flux_fraction_all_neighbors": None,
+        "flux_fraction_extra": None,
+        "num_neighbors_in_radius": None,
+        "num_contaminants_selected": None,
+        "num_contaminants": None,
+        "contaminants": [],
+    }
 
 
 def valid_neighbor_indices(neighbor_internal_ids: np.ndarray, number_of_sources: int) -> np.ndarray:
@@ -730,6 +797,21 @@ def loop_over_targets(
 
     return results
 
+
+def merge_unresolved_target_results(
+    evaluated_results: list[dict],
+    target_requests: list[TargetRequest],
+) -> list[dict]:
+    """Return results in requested-target order, including missing/invalid rows."""
+    evaluated_iter = iter(evaluated_results)
+    merged: list[dict] = []
+    for request in target_requests:
+        if (request.status == "found"):
+            merged.append(next(evaluated_iter))
+        else:
+            merged.append(unresolved_target_result(request.source_id, request.status))
+    return merged
+
 # --- Save results to JSON ------------------------------------------------------
 def save_results_to_json(results: list, json_path: str) -> str:
     """
@@ -846,12 +928,35 @@ def main(config_path: str | Path | None = None) -> int:
             )
 
     # ---------------- LOAD CATALOG ARRAYS ----------
-    ra, dec, gmag, real_ids_int, internal_to_special_name, targets_internal = load_catalog_arrays(
+    (
+        ra,
+        dec,
+        gmag,
+        real_ids_int,
+        internal_to_special_name,
+        targets_internal,
+        target_requests,
+    ) = load_catalog_arrays(
         paths,
         config_query.TARGETS_INPUT,
         config_query.targets,
-        config_query.target_source_id_column
+        config_query.target_source_id_column,
+        return_target_requests=True,
     )
+    if (not targets_internal and not config_query.include_missing_targets):
+        invalid_targets = [request.source_id for request in target_requests if request.status == "invalid_target_id"]
+        missing_targets = [request.source_id for request in target_requests if request.status == "missing_from_index"]
+        details: list[str] = []
+        if (invalid_targets):
+            details.append(f"Unrecognised target values: {target_id_preview(invalid_targets)}")
+        if (missing_targets):
+            details.append(f"Target values not found in the index: {target_id_preview(missing_targets)}")
+
+        raise ValueError(
+            "None of the configured targets were found in the built index.\n\n"
+            + "\n".join(details)
+            + "\n\nMake sure Targets CSV/source_id values come from the same catalog used to build the index."
+        )
 
     
     # ---------------- RUN CONTAMINATION LOOP -------
@@ -868,6 +973,8 @@ def main(config_path: str | Path | None = None) -> int:
         targets_internal=targets_internal,
         neighbor_separations_mm=neighbor_separations_mm,
     )
+    if (config_query.include_missing_targets):
+        results = merge_unresolved_target_results(results, target_requests)
 
     # ---------------- SAVE RESULTS -----------------
     with ActivityBar("[saving JSON results]"):
@@ -880,8 +987,9 @@ def main(config_path: str | Path | None = None) -> int:
             len(results),
         )
 
-    targets_with_contaminants = sum(r["num_contaminants"] > 0 for r in results)
-    targets_without_contaminants = sum(r["num_contaminants"] == 0 for r in results)
+    evaluated_results = [r for r in results if (r.get("status", "found") == "found")]
+    targets_with_contaminants = sum(int(r.get("num_contaminants") or 0) > 0 for r in evaluated_results)
+    targets_without_contaminants = sum(int(r.get("num_contaminants") or 0) == 0 for r in evaluated_results)
 
     logger.info("")
     logger.info(f"Results saved to: {json_path}")
@@ -889,7 +997,8 @@ def main(config_path: str | Path | None = None) -> int:
     logger.info(
         f"Targets processed: {len(results)} "
         f"(with contaminants: {targets_with_contaminants}, "
-        f"without contaminants: {targets_without_contaminants})"
+        f"without contaminants: {targets_without_contaminants}, "
+        f"unresolved: {len(results) - len(evaluated_results)})"
     )
 
     return 0

@@ -18,6 +18,7 @@ from .index_manifest import atomic_write_json
 SUMMARY_SCHEMA_VERSION = 1
 PLOT_KINDS = ("contaminant-counts", "flux", "separations", "sky-map")
 REPORT_FORMATS = ("html", "markdown")
+EXPORT_FORMATS = ("csv", "parquet")
 
 
 def load_result_rows(path: str | Path) -> list[dict[str, Any]]:
@@ -289,6 +290,61 @@ def write_plot(rows: list[dict[str, Any]], kind: str, output_path: str | Path) -
     return str(destination)
 
 
+def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: str | Path) -> str:
+    """Write a richer plot with matplotlib when the optional dependency exists."""
+    if kind not in PLOT_KINDS:
+        raise ValueError(f"Plot kind must be one of: {', '.join(PLOT_KINDS)}")
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError as error:
+        raise ImportError("Matplotlib plotting requires the optional matplotlib package.") from error
+
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
+    if kind == "contaminant-counts":
+        values = [_int_number(row.get("num_contaminants", 0)) for row in rows]
+        ax.hist(values, bins=min(max(len(set(values)), 1), 40), color="#4477AA")
+        ax.set_xlabel("selected contaminants")
+        ax.set_ylabel("targets")
+        ax.set_title("Contaminants per target")
+    elif kind == "flux":
+        values = [_selected_flux(row) for row in rows]
+        ax.hist(values, bins=40, color="#66CCEE")
+        ax.set_xlabel("selected flux fraction (%)")
+        ax.set_ylabel("targets")
+        ax.set_title("Selected flux fraction")
+    elif kind == "separations":
+        values = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
+        ax.hist(values, bins=40, color="#228833")
+        ax.set_xlabel("separation (arcsec)")
+        ax.set_ylabel("selected contaminants")
+        ax.set_title("Contaminant separations")
+    elif kind == "sky-map":
+        ra_values = []
+        dec_values = []
+        colours = []
+        for row in rows:
+            ra = _number(row.get("ra"), None)  # type: ignore[arg-type]
+            dec = _number(row.get("dec"), None)  # type: ignore[arg-type]
+            if ra is None or dec is None:
+                continue
+            count = _int_number(row.get("num_contaminants", 0))
+            ra_values.append(ra)
+            dec_values.append(dec)
+            colours.append("#228833" if count == 0 else ("#CCBB44" if count <= 3 else "#EE6677"))
+        ax.scatter(ra_values, dec_values, s=6, c=colours, alpha=0.75, linewidths=0)
+        ax.set_xlabel("RA (deg)")
+        ax.set_ylabel("Dec (deg)")
+        ax.set_title("PHOTO-CAT sky map")
+    fig.savefig(destination)
+    plt.close(fig)
+    return str(destination)
+
+
 def build_report(rows: list[dict[str, Any]], result_path: str | Path, output_format: str) -> str:
     """Build an HTML or Markdown report for one result table."""
     summary = summarize_results(rows, source_path=result_path)
@@ -326,4 +382,39 @@ def write_report(rows: list[dict[str, Any]], result_path: str | Path, output_pat
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(build_report(rows, result_path, output_format), encoding="utf-8")
+    return str(destination)
+
+
+def flatten_result_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Flatten one target result for tabular export."""
+    flattened = dict(row)
+    contaminants = flattened.get("contaminants", [])
+    flattened["contaminants_json"] = json.dumps(contaminants, ensure_ascii=False)
+    flattened["contaminants"] = len(contaminants) if isinstance(contaminants, list) else 0
+    return flattened
+
+
+def write_export(rows: list[dict[str, Any]], output_path: str | Path, output_format: str) -> str:
+    """Export target-result rows as CSV or Parquet."""
+    if output_format not in EXPORT_FORMATS:
+        raise ValueError(f"Export format must be one of: {', '.join(EXPORT_FORMATS)}")
+
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    flattened_rows = [flatten_result_row(row) for row in rows]
+
+    if output_format == "csv":
+        fieldnames = sorted({key for row in flattened_rows for key in row})
+        with destination.open("x", encoding="utf-8", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(flattened_rows)
+        return str(destination)
+
+    try:
+        import pandas as pd
+    except ImportError as error:
+        raise ImportError("Parquet export requires pandas and pyarrow.") from error
+
+    pd.DataFrame(flattened_rows).to_parquet(destination, index=False)
     return str(destination)

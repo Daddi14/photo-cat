@@ -18,9 +18,11 @@ photo-cat build-index
 photo-cat query
 photo-cat summarize
 photo-cat summary
+photo-cat export
 photo-cat plot
 photo-cat report
 photo-cat benchmark
+photo-cat provenance
 photo-cat doctor
 photo-cat --version
 ```
@@ -70,6 +72,8 @@ Ogni risultato per target preserva i campi documentati per:
 - `num_contaminants_selected`;
 - `num_contaminants`;
 - record dei contaminanti con ID sorgente, coordinate, magnitudine e separazione.
+- righe target non risolte quando richieste esplicitamente, con `status` uguale
+  a `missing_from_index` o `invalid_target_id`.
 
 Ogni query scrive anche un metadata sidecar per la riproducibilità in
 `INDEX_DIR/output/metadata/`, con schema versione `1`. Il sidecar include
@@ -83,12 +87,16 @@ I test di regressione devono proteggere i nomi dei campi, l'ordine dei risultati
 ## Prodotti derivati dai risultati
 
 `photo-cat summarize` legge un JSON di risultati target e produce statistiche
-aggregate text, JSON o CSV. `photo-cat plot` legge un JSON di risultati target e
-scrive plot SVG per i tipi documentati. `photo-cat report` scrive report HTML o
-Markdown da un JSON di risultati target. `photo-cat benchmark` scrive un
-documento JSON con schema versione `1`, durate delle fasi, codici di stato,
-metadata di piattaforma, versione PHOTO-CAT e picco di allocazioni Python via
-`tracemalloc`.
+aggregate text, JSON o CSV. `photo-cat export` scrive tabelle target piatte CSV
+o Parquet. `photo-cat plot` legge un JSON di risultati target e scrive SVG per i
+tipi documentati di default, con backend matplotlib opzionale quando installato.
+`photo-cat report` scrive report HTML o Markdown da un JSON di risultati target.
+`photo-cat benchmark` scrive un documento JSON con schema versione `1`, durate
+delle fasi, codici di stato, metadata di piattaforma, versione PHOTO-CAT, picco
+di allocazioni Python via `tracemalloc` e campioni RSS opzionali via psutil.
+`photo-cat provenance` scrive un JSON versionato con checksum del catalogo,
+dimensione/header, conteggi nulli, range numerici, conteggi source ID duplicati
+e checksum opzionale del file ADQL/query.
 
 ## Diagnostica e launcher
 

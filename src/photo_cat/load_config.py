@@ -56,6 +56,7 @@ class QueryConfig:
     delta_mag: float
     targets: list[str | int]
     target_source_id_column: str
+    include_missing_targets: bool = False
 
 
 @dataclass(frozen=True)
@@ -379,6 +380,11 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
             io.get("target_source_id_column"),
             "query_contamination_from_index.io.target_source_id_column",
             "source_id",
+        ),
+        include_missing_targets=parse_bool(
+            settings.get("include_missing_targets"),
+            "query_contamination_from_index.settings.include_missing_targets",
+            False,
         ),
     )
 

@@ -13,9 +13,11 @@ photo-cat run --config config.yaml
 photo-cat build-index --config config.yaml
 photo-cat query --config config.yaml
 photo-cat summarize output/index/output/result.json
+photo-cat export output/index/output/result.json --format csv --output output/result.csv
 photo-cat plot output/index/output/result.json --kind contaminant-counts
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat provenance data/catalog.csv --output output/catalog_provenance.json
 photo-cat doctor
 ```
 
@@ -94,7 +96,7 @@ processati e note sull'ambito del modello. Conserva questi file insieme alla
 query di selezione del catalogo o al notebook che ha generato
 `data/my_catalog.csv`.
 
-## Riassunti, plot, report e benchmark
+## Riassunti, export, plot, report, provenance e benchmark
 
 Riassumi un risultato di query:
 
@@ -111,6 +113,14 @@ photo-cat plot output/my_index/output/result.json --kind contaminant-counts --ou
 photo-cat plot output/my_index/output/result.json --kind flux --output output/flux.svg
 photo-cat plot output/my_index/output/result.json --kind separations --output output/separations.svg
 photo-cat plot output/my_index/output/result.json --kind sky-map --output output/sky-map.svg
+photo-cat plot output/my_index/output/result.json --kind sky-map --backend matplotlib --output output/sky-map.png
+```
+
+Esporta tabelle target piatte:
+
+```bash
+photo-cat export output/my_index/output/result.json --format csv --output output/result.csv
+photo-cat export output/my_index/output/result.json --format parquet --output output/result.parquet
 ```
 
 Crea un report compatto:
@@ -129,8 +139,19 @@ photo-cat benchmark --config config.yaml --no-run-build --run-query --output out
 
 Il JSON di benchmark include versione PHOTO-CAT, metadata Python/piattaforma,
 durate delle fasi selezionate, codici di stato e picco di allocazioni Python via
-`tracemalloc`. Il contatore delle allocazioni è riproducibile e senza dipendenze,
-ma non è una misura RSS nativa completa della memoria usata da NumPy/SciPy.
+`tracemalloc`. Il contatore delle allocazioni è riproducibile e senza dipendenze.
+Se `psutil` è installato, il benchmark campiona anche la memoria nativa RSS;
+altrimenti i campi RSS sono presenti ma segnati come non disponibili.
+
+Cattura provenance del catalogo:
+
+```bash
+photo-cat provenance data/my_catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
+```
+
+Il JSON di provenance include percorso del catalogo, SHA-256, dimensione in byte,
+numero di righe, colonne, conteggi nulli, range numerici per RA/Dec/magnitudine,
+conteggio dei source ID duplicati e checksum opzionale del file ADQL/query.
 
 ## Gestione dei percorsi
 
@@ -321,6 +342,7 @@ Le opzioni booleane supportano forma positiva e negativa:
 | `query_contamination_from_index.io.target_source_id_column` | `--target-source-id-column NAME` |
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--field-of-view-arcsec VALUE` |
 | `query_contamination_from_index.settings.delta_mag` | `--delta-mag VALUE` |
+| `query_contamination_from_index.settings.include_missing_targets` | `--include-missing-targets` / `--no-include-missing-targets` |
 | `execution.run_build` | `--run-build` / `--no-run-build` |
 | `execution.run_query` | `--run-query` / `--no-run-query` |
 | `execution.replace_running_pipeline` | `--replace-running-pipeline` / `--no-replace-running-pipeline` |

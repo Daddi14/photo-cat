@@ -81,6 +81,12 @@ del catalogo usato nella build e le note sull'ambito del modello riportate sopra
 Il JSON dei risultati rimane una lista semplice di target per compatibilità con
 gli script esistenti.
 
+Per impostazione predefinita, gli ID target invalidi o assenti dall'indice
+vengono saltati con avvisi. Imposta `include_missing_targets: true` o passa
+`--include-missing-targets` per conservarli nel JSON come righe con `status`
+uguale a `missing_from_index` o `invalid_target_id` e metriche scientifiche
+impostate a `null`.
+
 ## Riassunti, plot, report e benchmark derivati
 
 Dopo una query, i risultati possono essere convertiti in prodotti riproducibili
@@ -88,10 +94,13 @@ adatti anche a un articolo:
 
 ```bash
 photo-cat summarize INDEX_DIR/output/result.json --format json --output summary.json
+photo-cat export INDEX_DIR/output/result.json --format csv --output result.csv
 photo-cat plot INDEX_DIR/output/result.json --kind contaminant-counts --output counts.svg
+photo-cat plot INDEX_DIR/output/result.json --kind sky-map --backend matplotlib --output sky-map.png
 photo-cat plot INDEX_DIR/output/result.json --kind separations --output separations.svg
 photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
 photo-cat report INDEX_DIR/output/result.json --format html --output report.html
+photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
 ```
 
@@ -99,10 +108,12 @@ photo-cat benchmark --config config.yaml --output benchmark.json
 selezionati, conteggi di tutti i vicini, statistiche sulle frazioni di flusso e
 statistiche sulle separazioni. `plot` scrive SVG senza dipendenze aggiuntive per
 conteggi dei contaminanti, frazioni di flusso, separazioni o una semplice mappa
-RA/Dec. `report` scrive un documento HTML o Markdown con riassunto e plot.
-`benchmark` esegue le fasi selezionate e registra tempo di esecuzione più picco
-di allocazioni Python via `tracemalloc`; la memoria nativa usata da NumPy/SciPy
-può essere superiore al contatore delle allocazioni Python.
+RA/Dec; `--backend matplotlib` abilita plot più ricchi quando matplotlib è
+installato. `export` scrive tabelle target piatte CSV o Parquet. `report` scrive
+un documento HTML o Markdown con riassunto e plot. `provenance` registra checksum
+del catalogo e statistiche di input di base. `benchmark` esegue le fasi
+selezionate e registra tempo di esecuzione più picco di allocazioni Python via
+`tracemalloc`; se `psutil` è installato campiona anche la memoria nativa RSS.
 
 ## Output console
 

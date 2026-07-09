@@ -67,6 +67,7 @@ DEFAULT_CONFIG = {
         "settings": {
             "field_of_view_arcsec": 47.0,
             "delta_mag": 5,
+            "include_missing_targets": False,
         },
     },
     "execution": {
@@ -129,6 +130,7 @@ class ConfigGui(tk.Tk):
         self.max_radius_var = tk.StringVar()
         self.field_of_view_var = tk.StringVar()
         self.delta_mag_var = tk.StringVar()
+        self.include_missing_targets_var = tk.BooleanVar()
         self.chunk_size_var = tk.StringVar()
         self.buffer_flush_var = tk.StringVar()
         self.use_dask_var = tk.BooleanVar()
@@ -626,6 +628,7 @@ class ConfigGui(tk.Tk):
         ttk.Checkbutton(checks, text="Store neighbor separations on disk", variable=self.calculate_separations_var).grid(row=1, column=0, sticky="w", pady=2)
         ttk.Checkbutton(checks, text="Run build step", variable=self.run_build_var).grid(row=2, column=0, sticky="w", pady=2)
         ttk.Checkbutton(checks, text="Run query step", variable=self.run_query_var).grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(checks, text="Include missing target rows in results", variable=self.include_missing_targets_var).grid(row=4, column=0, sticky="w", pady=2)
         ttk.Checkbutton(
             checks,
             text="Replace running pipeline when Save + run is clicked",
@@ -711,6 +714,7 @@ class ConfigGui(tk.Tk):
         self.max_radius_var.set(str(build_settings.get("max_radius_arcsec", 120.0)))
         self.field_of_view_var.set(str(query_settings.get("field_of_view_arcsec", 47.0)))
         self.delta_mag_var.set(str(query_settings.get("delta_mag", 5)))
+        self.include_missing_targets_var.set(bool(query_settings.get("include_missing_targets", False)))
         self.chunk_size_var.set(str(build_settings.get("chunk_size", 10000)))
         self.buffer_flush_var.set(str(build_settings.get("buffer_flush_interval", 200)))
         self.use_dask_var.set(bool(build_settings.get("use_dask", True)))
@@ -1210,6 +1214,7 @@ class ConfigGui(tk.Tk):
                 "settings": {
                     "field_of_view_arcsec": float(self.field_of_view_var.get().strip()),
                     "delta_mag": float(self.delta_mag_var.get().strip()),
+                    "include_missing_targets": bool(self.include_missing_targets_var.get()),
                 },
             },
             "execution": {

@@ -60,6 +60,42 @@ query_contamination_from_index:
     assert result[0]["flux_fraction_extra"] == 0.0
 
 
+@pytest.mark.regression
+def test_query_can_preserve_missing_target_rows(
+    write_minimal_index: Callable[[], Path],
+    tmp_path: Path,
+) -> None:
+    """Opt-in missing-target rows should keep batch target lists auditable."""
+    index_dir = write_minimal_index()
+    config_path = tmp_path / "query.yaml"
+    config_path.write_text(
+        f"""
+query_contamination_from_index:
+  io:
+    INDEX_DIR: {index_dir.as_posix()}
+    TARGETS_INPUT: null
+    targets: ["1001", "9999", "not-a-number"]
+    target_source_id_column: source_id
+  settings:
+    field_of_view_arcsec: 47.0
+    delta_mag: 5.0
+    include_missing_targets: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert query_main(config_path) == 0
+
+    result_path = next((index_dir / "output").glob("*.json"))
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert [row["source_id"] for row in result] == ["1001", "9999", "not-a-number"]
+    assert result[0].get("status", "found") == "found"
+    assert result[1]["status"] == "missing_from_index"
+    assert result[2]["status"] == "invalid_target_id"
+    assert result[1]["flux_fraction_selected"] is None
+
+
 @pytest.mark.unit
 def test_query_rejects_a_field_of_view_larger_than_the_built_radius(
     write_minimal_index: Callable[[], Path],

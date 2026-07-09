@@ -57,6 +57,8 @@ Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più com
 - Riporta sia il flusso dei contaminanti selezionati sia il flusso di tutti i vicini dentro il raggio.
 - Riassume i JSON dei risultati in statistiche text, JSON o CSV.
 - Genera plot SVG senza dipendenze aggiuntive e report HTML/Markdown.
+- Esporta tabelle di risultati target in CSV o Parquet per notebook e strumenti esterni.
+- Cattura provenance JSON del catalogo con checksum, conteggi righe, statistiche colonne e checksum ADQL opzionale.
 - Esegue benchmark riproducibili con tempi e allocazioni Python di picco.
 - Configura le esecuzioni tramite interfaccia grafica.
 - Esegui lo stesso workflow da una CLI per automazione e sistemi remoti, con override diretti per ogni valore di configurazione.
@@ -114,7 +116,9 @@ I risultati possono essere post-processati con:
 
 ```bash
 photo-cat summarize output/index/output/result.json
+photo-cat export output/index/output/result.json --format csv --output output/result.csv
 photo-cat plot output/index/output/result.json --kind contaminant-counts
+photo-cat provenance data/catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
 ```

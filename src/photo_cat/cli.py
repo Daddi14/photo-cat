@@ -121,12 +121,15 @@ def run_summarize(args: argparse.Namespace) -> int:
 
 def run_plot(args: argparse.Namespace) -> int:
     """Write a dependency-free SVG plot from a PHOTO-CAT query result JSON."""
-    from .result_products import load_result_rows, write_plot
+    from .result_products import load_result_rows, write_matplotlib_plot, write_plot
 
     result_path = Path(args.result_json)
     output_path = Path(args.output) if args.output else result_path.with_name(f"{result_path.stem}_{args.kind}.svg")
     rows = load_result_rows(result_path)
-    saved_path = write_plot(rows, args.kind, output_path)
+    if (args.backend == "matplotlib"):
+        saved_path = write_matplotlib_plot(rows, args.kind, output_path)
+    else:
+        saved_path = write_plot(rows, args.kind, output_path)
     print(f"Plot saved to: {saved_path}")
     return 0
 
@@ -141,6 +144,33 @@ def run_report(args: argparse.Namespace) -> int:
     rows = load_result_rows(result_path)
     saved_path = write_report(rows, result_path, output_path, args.format)
     print(f"Report saved to: {saved_path}")
+    return 0
+
+
+def run_export(args: argparse.Namespace) -> int:
+    """Export target-result rows to CSV or Parquet."""
+    from .result_products import load_result_rows, write_export
+
+    rows = load_result_rows(args.result_json)
+    saved_path = write_export(rows, args.output, args.format)
+    print(f"Export saved to: {saved_path}")
+    return 0
+
+
+def run_provenance(args: argparse.Namespace) -> int:
+    """Capture catalogue provenance metadata."""
+    from .catalogue_provenance import build_catalogue_provenance, write_catalogue_provenance
+
+    payload = build_catalogue_provenance(
+        args.catalog_csv,
+        adql_path=args.adql_file,
+        source_id_column=args.source_id_column,
+        ra_column=args.ra_column,
+        dec_column=args.dec_column,
+        mag_column=args.mag_column,
+    )
+    saved_path = write_catalogue_provenance(payload, args.output)
+    print(f"Provenance saved to: {saved_path}")
     return 0
 
 
@@ -189,6 +219,13 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
     query_group.add_argument("--target-source-id-column", help="source_id column name in the targets CSV")
     query_group.add_argument("--field-of-view-arcsec", type=float, help="query field-of-view radius in arcseconds")
     query_group.add_argument("--delta-mag", type=float, help="maximum contaminant-target magnitude difference")
+    query_group.add_argument(
+        "--include-missing-targets",
+        dest="include_missing_targets",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="include invalid/missing target IDs as status rows in query results",
+    )
 
 
 def add_execution_overrides(parser: argparse.ArgumentParser) -> None:
@@ -285,8 +322,29 @@ def build_parser() -> argparse.ArgumentParser:
         default="contaminant-counts",
         help="plot type (default: contaminant-counts)",
     )
+    plot_parser.add_argument(
+        "--backend",
+        choices=["svg", "matplotlib"],
+        default="svg",
+        help="plot backend (default: svg)",
+    )
     plot_parser.add_argument("--output", help="SVG output path")
     plot_parser.set_defaults(func=run_plot)
+
+    export_parser = subparsers.add_parser(
+        "export",
+        help="export a PHOTO-CAT query result JSON to CSV or Parquet",
+        formatter_class=OverrideHelpFormatter,
+    )
+    export_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
+    export_parser.add_argument("--output", required=True, help="export output path")
+    export_parser.add_argument(
+        "--format",
+        choices=["csv", "parquet"],
+        default="csv",
+        help="export format (default: csv)",
+    )
+    export_parser.set_defaults(func=run_export)
 
     report_parser = subparsers.add_parser(
         "report",
@@ -327,6 +385,20 @@ def build_parser() -> argparse.ArgumentParser:
     add_build_overrides(benchmark_parser)
     add_query_overrides(benchmark_parser)
     benchmark_parser.set_defaults(func=run_benchmark)
+
+    provenance_parser = subparsers.add_parser(
+        "provenance",
+        help="write catalogue provenance metadata",
+        formatter_class=OverrideHelpFormatter,
+    )
+    provenance_parser.add_argument("catalog_csv", help="catalogue CSV path")
+    provenance_parser.add_argument("--output", required=True, help="provenance JSON output path")
+    provenance_parser.add_argument("--adql-file", help="optional ADQL/query file used to create the catalogue")
+    provenance_parser.add_argument("--source-id-column", default="source_id", help="source ID column name")
+    provenance_parser.add_argument("--ra-column", default="ra", help="right-ascension column name")
+    provenance_parser.add_argument("--dec-column", default="dec", help="declination column name")
+    provenance_parser.add_argument("--mag-column", default="phot_g_mean_mag", help="magnitude column name")
+    provenance_parser.set_defaults(func=run_provenance)
 
     doctor_parser = subparsers.add_parser(
         "doctor",

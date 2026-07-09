@@ -57,6 +57,8 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Report both selected-contaminant flux and all-neighbour-in-radius flux metrics.
 - Summarize result JSON files into text, JSON, or CSV statistics.
 - Generate dependency-free SVG plots and HTML/Markdown reports from query results.
+- Export target-result tables to CSV or Parquet for notebooks and external tools.
+- Capture catalogue provenance JSON with checksums, row counts, column stats, and optional ADQL checksums.
 - Run benchmark captures for reproducible runtime and memory-allocation notes.
 - Configure runs through a graphical interface.
 - Run the same workflow from a command-line interface for automation and remote systems, with direct overrides for every config value.
@@ -114,7 +116,9 @@ Result files can be post-processed with:
 
 ```bash
 photo-cat summarize output/index/output/result.json
+photo-cat export output/index/output/result.json --format csv --output output/result.csv
 photo-cat plot output/index/output/result.json --kind contaminant-counts
+photo-cat provenance data/catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
 ```

@@ -79,6 +79,11 @@ configuration values, target count, index manifest, catalogue SHA-256 from the
 index build, and the model-scope notes above. The target-result JSON remains a
 plain list of target entries for compatibility with existing scripts.
 
+By default, target IDs that are invalid or absent from the index are skipped with
+warnings. Set `include_missing_targets: true` or pass `--include-missing-targets`
+to preserve those requested IDs as JSON rows with `status` set to
+`missing_from_index` or `invalid_target_id` and science metrics set to `null`.
+
 ## Derived summaries, plots, reports, and benchmarks
 
 After a query, result files can be converted into reproducible paper-style
@@ -86,21 +91,26 @@ products:
 
 ```bash
 photo-cat summarize INDEX_DIR/output/result.json --format json --output summary.json
+photo-cat export INDEX_DIR/output/result.json --format csv --output result.csv
 photo-cat plot INDEX_DIR/output/result.json --kind contaminant-counts --output counts.svg
+photo-cat plot INDEX_DIR/output/result.json --kind sky-map --backend matplotlib --output sky-map.png
 photo-cat plot INDEX_DIR/output/result.json --kind separations --output separations.svg
 photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
 photo-cat report INDEX_DIR/output/result.json --format html --output report.html
+photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
 ```
 
 `summarize` emits aggregate target counts, selected-contaminant counts,
 all-neighbour counts, flux-fraction statistics, and separation statistics.
 `plot` writes dependency-free SVG files for contaminant counts, flux fractions,
-separations, or a simple RA/Dec sky map. `report` writes an HTML or Markdown
-document that bundles the summary and plots. `benchmark` runs selected pipeline
-stages and records wall-clock time plus Python `tracemalloc` peak allocations;
-native memory used by NumPy/SciPy may be higher than the Python allocation
-counter.
+separations, or a simple RA/Dec sky map; `--backend matplotlib` enables richer
+plots when matplotlib is installed. `export` writes flat CSV or Parquet target
+tables. `report` writes an HTML or Markdown document that bundles the summary
+and plots. `provenance` records catalogue checksums and basic input statistics.
+`benchmark` runs selected pipeline stages and records wall-clock time plus
+Python `tracemalloc` peak allocations; if `psutil` is installed it also samples
+native RSS memory.
 
 ## Console output
 

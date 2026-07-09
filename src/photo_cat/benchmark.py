@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import platform
 import sys
+import threading
 import time
 import tracemalloc
 from pathlib import Path
@@ -18,14 +19,71 @@ from .index_manifest import atomic_write_json
 BENCHMARK_SCHEMA_VERSION = 1
 
 
+class _RssSampler:
+    """Optional psutil-backed RSS sampler for native memory visibility."""
+
+    def __init__(self, interval_seconds: float = 0.02):
+        self.interval_seconds = interval_seconds
+        self.available = False
+        self.start_rss: int | None = None
+        self.end_rss: int | None = None
+        self.peak_rss: int | None = None
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        try:
+            import psutil
+        except ImportError:
+            self._process = None
+        else:
+            self._process = psutil.Process()
+            self.available = True
+
+    def _rss(self) -> int:
+        if (self._process is None):
+            return 0
+        return int(self._process.memory_info().rss)
+
+    def start(self) -> None:
+        if (not self.available):
+            return
+        self.start_rss = self._rss()
+        self.peak_rss = self.start_rss
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while (not self._stop.wait(self.interval_seconds)):
+            self.peak_rss = max(int(self.peak_rss or 0), self._rss())
+
+    def stop(self) -> None:
+        if (not self.available):
+            return
+        self.end_rss = self._rss()
+        self.peak_rss = max(int(self.peak_rss or 0), self.end_rss)
+        self._stop.set()
+        if (self._thread is not None):
+            self._thread.join(timeout=1.0)
+
+    def payload(self) -> dict[str, int | bool | None]:
+        return {
+            "native_rss_available": self.available,
+            "rss_start_bytes": self.start_rss,
+            "rss_end_bytes": self.end_rss,
+            "rss_peak_bytes": self.peak_rss,
+        }
+
+
 def _run_stage(name: str, callback) -> dict[str, Any]:
     start = time.perf_counter()
+    rss = _RssSampler()
+    rss.start()
     tracemalloc.start()
     try:
         status = int(callback() or 0)
         current, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
+        rss.stop()
     end = time.perf_counter()
     return {
         "stage": name,
@@ -33,6 +91,7 @@ def _run_stage(name: str, callback) -> dict[str, Any]:
         "duration_seconds": round(end - start, 6),
         "python_tracemalloc_peak_bytes": int(peak),
         "python_tracemalloc_current_bytes": int(current),
+        **rss.payload(),
     }
 
 

@@ -18,9 +18,11 @@ photo-cat build-index
 photo-cat query
 photo-cat summarize
 photo-cat summary
+photo-cat export
 photo-cat plot
 photo-cat report
 photo-cat benchmark
+photo-cat provenance
 photo-cat doctor
 photo-cat --version
 ```
@@ -70,6 +72,8 @@ Each target result preserves the documented fields for:
 - `num_contaminants_selected`;
 - `num_contaminants`;
 - contaminant records including source ID, coordinates, magnitude, and separation.
+- unresolved target rows when explicitly requested, with `status` set to
+  `missing_from_index` or `invalid_target_id`.
 
 Each query also writes a reproducibility sidecar under `INDEX_DIR/output/metadata/`
 with schema version `1`. The sidecar includes the PHOTO-CAT version, query
@@ -82,11 +86,16 @@ Regression tests should protect field names, result ordering where documented, a
 ## Derived result products
 
 `photo-cat summarize` reads a target-result JSON file and emits text, JSON, or
-CSV aggregate statistics. `photo-cat plot` reads a target-result JSON file and
-writes SVG plots for documented plot kinds. `photo-cat report` writes HTML or
-Markdown reports from a target-result JSON file. `photo-cat benchmark` writes a
-JSON document with schema version `1`, stage durations, status codes, platform
-metadata, PHOTO-CAT version, and Python `tracemalloc` peak allocations.
+CSV aggregate statistics. `photo-cat export` writes flat CSV or Parquet target
+tables. `photo-cat plot` reads a target-result JSON file and writes SVG plots
+for documented plot kinds by default, with an optional matplotlib backend when
+installed. `photo-cat report` writes HTML or Markdown reports from a
+target-result JSON file. `photo-cat benchmark` writes a JSON document with
+schema version `1`, stage durations, status codes, platform metadata, PHOTO-CAT
+version, Python `tracemalloc` peak allocations, and optional psutil RSS samples.
+`photo-cat provenance` writes a schema-versioned JSON document containing
+catalogue checksum, shape/header facts, null counts, numeric ranges, duplicate
+source-ID counts, and optional ADQL/query checksum.
 
 ## Diagnostics and launchers
 
