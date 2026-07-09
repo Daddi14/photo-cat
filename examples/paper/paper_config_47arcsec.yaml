@@ -1,0 +1,34 @@
+# Template config for reproducing 47 arcsec paper-style products.
+# Replace data/paper_catalog_g17.csv and data/paper_targets_g12.csv with the
+# exact exported catalogue and target files used in the analysis.
+
+build_neighbors_index:
+  io:
+    input_catalog: ../../data/paper_catalog_g17.csv
+    out_dir: ../../output/paper_47arcsec
+    columns:
+      source_id: source_id
+      ra: ra
+      dec: dec
+      phot_g_mean_mag: phot_g_mean_mag
+  settings:
+    use_dask: true
+    calculate_separations: true
+    max_radius_arcsec: 47.0
+    chunk_size: 50000
+    buffer_flush_interval: 200
+
+query_contamination_from_index:
+  io:
+    INDEX_DIR: ../../output/paper_47arcsec
+    TARGETS_INPUT: ../../data/paper_targets_g12.csv
+    targets: []
+    target_source_id_column: source_id
+  settings:
+    field_of_view_arcsec: 47.0
+    delta_mag: 5.0
+
+execution:
+  run_build: true
+  run_query: true
+  replace_running_pipeline: true

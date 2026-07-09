@@ -180,6 +180,10 @@ def test_flux_and_contaminant_list_use_the_same_magnitude_selection() -> None:
     assert result is not None
     assert result["num_contaminants"] == 0
     assert result["flux_fraction_extra"] == 0.0
+    assert result["flux_fraction_selected"] == 0.0
+    assert result["flux_fraction_all_neighbors"] == pytest.approx(0.01)
+    assert result["num_neighbors_in_radius"] == 1
+    assert result["num_contaminants_selected"] == 0
 
 
 @pytest.mark.unit

@@ -12,7 +12,7 @@
 
 **Photometric Contamination Analyzer Tool**
 
-PHOTO-CAT builds a neighbour index from an astronomical catalogue and queries nearby sources that may contaminate selected photometric targets.
+PHOTO-CAT builds a neighbour index from an astronomical catalogue and screens selected photometric targets for nearby-source contamination risk.
 
 [Download and usage](docs/Download-and-usage.md) · [Command line](docs/Command-line.md) · [Input data](docs/Input-data.md) · [Troubleshooting](docs/Troubleshooting.md)
 
@@ -27,11 +27,13 @@ PHOTO-CAT builds a neighbour index from an astronomical catalogue and queries ne
 
 ## Overview
 
-PHOTO-CAT is a local Python tool for catalogue-level photometric contamination analysis.
+PHOTO-CAT is a local Python tool for catalogue-level photometric contamination risk assessment and target screening.
 
-It can build a neighbour index from a source catalogue, query selected targets, and write a JSON summary containing contamination metrics and neighbouring sources that match the configured field-of-view and magnitude limits.
+It can build a neighbour index from a source catalogue, query selected targets, and write a JSON summary containing catalogue/aperture-based contamination metrics and neighbouring sources that match the configured field-of-view and magnitude limits.
 
-PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly launchers, a graphical configuration window, automatic dependency setup, and project-local runtime handling so user/system Python installations are not modified.
+The current 2.0.0 model is intentionally simple: it uses catalogue magnitudes and a circular angular aperture/search radius. It does not perform mission-specific PSF convolution, detector-pixel modelling, aperture weighting, or wavelength-dependent bandpass transformations. For instrument-calibrated photometry, treat PHOTO-CAT output as a screening/risk metric unless a downstream analysis adds those mission-specific terms.
+
+PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly launchers, a graphical configuration window, automatic dependency setup, project-local runtime handling so user/system Python installations are not modified, versioned index manifests, and query metadata sidecars that record the package version, query settings, index manifest, and model scope.
 
 > **Version 2 migration:** neighbour indexes created by PHOTO-CAT 1.x must be rebuilt. Version 2 uses a versioned, non-executable index format and intentionally refuses legacy pickle/object-array files.
 
@@ -51,7 +53,11 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 ## Features
 
 - Build a neighbour index from a photometric catalogue.
-- Query potential contaminating sources around selected targets.
+- Screen selected targets for nearby catalogue sources that may contaminate a circular aperture.
+- Report both selected-contaminant flux and all-neighbour-in-radius flux metrics.
+- Summarize result JSON files into text, JSON, or CSV statistics.
+- Generate dependency-free SVG plots and HTML/Markdown reports from query results.
+- Run benchmark captures for reproducible runtime and memory-allocation notes.
 - Configure runs through a graphical interface.
 - Run the same workflow from a command-line interface for automation and remote systems, with direct overrides for every config value.
 - Use either a targets CSV or a manual list of source IDs.
@@ -102,7 +108,16 @@ See [Input data](docs/Input-data.md) for details.
 
 PHOTO-CAT writes generated index files and query results to the configured output directory.
 
-The query stage produces a JSON file containing one result entry per processed target. Each entry includes the target data, contamination metrics, and the list of qualifying neighbouring sources.
+The query stage produces a JSON file containing one result entry per processed target. Each entry includes the target data, catalogue/aperture contamination metrics, and the list of qualifying neighbouring sources. A metadata sidecar is also written under `output/metadata/` to support reproducibility.
+
+Result files can be post-processed with:
+
+```bash
+photo-cat summarize output/index/output/result.json
+photo-cat plot output/index/output/result.json --kind contaminant-counts
+photo-cat report output/index/output/result.json --format html
+photo-cat benchmark --config config.yaml --output output/benchmark.json
+```
 
 See [Pipeline and output](docs/Pipeline-and-output.md) for details.
 
@@ -168,7 +183,7 @@ Citation:
 
 Acknowledgement:
 
-`This research made use of PHOTO-CAT, a Python package for photometric contamination analysis (<paper reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
+`This research made use of PHOTO-CAT, a Python package for catalogue-level photometric contamination risk assessment and target screening (<paper reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
 
 Replace `<paper reference>` with the final paper reference once available.
 

@@ -16,6 +16,11 @@ photo-cat gui
 photo-cat run
 photo-cat build-index
 photo-cat query
+photo-cat summarize
+photo-cat summary
+photo-cat plot
+photo-cat report
+photo-cat benchmark
 photo-cat doctor
 photo-cat --version
 ```
@@ -58,11 +63,32 @@ Ogni risultato per target preserva i campi documentati per:
 
 - ID della sorgente target;
 - coordinate e magnitudine del target quando disponibili;
+- `flux_fraction_selected`;
+- `flux_fraction_all_neighbors`;
 - `flux_fraction_extra`;
+- `num_neighbors_in_radius`;
+- `num_contaminants_selected`;
 - `num_contaminants`;
 - record dei contaminanti con ID sorgente, coordinate, magnitudine e separazione.
 
+Ogni query scrive anche un metadata sidecar per la riproducibilità in
+`INDEX_DIR/output/metadata/`, con schema versione `1`. Il sidecar include
+versione di PHOTO-CAT, configurazione della query, numero di target processati,
+manifest dell'indice, percorso del risultato e note esplicite sull'ambito del
+modello. Il sidecar è additivo e non deve trasformare il JSON dei risultati da
+lista di target a oggetto wrapper.
+
 I test di regressione devono proteggere i nomi dei campi, l'ordine dei risultati quando documentato e le convenzioni numeriche che influenzano l'interpretazione scientifica.
+
+## Prodotti derivati dai risultati
+
+`photo-cat summarize` legge un JSON di risultati target e produce statistiche
+aggregate text, JSON o CSV. `photo-cat plot` legge un JSON di risultati target e
+scrive plot SVG per i tipi documentati. `photo-cat report` scrive report HTML o
+Markdown da un JSON di risultati target. `photo-cat benchmark` scrive un
+documento JSON con schema versione `1`, durate delle fasi, codici di stato,
+metadata di piattaforma, versione PHOTO-CAT e picco di allocazioni Python via
+`tracemalloc`.
 
 ## Diagnostica e launcher
 

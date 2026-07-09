@@ -576,14 +576,15 @@ class ConfigGui(tk.Tk):
         ).grid(row=1, column=1, sticky="n")
 
         self.add_entry_row(settings_tab, 0, "Max build radius, arcsec", self.max_radius_var)
-        self.add_entry_row(settings_tab, 1, "Query field of view, arcsec", self.field_of_view_var)
+        self.add_entry_row(settings_tab, 1, "Query aperture radius, arcsec", self.field_of_view_var)
         self.add_entry_row(settings_tab, 2, "Delta magnitude", self.delta_mag_var)
 
         settings_note = ttk.Label(
             settings_tab,
             text=(
-                "The query field of view should normally be equal to or smaller than the max build radius. "
-                "The default query field of view is 47 arcsec."
+                "The query aperture radius is the circular screening radius around each target. "
+                "It should normally be equal to or smaller than the max build radius. "
+                "The default query radius is 47 arcsec."
             ),
             style="Muted.TLabel",
             wraplength=900,
@@ -1066,9 +1067,9 @@ class ConfigGui(tk.Tk):
 
         if (field_of_view > max_radius):
             proceed = messagebox.askyesno(
-                "Field of view is larger than build radius",
-                "The query field of view is larger than the build radius.\n\n"
-                "Usually max build radius should be equal to or larger than query field of view.\n\n"
+                "Query radius is larger than build radius",
+                "The query aperture radius is larger than the build radius.\n\n"
+                "Usually max build radius should be equal to or larger than the query radius.\n\n"
                 "Save anyway?"
             )
             if (not proceed):

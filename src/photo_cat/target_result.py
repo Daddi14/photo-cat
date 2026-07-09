@@ -13,6 +13,10 @@ class TargetResult:
     ra: float
     dec: float
     phot_g_mean_mag: float | None
+    flux_fraction_selected: float
+    flux_fraction_all_neighbors: float
     flux_fraction_extra: float
+    num_neighbors_in_radius: int
+    num_contaminants_selected: int
     num_contaminants: int
     contaminants: list[dict]

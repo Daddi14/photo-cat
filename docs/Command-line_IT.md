@@ -12,6 +12,10 @@ photo-cat configure
 photo-cat run --config config.yaml
 photo-cat build-index --config config.yaml
 photo-cat query --config config.yaml
+photo-cat summarize output/index/output/result.json
+photo-cat plot output/index/output/result.json --kind contaminant-counts
+photo-cat report output/index/output/result.json --format html
+photo-cat benchmark --config config.yaml --output output/benchmark.json
 photo-cat doctor
 ```
 
@@ -69,6 +73,64 @@ photo-cat run --config config.yaml --delta-mag 4.0 --field-of-view-arcsec 60.0
 ```
 
 Gli override non modificano permanentemente `config.yaml`. PHOTO-CAT scrive una configurazione temporanea di runtime, esegue il comando richiesto e rimuove il file temporaneo alla fine.
+
+## Ricetta per run riproducibili
+
+Per analisi che devono essere riviste o rieseguite, salva i comandi esatti e
+gli input usati per creare il CSV catalogo e gli output PHOTO-CAT. Una sequenza
+minima di comandi è:
+
+```bash
+photo-cat --version
+photo-cat build-index --config config.yaml --input-catalog data/my_catalog.csv --out-dir output/my_index --max-radius-arcsec 120
+photo-cat query --config config.yaml --index-dir output/my_index --targets-input data/my_targets.csv --field-of-view-arcsec 47 --delta-mag 5
+```
+
+La build scrive `index_manifest.json` con SHA-256 del catalogo e impostazioni
+che definiscono l'indice dei vicini. La query scrive il JSON dei risultati più
+un metadata sidecar in `output/my_index/output/metadata/` con versione di
+PHOTO-CAT, impostazioni della query, manifest dell'indice, numero di target
+processati e note sull'ambito del modello. Conserva questi file insieme alla
+query di selezione del catalogo o al notebook che ha generato
+`data/my_catalog.csv`.
+
+## Riassunti, plot, report e benchmark
+
+Riassumi un risultato di query:
+
+```bash
+photo-cat summarize output/my_index/output/result.json
+photo-cat summarize output/my_index/output/result.json --format json --output output/summary.json
+photo-cat summarize output/my_index/output/result.json --format csv --output output/summary.csv
+```
+
+Crea plot SVG senza dipendenze opzionali:
+
+```bash
+photo-cat plot output/my_index/output/result.json --kind contaminant-counts --output output/counts.svg
+photo-cat plot output/my_index/output/result.json --kind flux --output output/flux.svg
+photo-cat plot output/my_index/output/result.json --kind separations --output output/separations.svg
+photo-cat plot output/my_index/output/result.json --kind sky-map --output output/sky-map.svg
+```
+
+Crea un report compatto:
+
+```bash
+photo-cat report output/my_index/output/result.json --format html --output output/report.html
+photo-cat report output/my_index/output/result.json --format markdown --output output/report.md
+```
+
+Registra metadata di benchmark:
+
+```bash
+photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat benchmark --config config.yaml --no-run-build --run-query --output output/query_benchmark.json
+```
+
+Il JSON di benchmark include versione PHOTO-CAT, metadata Python/piattaforma,
+durate delle fasi selezionate, codici di stato e picco di allocazioni Python via
+`tracemalloc`. Il contatore delle allocazioni è riproducibile e senza dipendenze,
+ma non è una misura RSS nativa completa della memoria usata da NumPy/SciPy.
 
 ## Gestione dei percorsi
 

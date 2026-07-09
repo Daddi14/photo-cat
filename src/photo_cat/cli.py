@@ -105,6 +105,63 @@ def run_doctor(args: argparse.Namespace) -> int:
     return int(doctor.main(config_path, args.format) or 0)
 
 
+def run_summarize(args: argparse.Namespace) -> int:
+    """Summarize a PHOTO-CAT query result JSON."""
+    from .result_products import load_result_rows, summarize_results, write_summary
+
+    rows = load_result_rows(args.result_json)
+    summary = summarize_results(rows, source_path=args.result_json)
+    rendered = write_summary(summary, args.output, args.format)
+    if (args.output is None):
+        print(rendered)
+    else:
+        print(f"Summary saved to: {rendered}")
+    return 0
+
+
+def run_plot(args: argparse.Namespace) -> int:
+    """Write a dependency-free SVG plot from a PHOTO-CAT query result JSON."""
+    from .result_products import load_result_rows, write_plot
+
+    result_path = Path(args.result_json)
+    output_path = Path(args.output) if args.output else result_path.with_name(f"{result_path.stem}_{args.kind}.svg")
+    rows = load_result_rows(result_path)
+    saved_path = write_plot(rows, args.kind, output_path)
+    print(f"Plot saved to: {saved_path}")
+    return 0
+
+
+def run_report(args: argparse.Namespace) -> int:
+    """Write an HTML or Markdown report from a PHOTO-CAT query result JSON."""
+    from .result_products import load_result_rows, write_report
+
+    result_path = Path(args.result_json)
+    suffix = "md" if (args.format == "markdown") else args.format
+    output_path = Path(args.output) if args.output else result_path.with_name(f"{result_path.stem}_report.{suffix}")
+    rows = load_result_rows(result_path)
+    saved_path = write_report(rows, result_path, output_path, args.format)
+    print(f"Report saved to: {saved_path}")
+    return 0
+
+
+def run_benchmark(args: argparse.Namespace) -> int:
+    """Run selected pipeline stages and write benchmark metadata."""
+    from .benchmark import run_benchmark as execute_benchmark
+    from .benchmark import write_benchmark
+
+    config_path = resolve_cli_config(args.config)
+    overrides = collect_overrides(args)
+    with RuntimeConfigOverride(config_path, overrides) as runtime_config_path:
+        payload = execute_benchmark(
+            runtime_config_path,
+            run_build=args.benchmark_run_build,
+            run_query=args.benchmark_run_query,
+        )
+    saved_path = write_benchmark(payload, args.output)
+    print(f"Benchmark saved to: {saved_path}")
+    return 0 if payload["ok"] else 1
+
+
 def add_build_overrides(parser: argparse.ArgumentParser) -> None:
     """Register documented build/index CLI overrides."""
     build_group = parser.add_argument_group("build/index overrides")
@@ -153,7 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the public PHOTO-CAT command parser."""
     parser = argparse.ArgumentParser(
         prog="photo-cat",
-        description="PHOTO-CAT photometric contamination analysis tools.",
+        description="PHOTO-CAT catalogue-level contamination risk-assessment and target-screening tools.",
         formatter_class=OverrideHelpFormatter,
     )
     parser.add_argument(
@@ -199,6 +256,77 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--config", help="configuration file to use")
     add_query_overrides(query_parser)
     query_parser.set_defaults(func=run_query)
+
+    summarize_parser = subparsers.add_parser(
+        "summarize",
+        aliases=["summary"],
+        help="summarize a PHOTO-CAT query result JSON",
+        formatter_class=OverrideHelpFormatter,
+    )
+    summarize_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
+    summarize_parser.add_argument(
+        "--format",
+        choices=["text", "json", "csv"],
+        default="text",
+        help="summary output format (default: text)",
+    )
+    summarize_parser.add_argument("--output", help="optional output path")
+    summarize_parser.set_defaults(func=run_summarize)
+
+    plot_parser = subparsers.add_parser(
+        "plot",
+        help="write an SVG plot from a PHOTO-CAT query result JSON",
+        formatter_class=OverrideHelpFormatter,
+    )
+    plot_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
+    plot_parser.add_argument(
+        "--kind",
+        choices=["contaminant-counts", "flux", "separations", "sky-map"],
+        default="contaminant-counts",
+        help="plot type (default: contaminant-counts)",
+    )
+    plot_parser.add_argument("--output", help="SVG output path")
+    plot_parser.set_defaults(func=run_plot)
+
+    report_parser = subparsers.add_parser(
+        "report",
+        help="write an HTML or Markdown report from a PHOTO-CAT query result JSON",
+        formatter_class=OverrideHelpFormatter,
+    )
+    report_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
+    report_parser.add_argument(
+        "--format",
+        choices=["html", "markdown"],
+        default="html",
+        help="report format (default: html)",
+    )
+    report_parser.add_argument("--output", help="report output path")
+    report_parser.set_defaults(func=run_report)
+
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="run selected stages and write benchmark metadata",
+        formatter_class=OverrideHelpFormatter,
+    )
+    benchmark_parser.add_argument("--config", help="configuration file to use")
+    benchmark_parser.add_argument("--output", required=True, help="benchmark JSON output path")
+    benchmark_parser.add_argument(
+        "--run-build",
+        dest="benchmark_run_build",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="include or skip the build stage",
+    )
+    benchmark_parser.add_argument(
+        "--run-query",
+        dest="benchmark_run_query",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="include or skip the query stage",
+    )
+    add_build_overrides(benchmark_parser)
+    add_query_overrides(benchmark_parser)
+    benchmark_parser.set_defaults(func=run_benchmark)
 
     doctor_parser = subparsers.add_parser(
         "doctor",

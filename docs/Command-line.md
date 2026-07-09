@@ -12,6 +12,10 @@ photo-cat configure
 photo-cat run --config config.yaml
 photo-cat build-index --config config.yaml
 photo-cat query --config config.yaml
+photo-cat summarize output/index/output/result.json
+photo-cat plot output/index/output/result.json --kind contaminant-counts
+photo-cat report output/index/output/result.json --format html
+photo-cat benchmark --config config.yaml --output output/benchmark.json
 photo-cat doctor
 ```
 
@@ -69,6 +73,63 @@ photo-cat run --config config.yaml --delta-mag 4.0 --field-of-view-arcsec 60.0
 ```
 
 Overrides do not permanently edit `config.yaml`. PHOTO-CAT writes a temporary runtime config, runs the requested command, and removes the temporary file afterward.
+
+## Reproducible run recipe
+
+For analyses that need to be reviewed or rerun, save the exact commands and
+inputs used to create the catalogue CSV and PHOTO-CAT outputs. A minimal
+PHOTO-CAT command sequence is:
+
+```bash
+photo-cat --version
+photo-cat build-index --config config.yaml --input-catalog data/my_catalog.csv --out-dir output/my_index --max-radius-arcsec 120
+photo-cat query --config config.yaml --index-dir output/my_index --targets-input data/my_targets.csv --field-of-view-arcsec 47 --delta-mag 5
+```
+
+The build writes `index_manifest.json` with the catalogue SHA-256 and build
+settings that define the neighbour index. The query writes the target-result
+JSON plus a metadata sidecar under `output/my_index/output/metadata/` with the
+PHOTO-CAT version, query settings, index manifest, processed target count, and
+model-scope notes. Keep those files with the catalogue-selection query or
+notebook that generated `data/my_catalog.csv`.
+
+## Summaries, plots, reports, and benchmarks
+
+Summarize one query result:
+
+```bash
+photo-cat summarize output/my_index/output/result.json
+photo-cat summarize output/my_index/output/result.json --format json --output output/summary.json
+photo-cat summarize output/my_index/output/result.json --format csv --output output/summary.csv
+```
+
+Create SVG plots without optional plotting dependencies:
+
+```bash
+photo-cat plot output/my_index/output/result.json --kind contaminant-counts --output output/counts.svg
+photo-cat plot output/my_index/output/result.json --kind flux --output output/flux.svg
+photo-cat plot output/my_index/output/result.json --kind separations --output output/separations.svg
+photo-cat plot output/my_index/output/result.json --kind sky-map --output output/sky-map.svg
+```
+
+Create a compact report:
+
+```bash
+photo-cat report output/my_index/output/result.json --format html --output output/report.html
+photo-cat report output/my_index/output/result.json --format markdown --output output/report.md
+```
+
+Record benchmark metadata:
+
+```bash
+photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat benchmark --config config.yaml --no-run-build --run-query --output output/query_benchmark.json
+```
+
+Benchmark JSON includes PHOTO-CAT version, Python/platform metadata, selected
+stage durations, status codes, and Python `tracemalloc` peak allocations. The
+allocation counter is reproducible and dependency-free, but it is not a complete
+native RSS measurement for NumPy/SciPy memory.
 
 ## Path handling
 

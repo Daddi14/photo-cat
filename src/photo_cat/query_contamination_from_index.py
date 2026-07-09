@@ -9,6 +9,16 @@ Purpose
 Consume the CSR-like neighbor index built by build_neighbors_index.py and
 compute contamination metrics for a list of target stars.
 
+Model scope
+-----------
+PHOTO-CAT's current query model is catalogue-level and aperture-like: it selects
+neighbouring catalogue sources inside a configured circular angular radius and
+estimates flux ratios from the configured catalogue magnitude column. It does
+not perform instrumental PSF convolution, detector-pixel modelling, aperture
+weighting, or wavelength-dependent transformations between catalogue and mission
+bandpasses. Treat the result as a contamination risk-assessment / target-
+screening metric unless a downstream analysis adds mission-specific modelling.
+
 Index files (produced by build_neighbors_index.py)
 --------------------------------------------------
     - offsets.npy
@@ -43,9 +53,18 @@ For each target source_id (real external ID, numeric or string):
     - source_id            : real ID used as input
     - ra, dec              : coordinates of the target
     - phot_g_mean_mag      : G magnitude of the target
-    - flux_fraction_extra  : percentage of extra flux from contaminants inside
-                             the field of view (FoV), relative to target flux
-    - num_contaminants     : number of neighbors that satisfy FoV + Δmag cut
+    - flux_fraction_selected      : percentage of extra flux from neighbours
+                                    inside the circular query radius that also
+                                    pass the delta-magnitude cut
+    - flux_fraction_all_neighbors : percentage of extra flux from every
+                                    neighbour inside the circular query radius,
+                                    independent of delta-magnitude cut
+    - flux_fraction_extra         : backward-compatible alias of
+                                    flux_fraction_selected
+    - num_neighbors_in_radius     : number of valid neighbours inside the
+                                    circular query radius
+    - num_contaminants            : number of neighbours that satisfy radius +
+                                    delta-magnitude cut
     - contaminants         : list of Contaminant objects, each with:
                                 * source_id
                                 * ra, dec
@@ -62,7 +81,7 @@ Inputs (from config_and_run_new)
         is used instead.
 
     - field_of_view_arcsec (float)
-        Angular radius (in arcsec) defining the field of view.
+        Circular angular query radius (in arcsec) used as the screening aperture.
 
     - delta_mag (float)
         Magnitude difference threshold. A contaminant is selected if:
@@ -88,21 +107,30 @@ Implementation notes
 
 Output
 ------
-    - Un unico file JSON, salvato in:
+    - One target-result JSON file, saved under:
           INDEX_DIR / "output" / "<basename>_FoV..._dmag..._YYYYMMDD_HHMMSS_microseconds.json"
+    - One reproducibility metadata sidecar, saved under:
+          INDEX_DIR / "output" / "metadata" / "<result_stem>_metadata.json"
 """
 
 import csv
 import os
 import json
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from dataclasses import dataclass
 from typing import Optional, Dict
 
 import numpy as np
 import pandas as pd
 
-from .index_manifest import IndexManifest, load_index_manifest, validate_index_structure
+from . import __version__
+from .index_manifest import (
+    IndexManifest,
+    atomic_write_json,
+    load_index_manifest,
+    validate_index_structure,
+)
 from .target_result import TargetResult
 from .contaminant import Contaminant
 from .logger_setup import get_logger
@@ -190,7 +218,7 @@ def prepare_query_runtime(config: QueryConfig) -> QueryRuntimePlan:
         raise ValueError(
             f"Query field_of_view_arcsec ({config.field_of_view_arcsec}) exceeds the index build "
             f"radius ({manifest.max_radius_arcsec}). Rebuild with a larger max_radius_arcsec "
-            "or reduce the query field of view."
+            "or reduce the query aperture radius."
         )
     output_json = query_output_json_path(
         paths,
@@ -495,7 +523,11 @@ def empty_target_result(source_id: str, ra: float, dec: float, magnitude: float)
         ra=ra,
         dec=dec,
         phot_g_mean_mag=(magnitude if np.isfinite(magnitude) else None),
+        flux_fraction_selected=0.0,
+        flux_fraction_all_neighbors=0.0,
         flux_fraction_extra=0.0,
+        num_neighbors_in_radius=0,
+        num_contaminants_selected=0,
         num_contaminants=0,
         contaminants=[],
     ).__dict__
@@ -616,10 +648,15 @@ def process_target(
         )[valid_mask]
     inside_field_of_view = contaminant_separations <= field_of_view_arcsec
     selected_mask = inside_field_of_view & ((contaminant_magnitudes - target_magnitude) <= delta_mag)
-    flux_fraction_extra = calculate_flux_fraction_extra(
+    flux_fraction_selected = calculate_flux_fraction_extra(
         target_magnitude,
         contaminant_magnitudes,
         selected_mask,
+    )
+    flux_fraction_all_neighbors = calculate_flux_fraction_extra(
+        target_magnitude,
+        contaminant_magnitudes,
+        inside_field_of_view,
     )
 
     contaminants = build_contaminant_records(
@@ -638,7 +675,11 @@ def process_target(
         ra=target_ra,
         dec=target_dec,
         phot_g_mean_mag=(target_magnitude if np.isfinite(target_magnitude) else None),
-        flux_fraction_extra=round(flux_fraction_extra, 2),
+        flux_fraction_selected=round(flux_fraction_selected, 2),
+        flux_fraction_all_neighbors=round(flux_fraction_all_neighbors, 2),
+        flux_fraction_extra=round(flux_fraction_selected, 2),
+        num_neighbors_in_radius=int(np.count_nonzero(inside_field_of_view)),
+        num_contaminants_selected=len(contaminants),
         num_contaminants=len(contaminants),
         contaminants=contaminants,
     ).__dict__
@@ -710,6 +751,50 @@ def save_results_to_json(results: list, json_path: str) -> str:
     with open(json_path, "x", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     return json_path
+
+
+def query_metadata_path(result_json_path: str | Path) -> Path:
+    """Return the reproducibility sidecar path for one query-result JSON file."""
+    result_path = Path(result_json_path)
+    return result_path.parent / "metadata" / f"{result_path.stem}_metadata.json"
+
+
+def save_query_metadata(
+    metadata_path: str | Path,
+    runtime_plan: QueryRuntimePlan,
+    result_json_path: str | Path,
+    config_path: str | Path | None,
+    processed_targets: int,
+) -> str:
+    """Save a non-breaking sidecar with the settings needed to reproduce a query."""
+    selected_config_path = None if (config_path is None) else str(Path(config_path).resolve())
+    payload = {
+        "schema_version": 1,
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "photo_cat_version": __version__,
+        "config_path": selected_config_path,
+        "result_json": str(Path(result_json_path).resolve()),
+        "query": asdict(runtime_plan.config),
+        "processed_targets": processed_targets,
+        "index_manifest": asdict(runtime_plan.manifest),
+        "contamination_model": {
+            "kind": "catalogue_aperture_flux_ratio",
+            "summary": (
+                "Sources are selected within the configured circular angular query radius "
+                "and delta-magnitude limit; flux_fraction_selected is computed from catalogue "
+                "magnitude ratios for the selected sources, while flux_fraction_all_neighbors "
+                "uses every valid neighbour inside the circular query radius."
+            ),
+            "not_included": [
+                "instrumental PSF convolution",
+                "detector pixel response or aperture weighting",
+                "wavelength-dependent transformation between catalogue and mission bandpasses",
+                "non-uniform contamination from bright sources outside the configured aperture",
+            ],
+        },
+    }
+    atomic_write_json(metadata_path, payload)
+    return str(metadata_path)
 
 
 # ============================================================
@@ -787,12 +872,20 @@ def main(config_path: str | Path | None = None) -> int:
     # ---------------- SAVE RESULTS -----------------
     with ActivityBar("[saving JSON results]"):
         json_path = save_results_to_json(results, output_json)
+        metadata_path = save_query_metadata(
+            query_metadata_path(json_path),
+            runtime_plan,
+            json_path,
+            config_path,
+            len(results),
+        )
 
     targets_with_contaminants = sum(r["num_contaminants"] > 0 for r in results)
     targets_without_contaminants = sum(r["num_contaminants"] == 0 for r in results)
 
     logger.info("")
     logger.info(f"Results saved to: {json_path}")
+    logger.info(f"Run metadata saved to: {metadata_path}")
     logger.info(
         f"Targets processed: {len(results)} "
         f"(with contaminants: {targets_with_contaminants}, "

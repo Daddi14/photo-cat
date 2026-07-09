@@ -19,9 +19,44 @@ carica il precedente formato pickle/object-array. La chiave config obsoleta
 
 La fase di query carica l’indice e processa i target selezionati.
 
-Per ogni target, PHOTO-CAT identifica le sorgenti vicine dentro il campo di vista configurato e applica i criteri di magnitudine configurati.
-La query viene rifiutata se il campo di vista supera il raggio rappresentato
-dall'indice. Il flusso extra e l'elenco dei contaminanti usano gli stessi filtri.
+Per ogni target, PHOTO-CAT identifica le sorgenti vicine dentro il raggio
+circolare di query configurato (`field_of_view_arcsec`) e applica i criteri di
+magnitudine configurati. La query viene rifiutata se questo raggio supera il
+raggio rappresentato dall'indice. Il flusso extra e l'elenco dei contaminanti
+usano gli stessi filtri di raggio e magnitudine.
+
+## Modello di contaminazione e terminologia
+
+PHOTO-CAT 2.0.0 produce metriche di contaminazione a livello di catalogo, simili
+a un'apertura circolare. È preferibile interpretarlo come strumento di
+valutazione del rischio di contaminazione o di screening dei target, salvo che
+un'analisi successiva aggiunga modellazione specifica della missione.
+
+- `field_of_view_arcsec` è il raggio angolare circolare usato dalla query per
+  selezionare i vicini attorno a ogni target. Nonostante il nome storico della
+  chiave di configurazione, non è automaticamente un campo di vista del
+  detector, una larghezza di PSF, un'apertura di estrazione o una scala di
+  pixel: usa il valore che corrisponde all'apertura di screening che vuoi
+  testare.
+- `delta_mag` è la differenza massima di magnitudine di catalogo ammessa,
+  `mag_vicino - mag_target`, perché un vicino venga selezionato.
+- Un `contaminant` nell'output JSON è un vicino che supera sia il taglio sul
+  raggio circolare configurato sia il taglio `delta_mag`.
+- `flux_fraction_selected` viene calcolato sugli stessi contaminanti selezionati
+  usati da `num_contaminants`, tramite rapporti di flusso da magnitudini di
+  catalogo `10 ** (-0.4 * (mag_vicino - mag_target))`, ed è espresso come
+  percentuale del flusso del target.
+- `flux_fraction_all_neighbors` usa tutti i vicini validi dentro il raggio
+  circolare di query, anche se non superano `delta_mag`.
+- `flux_fraction_extra` resta come alias retrocompatibile di
+  `flux_fraction_selected`.
+
+L'implementazione attuale non esegue convoluzione con PSF strumentale,
+modellazione della risposta dei pixel del detector, pesatura dell'apertura,
+trasformazioni di banda dipendenti dalla lunghezza d'onda o modellazione non
+uniforme della luce diffusa da sorgenti brillanti appena fuori dal raggio
+configurato. Questi effetti richiedono input specifici della missione e non
+devono essere dedotti dalle metriche attuali basate solo sul catalogo.
 
 ## Output JSON
 
@@ -32,10 +67,42 @@ Ogni risultato target include:
 - source ID del target
 - coordinate del target
 - magnitudine del target, quando disponibile
-- frazione di flusso extra
-- numero di contaminanti
+- frazione di flusso dei contaminanti selezionati
+- frazione di flusso di tutti i vicini dentro il raggio
+- numero di vicini dentro il raggio circolare
+- numero di contaminanti selezionati
 - lista delle sorgenti contaminanti
 - coordinate, magnitudini e separazioni dei contaminanti
+
+Per la riproducibilità, ogni query scrive anche un metadata sidecar JSON in
+`INDEX_DIR/output/metadata/`. Il sidecar registra versione di PHOTO-CAT, valori
+di configurazione selezionati, numero di target, manifest dell'indice, SHA-256
+del catalogo usato nella build e le note sull'ambito del modello riportate sopra.
+Il JSON dei risultati rimane una lista semplice di target per compatibilità con
+gli script esistenti.
+
+## Riassunti, plot, report e benchmark derivati
+
+Dopo una query, i risultati possono essere convertiti in prodotti riproducibili
+adatti anche a un articolo:
+
+```bash
+photo-cat summarize INDEX_DIR/output/result.json --format json --output summary.json
+photo-cat plot INDEX_DIR/output/result.json --kind contaminant-counts --output counts.svg
+photo-cat plot INDEX_DIR/output/result.json --kind separations --output separations.svg
+photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
+photo-cat report INDEX_DIR/output/result.json --format html --output report.html
+photo-cat benchmark --config config.yaml --output benchmark.json
+```
+
+`summarize` produce conteggi aggregati dei target, conteggi dei contaminanti
+selezionati, conteggi di tutti i vicini, statistiche sulle frazioni di flusso e
+statistiche sulle separazioni. `plot` scrive SVG senza dipendenze aggiuntive per
+conteggi dei contaminanti, frazioni di flusso, separazioni o una semplice mappa
+RA/Dec. `report` scrive un documento HTML o Markdown con riassunto e plot.
+`benchmark` esegue le fasi selezionate e registra tempo di esecuzione più picco
+di allocazioni Python via `tracemalloc`; la memoria nativa usata da NumPy/SciPy
+può essere superiore al contatore delle allocazioni Python.
 
 ## Output console
 
