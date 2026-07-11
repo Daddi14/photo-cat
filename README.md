@@ -31,7 +31,7 @@ PHOTO-CAT is a local Python tool for catalogue-level photometric contamination r
 
 It can build a neighbour index from a source catalogue, query selected targets, and write a JSON summary containing catalogue/aperture-based contamination metrics and neighbouring sources that match the configured field-of-view and magnitude limits.
 
-The current 2.0.0 model is intentionally simple: it uses catalogue magnitudes and a circular angular aperture/search radius. It does not perform mission-specific PSF convolution, detector-pixel modelling, aperture weighting, or wavelength-dependent bandpass transformations. For instrument-calibrated photometry, treat PHOTO-CAT output as a screening/risk metric unless a downstream analysis adds those mission-specific terms.
+The current 2.0.0 model is intentionally scoped: it uses catalogue magnitudes, a circular aperture, and optional circular radial throughput models. A separate influence radius can include weighted leakage from nearby sources outside the aperture. It does not perform spatially varying/asymmetric PSF convolution, detector-pixel modelling, scattered-light modelling, or wavelength-dependent bandpass transformations. For instrument-calibrated photometry, treat PHOTO-CAT output as a screening/risk metric unless calibrated mission inputs support the selected radial model.
 
 PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly launchers, a graphical configuration window, automatic dependency setup, project-local runtime handling so user/system Python installations are not modified, versioned index manifests, and query metadata sidecars that record the package version, query settings, index manifest, and model scope.
 
@@ -63,7 +63,10 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Capture catalogue provenance JSON with checksums, row counts, column stats, and optional ADQL checksums.
 - Generate reproducible paper/review product bundles with summaries, plots, reports, and checksums.
 - Merge supplemental bright-star catalogues before building an index.
+- Rank targets into explicit accept/review/reject screening decisions.
+- Validate predicted contamination against user-supplied mission/reference tables.
 - Run benchmark captures for reproducible runtime and memory-allocation notes.
+- Render benchmark captures as paper-ready Markdown or CSV tables.
 - Configure runs through a graphical interface.
 - Run the same workflow from a command-line interface for automation and remote systems, with direct overrides for every config value.
 - Use either a targets CSV or a manual list of source IDs.
@@ -125,8 +128,11 @@ photo-cat plot output/index/output/result.json --kind contaminant-counts
 photo-cat provenance data/catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat benchmark-table output/benchmark.json --output output/benchmark_table.md
 photo-cat reproduce-paper --result-json output/index/output/result.json --output-dir output/paper_products
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
+photo-cat screen output/index/output/result.json --output output/screening.csv
+photo-cat validate-results output/index/output/result.json data/reference.csv --output output/validation.json
 ```
 
 See [Pipeline and output](docs/Pipeline-and-output.md) for details.
@@ -155,6 +161,7 @@ photo-cat run --config config.yaml
 photo-cat run --config config.yaml --input-catalog data/catalog.csv --ra-column RAJ2000 --dec-column DEJ2000 --mag-column Gmag --field-of-view-arcsec 60 --delta-mag 4
 photo-cat build-index --config config.yaml --input-catalog data/catalog.csv --out-dir output/index
 photo-cat query --config config.yaml --index-dir output/index --targets-input data/targets.csv --field-of-view-arcsec 47 --delta-mag 5
+photo-cat query --config config.yaml --aperture-radius-arcsec 47 --influence-radius-arcsec 75 --contamination-model-mode gaussian_aperture --gaussian-fwhm-arcsec 20
 photo-cat doctor
 ```
 

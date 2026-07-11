@@ -69,6 +69,17 @@ class QueryConfig:
     include_missing_targets: bool = False
     contamination_model: ContaminationModelConfig = field(default_factory=ContaminationModelConfig)
     contamination_bands: list[str] = field(default_factory=lambda: ["gaia_g"])
+    influence_radius_arcsec: float | None = None
+
+    @property
+    def aperture_radius_arcsec(self) -> float:
+        """Return the legacy field-of-view setting using its physical aperture meaning."""
+        return self.field_of_view_arcsec
+
+    @property
+    def effective_influence_radius_arcsec(self) -> float:
+        """Return the outer neighbour radius, defaulting to the aperture for compatibility."""
+        return self.field_of_view_arcsec if self.influence_radius_arcsec is None else self.influence_radius_arcsec
 
 
 @dataclass(frozen=True)
@@ -327,10 +338,10 @@ def parse_contamination_model(settings: dict[str, Any], config_dir: Path) -> Con
     model = require_mapping(raw_model, f"{QUERY_SECTION}.settings.contamination_model")
     mode = require_text(model.get("mode"), f"{QUERY_SECTION}.settings.contamination_model.mode", "top_hat")
     normalized_mode = mode.lower().replace("-", "_")
-    if (normalized_mode not in {"top_hat", "radial_weight", "gaussian_psf"}):
+    if (normalized_mode not in {"top_hat", "radial_weight", "gaussian_psf", "gaussian_aperture"}):
         raise ValueError(
             "query_contamination_from_index.settings.contamination_model.mode "
-            "must be one of: top_hat, radial_weight, gaussian_psf."
+            "must be one of: top_hat, radial_weight, gaussian_psf, gaussian_aperture."
         )
 
     gaussian_fwhm_arcsec = None
@@ -345,10 +356,10 @@ def parse_contamination_model(settings: dict[str, Any], config_dir: Path) -> Con
 
     radial_weight_file = resolve_path(model.get("radial_weight_file"), config_dir)
 
-    if (normalized_mode == "gaussian_psf" and gaussian_fwhm_arcsec is None):
+    if (normalized_mode in {"gaussian_psf", "gaussian_aperture"} and gaussian_fwhm_arcsec is None):
         raise ValueError(
             "query_contamination_from_index.settings.contamination_model.gaussian_fwhm_arcsec "
-            "is required when mode is gaussian_psf."
+            "is required when mode is gaussian_psf or gaussian_aperture."
         )
     if (normalized_mode == "radial_weight" and radial_weight_file is None):
         raise ValueError(
@@ -459,17 +470,32 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
     if (targets_input is None and not targets):
         raise ValueError("No targets were configured. Set TARGETS_INPUT to a CSV file, or set targets to a list.")
 
+    aperture_radius_arcsec = parse_float(
+        settings.get("field_of_view_arcsec"),
+        "query_contamination_from_index.settings.field_of_view_arcsec",
+        47.0,
+        minimum=0.0,
+        exclusive_minimum=True,
+        maximum=648000.0,
+    )
+    influence_radius_arcsec = parse_float(
+        settings.get("influence_radius_arcsec"),
+        "query_contamination_from_index.settings.influence_radius_arcsec",
+        aperture_radius_arcsec,
+        minimum=0.0,
+        exclusive_minimum=True,
+        maximum=648000.0,
+    )
+    if (influence_radius_arcsec < aperture_radius_arcsec):
+        raise ValueError(
+            "query_contamination_from_index.settings.influence_radius_arcsec "
+            "must be greater than or equal to field_of_view_arcsec."
+        )
+
     return QueryConfig(
         INDEX_DIR=resolve_required_path(io.get("INDEX_DIR"), "query_contamination_from_index.io.INDEX_DIR", config_dir),
         TARGETS_INPUT=targets_input,
-        field_of_view_arcsec=parse_float(
-            settings.get("field_of_view_arcsec"),
-            "query_contamination_from_index.settings.field_of_view_arcsec",
-            47.0,
-            minimum=0.0,
-            exclusive_minimum=True,
-            maximum=648000.0,
-        ),
+        field_of_view_arcsec=aperture_radius_arcsec,
         delta_mag=parse_float(
             settings.get("delta_mag"),
             "query_contamination_from_index.settings.delta_mag",
@@ -488,6 +514,7 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
         ),
         contamination_model=parse_contamination_model(settings, config_dir),
         contamination_bands=parse_contamination_bands(settings),
+        influence_radius_arcsec=influence_radius_arcsec,
     )
 
 

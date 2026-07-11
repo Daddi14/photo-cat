@@ -13,11 +13,13 @@ Model scope
 -----------
 PHOTO-CAT's current query model is catalogue-level and aperture-like: it selects
 neighbouring catalogue sources inside a configured circular angular radius and
-estimates flux ratios from the configured catalogue magnitude column. It does
-not perform instrumental PSF convolution, detector-pixel modelling, aperture
-weighting, or wavelength-dependent transformations between catalogue and mission
-bandpasses. Treat the result as a contamination risk-assessment / target-
-screening metric unless a downstream analysis adds mission-specific modelling.
+estimates flux ratios from configured catalogue magnitude columns. Optional
+circular radial models estimate aperture throughput and leakage from a larger
+influence radius. It does not perform spatially varying or asymmetric PSF
+convolution, detector-pixel modelling, scattered-light modelling, or
+wavelength-dependent transformations between catalogue and mission bandpasses.
+Treat the result as a contamination risk-assessment / target-screening metric
+unless calibrated mission inputs support the selected model.
 
 Index files (produced by build_neighbors_index.py)
 --------------------------------------------------
@@ -83,6 +85,10 @@ Inputs (from config_and_run_new)
     - field_of_view_arcsec (float)
         Circular angular query radius (in arcsec) used as the screening aperture.
 
+    - influence_radius_arcsec (float | None)
+        Optional outer neighbour radius used to model weighted leakage from
+        sources outside the aperture.
+
     - delta_mag (float)
         Magnitude difference threshold. A contaminant is selected if:
             mag_contaminant - mag_target <= delta_mag
@@ -123,6 +129,7 @@ from typing import Optional, Dict
 
 import numpy as np
 import pandas as pd
+from scipy.stats import ncx2
 
 from . import __version__
 from .index_manifest import (
@@ -223,11 +230,12 @@ def prepare_query_runtime(config: QueryConfig) -> QueryRuntimePlan:
     paths = validate_index_directory(config.INDEX_DIR)
     manifest = load_index_manifest(paths.manifest)
     validate_index_structure(paths, manifest)
-    if (config.field_of_view_arcsec > manifest.max_radius_arcsec):
+    influence_radius = config.effective_influence_radius_arcsec
+    if (influence_radius > manifest.max_radius_arcsec):
         raise ValueError(
-            f"Query field_of_view_arcsec ({config.field_of_view_arcsec}) exceeds the index build "
+            f"Query influence radius ({influence_radius}) exceeds the index build "
             f"radius ({manifest.max_radius_arcsec}). Rebuild with a larger max_radius_arcsec "
-            "or reduce the query aperture radius."
+            "or reduce influence_radius_arcsec."
         )
     output_json = query_output_json_path(
         paths,
@@ -592,6 +600,15 @@ def empty_target_result(
     result["contamination_model"] = contamination_model.mode
     result["flux_fraction_selected_by_band"] = {band: 0.0 for band in magnitude_bands}
     result["flux_fraction_all_neighbors_by_band"] = {band: 0.0 for band in magnitude_bands}
+    result["flux_fraction_inside_aperture"] = 0.0
+    result["flux_fraction_outside_aperture"] = 0.0
+    result["flux_fraction_total_weighted"] = 0.0
+    result["flux_fraction_outside_aperture_by_band"] = {band: 0.0 for band in magnitude_bands}
+    result["flux_fraction_total_weighted_by_band"] = {band: 0.0 for band in magnitude_bands}
+    result["num_neighbors_in_influence_radius"] = 0
+    result["num_neighbors_outside_aperture"] = 0
+    result["num_contaminants_outside_aperture"] = 0
+    result["outside_aperture_contaminants"] = []
     return result
 
 
@@ -612,6 +629,15 @@ def unresolved_target_result(source_id: str, status: str) -> dict:
         "contamination_model": None,
         "flux_fraction_selected_by_band": {},
         "flux_fraction_all_neighbors_by_band": {},
+        "flux_fraction_inside_aperture": None,
+        "flux_fraction_outside_aperture": None,
+        "flux_fraction_total_weighted": None,
+        "flux_fraction_outside_aperture_by_band": {},
+        "flux_fraction_total_weighted_by_band": {},
+        "num_neighbors_in_influence_radius": None,
+        "num_neighbors_outside_aperture": None,
+        "num_contaminants_outside_aperture": None,
+        "outside_aperture_contaminants": [],
         "contaminants": [],
     }
 
@@ -657,16 +683,33 @@ def contamination_weights(
     separations_arcsec: np.ndarray,
     model: ContaminationModelConfig,
     radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
+    aperture_radius_arcsec: float | None = None,
 ) -> np.ndarray:
     """Return per-neighbour aperture/PSF weights for the configured model."""
     if (model.mode == "top_hat"):
-        return np.ones(separations_arcsec.shape, dtype=np.float64)
+        if (aperture_radius_arcsec is None):
+            return np.ones(separations_arcsec.shape, dtype=np.float64)
+        return np.asarray(separations_arcsec <= aperture_radius_arcsec, dtype=np.float64)
 
     if (model.mode == "gaussian_psf"):
         if (model.gaussian_fwhm_arcsec is None):
             raise ValueError("gaussian_fwhm_arcsec is required for gaussian_psf contamination weighting.")
         sigma = float(model.gaussian_fwhm_arcsec) / 2.3548200450309493
         return np.exp(-0.5 * (separations_arcsec / sigma) ** 2)
+
+    if (model.mode == "gaussian_aperture"):
+        if (model.gaussian_fwhm_arcsec is None):
+            raise ValueError("gaussian_fwhm_arcsec is required for gaussian_aperture weighting.")
+        if (aperture_radius_arcsec is None or aperture_radius_arcsec <= 0.0):
+            raise ValueError("A positive aperture radius is required for gaussian_aperture weighting.")
+        sigma = float(model.gaussian_fwhm_arcsec) / 2.3548200450309493
+        radius_squared = (float(aperture_radius_arcsec) / sigma) ** 2
+        centered_throughput = float(ncx2.cdf(radius_squared, df=2, nc=0.0))
+        if (not np.isfinite(centered_throughput) or centered_throughput <= 0.0):
+            raise ValueError("Could not normalize gaussian_aperture throughput for these settings.")
+        noncentrality = (np.asarray(separations_arcsec, dtype=np.float64) / sigma) ** 2
+        captured = ncx2.cdf(radius_squared, df=2, nc=noncentrality)
+        return np.clip(np.asarray(captured, dtype=np.float64) / centered_throughput, 0.0, 1.0)
 
     if (model.mode == "radial_weight"):
         if (radial_weight_table is None):
@@ -785,6 +828,7 @@ def build_contaminant_records(
     dec: np.ndarray,
     real_ids_int: np.ndarray,
     internal_to_special_name: dict[int, str],
+    aperture_location: str | None = None,
 ) -> list[dict]:
     """Build public contaminant records from selected catalogue positions."""
     contaminants: list[dict] = []
@@ -792,8 +836,7 @@ def build_contaminant_records(
     for local_index in np.flatnonzero(selected_mask):
         catalogue_index = int(contaminant_indices[local_index])
         magnitude = float(contaminant_magnitudes[local_index])
-        contaminants.append(
-            Contaminant(
+        record = Contaminant(
                 source_id=source_id_from_internal_id(
                     catalogue_index + 1,
                     real_ids_int,
@@ -804,7 +847,9 @@ def build_contaminant_records(
                 phot_g_mean_mag=(magnitude if np.isfinite(magnitude) else None),
                 sep_arcsec=float(contaminant_separations[local_index]),
             ).__dict__
-        )
+        if (aperture_location is not None):
+            record["aperture_location"] = aperture_location
+        contaminants.append(record)
 
     return contaminants
 
@@ -824,10 +869,14 @@ def process_target(
     contamination_model: ContaminationModelConfig | None = None,
     radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
+    influence_radius_arcsec: float | None = None,
 ) -> dict | None:
     """Evaluate one target while keeping numerical work separate from loop orchestration."""
     contamination_model = contamination_model or ContaminationModelConfig()
     magnitude_arrays = magnitude_arrays or {}
+    influence_radius_arcsec = field_of_view_arcsec if influence_radius_arcsec is None else influence_radius_arcsec
+    if (influence_radius_arcsec < field_of_view_arcsec):
+        raise ValueError("influence_radius_arcsec must be greater than or equal to field_of_view_arcsec.")
     number_of_sources = ra.shape[0]
     if (internal_target < 1 or internal_target > number_of_sources):
         logger.warning("internal_target %s out of range; skipping.", internal_target)
@@ -885,8 +934,17 @@ def process_target(
             dtype=np.float64,
         )[valid_mask]
     inside_field_of_view = contaminant_separations <= field_of_view_arcsec
-    selected_mask = inside_field_of_view & ((contaminant_magnitudes - target_magnitude) <= delta_mag)
-    weights = contamination_weights(contaminant_separations, contamination_model, radial_weight_table)
+    inside_influence_radius = contaminant_separations <= influence_radius_arcsec
+    outside_aperture = inside_influence_radius & ~inside_field_of_view
+    magnitude_selected = (contaminant_magnitudes - target_magnitude) <= delta_mag
+    selected_mask = inside_field_of_view & magnitude_selected
+    outside_selected_mask = outside_aperture & magnitude_selected
+    weights = contamination_weights(
+        contaminant_separations,
+        contamination_model,
+        radial_weight_table,
+        field_of_view_arcsec,
+    )
     flux_fraction_selected = calculate_flux_fraction_extra(
         target_magnitude,
         contaminant_magnitudes,
@@ -897,6 +955,18 @@ def process_target(
         target_magnitude,
         contaminant_magnitudes,
         inside_field_of_view,
+        weights,
+    )
+    flux_fraction_outside_aperture = calculate_flux_fraction_extra(
+        target_magnitude,
+        contaminant_magnitudes,
+        outside_aperture,
+        weights,
+    )
+    flux_fraction_total_weighted = calculate_flux_fraction_extra(
+        target_magnitude,
+        contaminant_magnitudes,
+        inside_influence_radius,
         weights,
     )
     selected_by_band = flux_fraction_by_band(
@@ -913,6 +983,20 @@ def process_target(
         magnitude_arrays,
         weights,
     )
+    outside_by_band = flux_fraction_by_band(
+        target_index,
+        contaminant_indices,
+        outside_aperture,
+        magnitude_arrays,
+        weights,
+    )
+    total_weighted_by_band = flux_fraction_by_band(
+        target_index,
+        contaminant_indices,
+        inside_influence_radius,
+        magnitude_arrays,
+        weights,
+    )
 
     contaminants = build_contaminant_records(
         contaminant_indices,
@@ -923,6 +1007,18 @@ def process_target(
         dec,
         real_ids_int,
         internal_to_special_name,
+        "inside",
+    )
+    outside_contaminants = build_contaminant_records(
+        contaminant_indices,
+        contaminant_magnitudes,
+        contaminant_separations,
+        outside_selected_mask,
+        ra,
+        dec,
+        real_ids_int,
+        internal_to_special_name,
+        "outside",
     )
 
     result = TargetResult(
@@ -941,6 +1037,15 @@ def process_target(
     result["contamination_model"] = contamination_model.mode
     result["flux_fraction_selected_by_band"] = selected_by_band
     result["flux_fraction_all_neighbors_by_band"] = all_neighbors_by_band
+    result["flux_fraction_inside_aperture"] = round(flux_fraction_all_neighbors, 2)
+    result["flux_fraction_outside_aperture"] = round(flux_fraction_outside_aperture, 2)
+    result["flux_fraction_total_weighted"] = round(flux_fraction_total_weighted, 2)
+    result["flux_fraction_outside_aperture_by_band"] = outside_by_band
+    result["flux_fraction_total_weighted_by_band"] = total_weighted_by_band
+    result["num_neighbors_in_influence_radius"] = int(np.count_nonzero(inside_influence_radius))
+    result["num_neighbors_outside_aperture"] = int(np.count_nonzero(outside_aperture))
+    result["num_contaminants_outside_aperture"] = len(outside_contaminants)
+    result["outside_aperture_contaminants"] = outside_contaminants
     return result
 
 
@@ -959,6 +1064,7 @@ def loop_over_targets(
     contamination_model: ContaminationModelConfig | None = None,
     radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
+    influence_radius_arcsec: float | None = None,
 ) -> list[dict]:
     """Evaluate configured targets while leaving one-target logic independently testable."""
     total_targets = len(targets_internal)
@@ -983,6 +1089,7 @@ def loop_over_targets(
             contamination_model,
             radial_weight_table,
             magnitude_arrays,
+            influence_radius_arcsec,
         )
         if (result is not None):
             results.append(result)
@@ -1060,16 +1167,17 @@ def save_query_metadata(
         "contamination_model": {
             "kind": "catalogue_aperture_flux_ratio",
             "summary": (
-                "Sources are selected within the configured circular angular query radius "
+                "Sources are selected within the configured circular aperture and optional influence radius "
                 "and delta-magnitude limit; flux_fraction_selected is computed from catalogue "
                 "magnitude ratios for the selected sources, while flux_fraction_all_neighbors "
-                "uses every valid neighbour inside the circular query radius."
+                "uses every valid neighbour inside the aperture. Weighted models can additionally "
+                "estimate radial leakage from sources between the aperture and influence radii."
             ),
             "not_included": [
-                "instrumental PSF convolution",
-                "detector pixel response or aperture weighting",
+                "spatially varying or asymmetric instrumental PSF convolution",
+                "detector pixel response",
                 "wavelength-dependent transformation between catalogue and mission bandpasses",
-                "non-uniform contamination from bright sources outside the configured aperture",
+                "scattered-light or diffraction features not represented by the selected radial model",
             ],
         },
     }
@@ -1181,6 +1289,7 @@ def main(config_path: str | Path | None = None) -> int:
         contamination_model=config_query.contamination_model,
         radial_weight_table=radial_weight_table,
         magnitude_arrays=magnitude_arrays,
+        influence_radius_arcsec=config_query.effective_influence_radius_arcsec,
     )
     if (config_query.include_missing_targets):
         results = merge_unresolved_target_results(results, target_requests)

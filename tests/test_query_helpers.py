@@ -70,3 +70,28 @@ def test_gaussian_contamination_weights_decline_with_radius() -> None:
 
     assert weights[0] == pytest.approx(1.0)
     assert weights[0] > weights[1] > weights[2]
+
+
+@pytest.mark.unit
+def test_gaussian_aperture_models_offset_flux_and_normalizes_target() -> None:
+    """Integrated Gaussian throughput should include diminishing light beyond the aperture edge."""
+    weights = contamination_weights(
+        np.array([0.0, 10.0, 30.0]),
+        ContaminationModelConfig(mode="gaussian_aperture", gaussian_fwhm_arcsec=10.0),
+        aperture_radius_arcsec=10.0,
+    )
+
+    assert weights[0] == pytest.approx(1.0)
+    assert 0.0 < weights[2] < weights[1] < weights[0]
+
+
+@pytest.mark.unit
+def test_top_hat_has_no_flux_response_outside_aperture() -> None:
+    """The compatibility top-hat model must not invent leakage in an expanded influence radius."""
+    weights = contamination_weights(
+        np.array([9.0, 11.0]),
+        ContaminationModelConfig(mode="top_hat"),
+        aperture_radius_arcsec=10.0,
+    )
+
+    assert weights.tolist() == [1.0, 0.0]

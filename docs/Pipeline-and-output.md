@@ -37,14 +37,18 @@ tool unless mission-specific modelling is added downstream.
   it is not automatically a detector field of view, PSF width, extraction
   aperture, or pixel scale; use the value that matches the screening aperture
   you want to test.
+- `influence_radius_arcsec` is an optional larger neighbour-search radius used
+  by weighted models to estimate flux leaking in from outside the aperture. It
+  defaults to the aperture radius and must remain within the built index radius.
 - `delta_mag` is the maximum allowed catalogue magnitude difference,
   `mag_neighbour - mag_target`, for a neighbour to be selected.
 - A `contaminant` in the JSON output means a neighbour that passes both the
   configured circular-radius cut and the `delta_mag` cut.
 - `contamination_model` records the query weighting mode. `top_hat` is the
   historical unweighted circular-aperture estimate. `gaussian_psf` applies a
-  Gaussian radial weight from the configured FWHM, and `radial_weight` applies
-  a user-supplied `sep_arcsec,weight` table.
+  Gaussian radial point-response weight from the configured FWHM,
+  `gaussian_aperture` integrates a circular Gaussian over the offset circular
+  aperture, and `radial_weight` applies a user-supplied `sep_arcsec,weight` table.
 - `flux_fraction_selected` is computed from the same selected contaminants as
   `num_contaminants`, using catalogue magnitude ratios
   `10 ** (-0.4 * (mag_neighbour - mag_target))`, and is reported as a
@@ -54,13 +58,11 @@ tool unless mission-specific modelling is added downstream.
 - `flux_fraction_extra` is retained as a backward-compatible alias of
   `flux_fraction_selected`.
 
-The optional Gaussian/tabulated weights are radial approximations, not full
-instrument simulations. The current implementation does not perform full
-instrumental PSF convolution, detector-pixel response modelling,
-wavelength-dependent bandpass transformations, or non-uniform scattered-light
-modelling from bright sources just outside the configured radius. Those effects
-require mission-specific inputs and should not be inferred from PHOTO-CAT's
-current catalogue-only metrics.
+The optional Gaussian/tabulated weights remain circular radial models, not full
+instrument simulations. They can estimate leakage from sources between the
+aperture and influence radii, but do not model asymmetric or spatially varying
+PSFs, detector pixels, diffraction or scattered light, or wavelength-dependent
+bandpass transformations.
 
 ## Output JSON
 
@@ -74,6 +76,8 @@ Each target result includes:
 - selected-contaminant flux fraction
 - all-neighbour-in-radius flux fraction
 - optional per-band selected/all-neighbour flux-fraction dictionaries
+- weighted inside-aperture, outside-aperture, and total flux fractions
+- outside-aperture neighbour counts and selected-source records
 - number of neighbours inside the circular radius
 - number of selected contaminants
 - contaminant source list
@@ -106,8 +110,11 @@ photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
 photo-cat report INDEX_DIR/output/result.json --format html --output report.html
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
+photo-cat benchmark-table benchmark.json --output benchmark_table.md
 photo-cat reproduce-paper --result-json INDEX_DIR/output/result.json --output-dir paper_products
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
+photo-cat screen INDEX_DIR/output/result.json --output screening.csv
+photo-cat validate-results INDEX_DIR/output/result.json data/reference.csv --output validation.json --matched-output residuals.csv
 ```
 
 `summarize` emits aggregate target counts, selected-contaminant counts,
@@ -120,9 +127,13 @@ tables. `report` writes an HTML or Markdown document that bundles the summary
 and plots. `provenance` records catalogue checksums and basic input statistics.
 `benchmark` runs selected pipeline stages and records wall-clock time plus
 Python `tracemalloc` peak allocations; if `psutil` is installed it also samples
-native RSS memory. `reproduce-paper` gathers result products and checksums into
+native RSS memory. A paper-ready Markdown or CSV benchmark table can be
+generated with `benchmark-table`. `reproduce-paper` gathers result products and checksums into
 a paper reproduction manifest. `merge-bright-stars` creates a de-duplicated
 catalogue from a Gaia-like table plus a supplemental bright-star table.
+`screen` creates a ranked, reasoned accept/review/reject decision table.
+`validate-results` quantifies agreement with an external mission/reference
+contamination table and can export matched residuals.
 
 ## Console output
 

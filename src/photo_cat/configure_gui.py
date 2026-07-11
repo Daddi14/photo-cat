@@ -69,6 +69,7 @@ DEFAULT_CONFIG = {
         },
         "settings": {
             "field_of_view_arcsec": 47.0,
+            "influence_radius_arcsec": 47.0,
             "delta_mag": 5,
             "include_missing_targets": False,
             "contamination_bands": ["gaia_g"],
@@ -138,6 +139,7 @@ class ConfigGui(tk.Tk):
         self.index_dir_var = tk.StringVar()
         self.max_radius_var = tk.StringVar()
         self.field_of_view_var = tk.StringVar()
+        self.influence_radius_var = tk.StringVar()
         self.delta_mag_var = tk.StringVar()
         self.include_missing_targets_var = tk.BooleanVar()
         self.chunk_size_var = tk.StringVar()
@@ -588,23 +590,24 @@ class ConfigGui(tk.Tk):
 
         self.add_entry_row(settings_tab, 0, "Max build radius, arcsec", self.max_radius_var)
         self.add_entry_row(settings_tab, 1, "Query aperture radius, arcsec", self.field_of_view_var)
-        self.add_entry_row(settings_tab, 2, "Delta magnitude", self.delta_mag_var)
+        self.add_entry_row(settings_tab, 2, "Outer influence radius, arcsec", self.influence_radius_var)
+        self.add_entry_row(settings_tab, 3, "Delta magnitude", self.delta_mag_var)
 
         settings_note = ttk.Label(
             settings_tab,
             text=(
-                "The query aperture radius is the circular screening radius around each target. "
-                "It should normally be equal to or smaller than the max build radius. "
-                "The default query radius is 47 arcsec."
+                "The aperture radius defines the extraction/screening circle. The influence radius can be larger "
+                "when a weighted PSF model should include leakage from nearby sources outside that aperture. "
+                "Both must be equal to or smaller than the max build radius."
             ),
             style="Muted.TLabel",
             wraplength=900,
             justify="left"
         )
-        settings_note.grid(row=3, column=0, columnspan=3, sticky="w", pady=(8, 8))
+        settings_note.grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 8))
 
         advanced = ttk.LabelFrame(settings_tab, text="Advanced performance settings", padding=8)
-        advanced.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        advanced.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         advanced.columnconfigure(1, weight=1)
 
         advanced_warning = ttk.Label(
@@ -722,6 +725,7 @@ class ConfigGui(tk.Tk):
         self.index_dir_var.set(str(query_io.get("INDEX_DIR", "data/output")))
         self.max_radius_var.set(str(build_settings.get("max_radius_arcsec", 120.0)))
         self.field_of_view_var.set(str(query_settings.get("field_of_view_arcsec", 47.0)))
+        self.influence_radius_var.set(str(query_settings.get("influence_radius_arcsec", query_settings.get("field_of_view_arcsec", 47.0))))
         self.delta_mag_var.set(str(query_settings.get("delta_mag", 5)))
         self.include_missing_targets_var.set(bool(query_settings.get("include_missing_targets", False)))
         self.chunk_size_var.set(str(build_settings.get("chunk_size", 10000)))
@@ -1067,6 +1071,7 @@ class ConfigGui(tk.Tk):
         try:
             max_radius = float(self.max_radius_var.get().strip())
             field_of_view = float(self.field_of_view_var.get().strip())
+            influence_radius = float(self.influence_radius_var.get().strip())
             delta_mag = float(self.delta_mag_var.get().strip())
             chunk_size = int(self.chunk_size_var.get().strip())
             buffer_flush = int(self.buffer_flush_var.get().strip())
@@ -1074,15 +1079,22 @@ class ConfigGui(tk.Tk):
             messagebox.showerror("Invalid values", "Radius, delta magnitude, chunk size, and checkpoint interval must be numbers.")
             return False
 
-        if (max_radius <= 0 or field_of_view <= 0):
+        if (max_radius <= 0 or field_of_view <= 0 or influence_radius <= 0):
             messagebox.showerror("Invalid values", "Radius values must be greater than 0.")
             return False
 
-        if (field_of_view > max_radius):
+        if (influence_radius < field_of_view):
+            messagebox.showerror(
+                "Invalid influence radius",
+                "The outer influence radius must be equal to or larger than the query aperture radius.",
+            )
+            return False
+
+        if (influence_radius > max_radius):
             proceed = messagebox.askyesno(
-                "Query radius is larger than build radius",
-                "The query aperture radius is larger than the build radius.\n\n"
-                "Usually max build radius should be equal to or larger than the query radius.\n\n"
+                "Influence radius is larger than build radius",
+                "The outer influence radius is larger than the build radius.\n\n"
+                "The query cannot use neighbours that were not included in the built index.\n\n"
                 "Save anyway?"
             )
             if (not proceed):
@@ -1225,6 +1237,7 @@ class ConfigGui(tk.Tk):
                 },
                 "settings": {
                     "field_of_view_arcsec": float(self.field_of_view_var.get().strip()),
+                    "influence_radius_arcsec": float(self.influence_radius_var.get().strip()),
                     "delta_mag": float(self.delta_mag_var.get().strip()),
                     "include_missing_targets": bool(self.include_missing_targets_var.get()),
                     "contamination_bands": ["gaia_g"],

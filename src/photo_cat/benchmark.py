@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import csv
+import json
+import os
 import platform
 import sys
 import threading
@@ -118,9 +121,26 @@ def run_benchmark(
             "release": platform.release(),
             "machine": platform.machine(),
             "processor": platform.processor(),
+            "logical_cpu_count": os.cpu_count(),
         },
         "stages": [],
     }
+
+    try:
+        from .load_config import load_pipeline_configuration
+
+        configuration = load_pipeline_configuration(config_path, validate_runtime=False)
+        catalogue_path = Path(configuration.build.input_catalog)
+        payload["workload"] = {
+            "catalogue_path": str(catalogue_path),
+            "catalogue_size_bytes": catalogue_path.stat().st_size if catalogue_path.is_file() else None,
+            "max_build_radius_arcsec": configuration.build.max_radius_arcsec,
+            "aperture_radius_arcsec": configuration.query.aperture_radius_arcsec,
+            "influence_radius_arcsec": configuration.query.effective_influence_radius_arcsec,
+            "configured_target_count": len(configuration.query.targets),
+        }
+    except (FileNotFoundError, OSError, ValueError):
+        payload["workload"] = None
 
     if run_build:
         payload["stages"].append(
@@ -143,3 +163,65 @@ def write_benchmark(payload: dict[str, Any], output_path: str | Path) -> str:
     """Write benchmark payload as JSON."""
     atomic_write_json(output_path, payload)
     return str(output_path)
+
+
+def benchmark_table_rows(paths: list[str | Path]) -> list[dict[str, Any]]:
+    """Flatten benchmark JSON files into one row per measured pipeline stage."""
+    rows: list[dict[str, Any]] = []
+    for path in paths:
+        benchmark_path = Path(path)
+        try:
+            payload = json.loads(benchmark_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError(f"Could not read benchmark JSON: {benchmark_path}") from error
+        workload = payload.get("workload") or {}
+        hardware = payload.get("platform") or {}
+        for stage in payload.get("stages", []):
+            rows.append(
+                {
+                    "benchmark": benchmark_path.name,
+                    "photo_cat_version": payload.get("photo_cat_version"),
+                    "stage": stage.get("stage"),
+                    "status": stage.get("status"),
+                    "duration_seconds": stage.get("duration_seconds"),
+                    "peak_rss_mib": (
+                        None if stage.get("rss_peak_bytes") is None else round(float(stage["rss_peak_bytes"]) / 1048576.0, 3)
+                    ),
+                    "python_peak_mib": round(float(stage.get("python_tracemalloc_peak_bytes", 0)) / 1048576.0, 3),
+                    "catalogue_size_mib": (
+                        None if workload.get("catalogue_size_bytes") is None else round(float(workload["catalogue_size_bytes"]) / 1048576.0, 3)
+                    ),
+                    "build_radius_arcsec": workload.get("max_build_radius_arcsec"),
+                    "aperture_radius_arcsec": workload.get("aperture_radius_arcsec"),
+                    "influence_radius_arcsec": workload.get("influence_radius_arcsec"),
+                    "hardware": " / ".join(
+                        str(value) for value in (hardware.get("system"), hardware.get("machine"), hardware.get("processor")) if value
+                    ),
+                    "logical_cpus": hardware.get("logical_cpu_count"),
+                }
+            )
+    return rows
+
+
+def write_benchmark_table(rows: list[dict[str, Any]], output_path: str | Path, output_format: str) -> str:
+    """Write flattened benchmark rows as a paper-ready Markdown or CSV table."""
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(rows[0]) if rows else ["benchmark", "stage", "duration_seconds"]
+    if (output_format == "csv"):
+        with destination.open("x", encoding="utf-8", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        return str(destination)
+    if (output_format != "markdown"):
+        raise ValueError("Benchmark table format must be markdown or csv.")
+    labels = [name.replace("_", " ") for name in fieldnames]
+    lines = [
+        "| " + " | ".join(labels) + " |",
+        "| " + " | ".join("---" for _ in labels) + " |",
+    ]
+    for row in rows:
+        lines.append("| " + " | ".join(str(row.get(name, "") if row.get(name) is not None else "") for name in fieldnames) + " |")
+    destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(destination)

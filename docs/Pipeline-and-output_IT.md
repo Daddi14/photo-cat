@@ -38,14 +38,19 @@ un'analisi successiva aggiunga modellazione specifica della missione.
   detector, una larghezza di PSF, un'apertura di estrazione o una scala di
   pixel: usa il valore che corrisponde all'apertura di screening che vuoi
   testare.
+- `influence_radius_arcsec` è un raggio opzionale più grande per la ricerca dei
+  vicini, usato dai modelli pesati per stimare il flusso che entra da fuori
+  dell'apertura. Per default coincide con l'apertura e deve restare entro il
+  raggio dell'indice costruito.
 - `delta_mag` è la differenza massima di magnitudine di catalogo ammessa,
   `mag_vicino - mag_target`, perché un vicino venga selezionato.
 - Un `contaminant` nell'output JSON è un vicino che supera sia il taglio sul
   raggio circolare configurato sia il taglio `delta_mag`.
 - `contamination_model` registra la modalità di pesatura della query. `top_hat`
   è la stima storica non pesata con apertura circolare. `gaussian_psf` applica
-  un peso radiale gaussiano dalla FWHM configurata, mentre `radial_weight`
-  applica una tabella `sep_arcsec,weight` fornita dall'utente.
+  un peso radiale gaussiano puntuale dalla FWHM configurata,
+  `gaussian_aperture` integra una gaussiana circolare sull'apertura circolare
+  disassata, mentre `radial_weight` applica una tabella `sep_arcsec,weight`.
 - `flux_fraction_selected` viene calcolato sugli stessi contaminanti selezionati
   usati da `num_contaminants`, tramite rapporti di flusso da magnitudini di
   catalogo `10 ** (-0.4 * (mag_vicino - mag_target))`, ed è espresso come
@@ -55,13 +60,11 @@ un'analisi successiva aggiunga modellazione specifica della missione.
 - `flux_fraction_extra` resta come alias retrocompatibile di
   `flux_fraction_selected`.
 
-Le pesature gaussiane/tabulate opzionali sono approssimazioni radiali, non
-simulazioni complete dello strumento. L'implementazione attuale non esegue
-convoluzione completa con PSF strumentale, modellazione della risposta dei pixel
-del detector, trasformazioni di banda dipendenti dalla lunghezza d'onda o
-modellazione non uniforme della luce diffusa da sorgenti brillanti appena fuori
-dal raggio configurato. Questi effetti richiedono input specifici della missione
-e non devono essere dedotti dalle metriche attuali basate solo sul catalogo.
+Le pesature gaussiane/tabulate opzionali restano modelli radiali circolari, non
+simulazioni complete dello strumento. Possono stimare il leakage delle sorgenti
+fra apertura e raggio di influenza, ma non modellano PSF asimmetriche o variabili,
+pixel del detector, diffrazione o luce diffusa, né trasformazioni di banda
+dipendenti dalla lunghezza d'onda.
 
 ## Output JSON
 
@@ -75,6 +78,8 @@ Ogni risultato target include:
 - frazione di flusso dei contaminanti selezionati
 - frazione di flusso di tutti i vicini dentro il raggio
 - dizionari opzionali multi-banda per le frazioni di flusso selezionate/tutti i vicini
+- frazioni di flusso pesate dentro l'apertura, fuori dall'apertura e totali
+- conteggi e record delle sorgenti selezionate fuori dall'apertura
 - numero di vicini dentro il raggio circolare
 - numero di contaminanti selezionati
 - lista delle sorgenti contaminanti
@@ -109,8 +114,11 @@ photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
 photo-cat report INDEX_DIR/output/result.json --format html --output report.html
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
+photo-cat benchmark-table benchmark.json --output benchmark_table.md
 photo-cat reproduce-paper --result-json INDEX_DIR/output/result.json --output-dir paper_products
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
+photo-cat screen INDEX_DIR/output/result.json --output screening.csv
+photo-cat validate-results INDEX_DIR/output/result.json data/reference.csv --output validation.json --matched-output residuals.csv
 ```
 
 `summarize` produce conteggi aggregati dei target, conteggi dei contaminanti
@@ -124,10 +132,14 @@ flusso-vs-separazione. `export` scrive tabelle target piatte CSV o Parquet.
 registra checksum del catalogo e statistiche di input di base. `benchmark`
 esegue le fasi selezionate e registra tempo di esecuzione più picco di
 allocazioni Python via `tracemalloc`; se `psutil` è installato campiona anche la
-memoria nativa RSS. `reproduce-paper` raccoglie prodotti e checksum in un
+memoria nativa RSS. Una tabella benchmark Markdown o CSV pronta per l'articolo
+può essere generata con `benchmark-table`. `reproduce-paper` raccoglie prodotti e checksum in un
 manifest di riproduzione per l'articolo. `merge-bright-stars` crea un catalogo
 de-duplicato da una tabella in stile Gaia più una tabella supplementare di
 stelle brillanti.
+`screen` crea una tabella ordinata e motivata di decisioni accept/review/reject.
+`validate-results` quantifica l'accordo con una tabella esterna di contaminazione
+di missione/riferimento e può esportare i residui abbinati.
 
 ## Output console
 

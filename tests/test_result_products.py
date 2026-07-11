@@ -13,6 +13,7 @@ from photo_cat import cli
 from photo_cat import benchmark as benchmark_module
 from photo_cat import build_neighbors_index, query_contamination_from_index
 from photo_cat import reproducible_products
+from photo_cat.reference_validation import validate_against_reference
 from photo_cat.result_products import (
     build_report,
     build_svg_plot,
@@ -21,6 +22,7 @@ from photo_cat.result_products import (
     write_export,
     write_matplotlib_plot,
 )
+from photo_cat.result_screening import screen_results
 
 
 def write_result_json(tmp_path: Path) -> Path:
@@ -70,6 +72,13 @@ def write_result_json(tmp_path: Path) -> Path:
     return result_path
 
 
+def _svg_circle_radii(svg: str) -> list[float]:
+    """Extract every circle radius from an SVG plot for marker-size assertions."""
+    import re
+
+    return [float(match) for match in re.findall(r'<circle[^>]*\br="([0-9.]+)"', svg)]
+
+
 @pytest.mark.unit
 def test_result_summary_preserves_selected_and_all_neighbor_fluxes(tmp_path: Path) -> None:
     """Summaries must keep the two contamination metrics distinct for paper statistics."""
@@ -82,6 +91,62 @@ def test_result_summary_preserves_selected_and_all_neighbor_fluxes(tmp_path: Pat
     assert summary["total_neighbors_in_radius"] == 3
     assert summary["selected_flux_fraction_percent"]["max"] == pytest.approx(15.85)
     assert summary["all_neighbor_flux_fraction_percent"]["max"] == pytest.approx(16.85)
+
+
+@pytest.mark.unit
+def test_screening_ranks_targets_and_explains_decisions(tmp_path: Path) -> None:
+    """Decision products should turn contamination percentages into auditable target choices."""
+    rows = load_result_rows(write_result_json(tmp_path))
+    payload = screen_results(rows, accept_max_percent=1.0, review_max_percent=10.0)
+
+    assert [item["source_id"] for item in payload["decisions"]] == ["1001", "1003"]
+    assert [item["decision"] for item in payload["decisions"]] == ["reject", "accept"]
+    assert payload["decisions"][0]["decision_reasons"]
+
+
+@pytest.mark.regression
+def test_cli_screen_writes_github_friendly_markdown(tmp_path: Path) -> None:
+    """The public screening command should write a directly reviewable ranking table."""
+    result_path = write_result_json(tmp_path)
+    output_path = tmp_path / "screening.md"
+
+    assert cli.main(["screen", str(result_path), "--format", "markdown", "--output", str(output_path)]) == 0
+    rendered = output_path.read_text(encoding="utf-8")
+    assert "PHOTO-CAT target screening" in rendered
+    assert "| Rank | Source ID |" in rendered
+
+
+@pytest.mark.unit
+def test_reference_validation_reports_bias_and_error_metrics(tmp_path: Path) -> None:
+    """Reference comparisons should quantify agreement instead of relying on visual inspection."""
+    rows = load_result_rows(write_result_json(tmp_path))
+    reference_path = tmp_path / "reference.csv"
+    reference_path.write_text("source_id,contamination_percent\n1001,14.85\n1003,1.5\n", encoding="utf-8")
+
+    payload, matched = validate_against_reference(rows, reference_path, threshold_percent=10.0)
+
+    assert len(matched) == 2
+    assert payload["statistics"]["bias_percent"] == pytest.approx(0.5)
+    assert payload["statistics"]["mae_percent"] == pytest.approx(1.5)
+    assert payload["statistics"]["rmse_percent"] == pytest.approx(2.5**0.5)
+    assert payload["statistics"]["threshold_accuracy"] == 1.0
+
+
+@pytest.mark.regression
+def test_cli_validate_results_writes_statistics_and_matches(tmp_path: Path) -> None:
+    """The validation CLI should create reusable statistics and residual tables."""
+    result_path = write_result_json(tmp_path)
+    reference_path = tmp_path / "reference.csv"
+    reference_path.write_text("source_id,contamination_percent\n1001,15\n", encoding="utf-8")
+    output_path = tmp_path / "validation.json"
+    matches_path = tmp_path / "matches.csv"
+
+    assert cli.main([
+        "validate-results", str(result_path), str(reference_path),
+        "--output", str(output_path), "--matched-output", str(matches_path),
+    ]) == 0
+    assert json.loads(output_path.read_text(encoding="utf-8"))["statistics"]["matched_targets"] == 1
+    assert "residual_percent" in matches_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.regression
@@ -118,6 +183,18 @@ def test_new_reviewer_plot_kinds_build_svg(tmp_path: Path) -> None:
         svg = build_svg_plot(rows, kind)
         assert "<svg" in svg
         assert "font-family" in svg
+
+
+@pytest.mark.unit
+def test_sky_map_encodes_severity_by_marker_size_not_colour_alone(tmp_path: Path) -> None:
+    """Colour-blind readers should distinguish contamination levels by marker size too."""
+    rows = load_result_rows(write_result_json(tmp_path))
+
+    svg = build_svg_plot(rows, "sky-map")
+
+    radii = {value for value in _svg_circle_radii(svg)}
+    assert len(radii) >= 2, "targets with different contaminant counts must render different marker sizes"
+    assert "green=0" not in svg
 
 
 @pytest.mark.regression
@@ -230,6 +307,24 @@ def test_benchmark_runner_records_stage_status_and_memory_keys(
     assert [stage["stage"] for stage in payload["stages"]] == ["build-index", "query"]
     assert all("python_tracemalloc_peak_bytes" in stage for stage in payload["stages"])
     assert all("native_rss_available" in stage for stage in payload["stages"])
+
+
+@pytest.mark.regression
+def test_benchmark_table_renders_paper_ready_markdown(tmp_path: Path) -> None:
+    """Benchmark captures should be convertible into the compact table requested by reviewers."""
+    benchmark_path = tmp_path / "benchmark.json"
+    benchmark_path.write_text(json.dumps({
+        "photo_cat_version": "2.0.0",
+        "platform": {"system": "TestOS", "machine": "x64", "logical_cpu_count": 8},
+        "workload": {"catalogue_size_bytes": 1048576, "max_build_radius_arcsec": 120, "aperture_radius_arcsec": 47, "influence_radius_arcsec": 75},
+        "stages": [{"stage": "query", "status": 0, "duration_seconds": 1.25, "python_tracemalloc_peak_bytes": 1048576, "rss_peak_bytes": 2097152}],
+    }), encoding="utf-8")
+    table_path = tmp_path / "benchmark.md"
+
+    assert cli.main(["benchmark-table", str(benchmark_path), "--output", str(table_path)]) == 0
+    rendered = table_path.read_text(encoding="utf-8")
+    assert "| benchmark | photo cat version | stage |" in rendered
+    assert "| benchmark.json | 2.0.0 | query |" in rendered
 
 
 @pytest.mark.regression

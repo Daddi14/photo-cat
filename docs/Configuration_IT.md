@@ -58,11 +58,20 @@ pesatura radiale opzionale:
 ```yaml
 query_contamination_from_index:
   settings:
+    field_of_view_arcsec: 47.0       # apertura di estrazione/screening
+    influence_radius_arcsec: 75.0   # ricerca esterna opzionale del leakage
     contamination_bands: [gaia_g, gaia_bp, gaia_rp]
     contamination_model:
-      mode: gaussian_psf
+      mode: gaussian_aperture
       gaussian_fwhm_arcsec: 47.0
 ```
+
+`influence_radius_arcsec` usa per default `field_of_view_arcsec`, deve essere
+almeno altrettanto grande e non può superare il raggio di build dell'indice.
+`gaussian_aperture` integra una PSF gaussiana circolare sull'apertura circolare
+configurata e normalizza il risultato al throughput del target centrato. La
+modalità precedente `gaussian_psf` resta disponibile come semplice
+approssimazione della risposta puntuale.
 
 Per una curva radiale tabulata dell'apertura, usa:
 

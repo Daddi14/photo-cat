@@ -21,7 +21,12 @@ photo-cat summary
 photo-cat export
 photo-cat plot
 photo-cat report
+photo-cat screen
+photo-cat rank
+photo-cat validate-results
+photo-cat validate
 photo-cat benchmark
+photo-cat benchmark-table
 photo-cat provenance
 photo-cat doctor
 photo-cat --version
@@ -68,10 +73,15 @@ Each target result preserves the documented fields for:
 - `flux_fraction_selected`;
 - `flux_fraction_all_neighbors`;
 - `flux_fraction_extra`;
+- additive weighted `flux_fraction_inside_aperture`,
+  `flux_fraction_outside_aperture`, and `flux_fraction_total_weighted` metrics;
 - `num_neighbors_in_radius`;
+- influence-radius and outside-aperture neighbour counts;
 - `num_contaminants_selected`;
 - `num_contaminants`;
-- contaminant records including source ID, coordinates, magnitude, and separation.
+- contaminant records including source ID, coordinates, magnitude, and separation;
+- separately identified selected sources outside the aperture when an influence
+  radius is configured;
 - unresolved target rows when explicitly requested, with `status` set to
   `missing_from_index` or `invalid_target_id`.
 
@@ -96,6 +106,11 @@ version, Python `tracemalloc` peak allocations, and optional psutil RSS samples.
 `photo-cat provenance` writes a schema-versioned JSON document containing
 catalogue checksum, shape/header facts, null counts, numeric ranges, duplicate
 source-ID counts, and optional ADQL/query checksum.
+
+`photo-cat screen` writes schema-versioned target rankings with explicit
+thresholds, decisions, scores, and reasons. `photo-cat validate-results` writes
+schema-versioned comparison statistics against a user-supplied reference CSV
+and can export matched residual rows.
 
 ## Diagnostics and launchers
 

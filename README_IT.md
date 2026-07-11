@@ -31,7 +31,7 @@ PHOTO-CAT è uno strumento Python locale per la valutazione del rischio di conta
 
 Può creare un indice dei vicini da un catalogo di sorgenti, interrogare target selezionati e scrivere un riepilogo JSON con metriche di contaminazione catalogo/apertura e sorgenti vicine che rispettano i limiti configurati di campo di vista e magnitudine.
 
-Il modello attuale di PHOTO-CAT 2.0.0 è volutamente semplice: usa magnitudini di catalogo e un'apertura/raggio angolare circolare. Non esegue convoluzione con PSF strumentale, modellazione dei pixel del detector, pesatura dell'apertura o trasformazioni dipendenti dalla lunghezza d'onda fra banda di catalogo e banda di missione. Per fotometria calibrata su uno strumento specifico, considera l'output come metrica di screening/rischio salvo che un'analisi successiva aggiunga questi termini specifici della missione.
+Il modello attuale di PHOTO-CAT 2.0.0 ha un ambito volutamente definito: usa magnitudini di catalogo, un'apertura circolare e modelli opzionali di throughput radiale circolare. Un raggio di influenza separato può includere il leakage pesato di sorgenti vicine fuori dall'apertura. Non esegue convoluzione con PSF asimmetriche o variabili, modellazione dei pixel del detector, luce diffusa o trasformazioni dipendenti dalla lunghezza d'onda. Per fotometria calibrata su uno strumento specifico, considera l'output come metrica di screening/rischio salvo che input di missione calibrati supportino il modello radiale selezionato.
 
 PHOTO-CAT è pensato per un utilizzo locale e riproducibile. Include launcher semplici, una finestra grafica di configurazione, setup automatico delle dipendenze, gestione del runtime locale al progetto, manifest versionati dell'indice e metadata sidecar delle query con versione del pacchetto, impostazioni, manifest dell'indice e ambito del modello.
 
@@ -63,7 +63,10 @@ Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più com
 - Cattura provenance JSON del catalogo con checksum, conteggi righe, statistiche colonne e checksum ADQL opzionale.
 - Genera pacchetti riproducibili per articolo/revisione con riassunti, plot, report e checksum.
 - Unisce cataloghi supplementari di stelle brillanti prima della creazione dell'indice.
+- Ordina i target in decisioni esplicite accept/review/reject per lo screening.
+- Valida la contaminazione prevista rispetto a tabelle di missione/riferimento fornite dall'utente.
 - Esegue benchmark riproducibili con tempi e allocazioni Python di picco.
+- Converte i benchmark in tabelle Markdown o CSV pronte per l'articolo.
 - Configura le esecuzioni tramite interfaccia grafica.
 - Esegui lo stesso workflow da una CLI per automazione e sistemi remoti, con override diretti per ogni valore di configurazione.
 - Usa un CSV di target oppure una lista manuale di source ID.
@@ -125,8 +128,11 @@ photo-cat plot output/index/output/result.json --kind contaminant-counts
 photo-cat provenance data/catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat benchmark-table output/benchmark.json --output output/benchmark_table.md
 photo-cat reproduce-paper --result-json output/index/output/result.json --output-dir output/paper_products
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
+photo-cat screen output/index/output/result.json --output output/screening.csv
+photo-cat validate-results output/index/output/result.json data/reference.csv --output output/validation.json
 ```
 
 Vedi [Pipeline e output](docs/Pipeline-and-output_IT.md) per i dettagli.
@@ -155,6 +161,7 @@ photo-cat run --config config.yaml
 photo-cat run --config config.yaml --input-catalog data/catalog.csv --ra-column RAJ2000 --dec-column DEJ2000 --mag-column Gmag --field-of-view-arcsec 60 --delta-mag 4
 photo-cat build-index --config config.yaml --input-catalog data/catalog.csv --out-dir output/index
 photo-cat query --config config.yaml --index-dir output/index --targets-input data/targets.csv --field-of-view-arcsec 47 --delta-mag 5
+photo-cat query --config config.yaml --aperture-radius-arcsec 47 --influence-radius-arcsec 75 --contamination-model-mode gaussian_aperture --gaussian-fwhm-arcsec 20
 photo-cat doctor
 ```
 

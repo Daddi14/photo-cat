@@ -57,11 +57,19 @@ screening experiments:
 ```yaml
 query_contamination_from_index:
   settings:
+    field_of_view_arcsec: 47.0       # extraction/screening aperture
+    influence_radius_arcsec: 75.0   # optional outer leakage search
     contamination_bands: [gaia_g, gaia_bp, gaia_rp]
     contamination_model:
-      mode: gaussian_psf
+      mode: gaussian_aperture
       gaussian_fwhm_arcsec: 47.0
 ```
+
+`influence_radius_arcsec` defaults to `field_of_view_arcsec`, must be at least
+as large as it, and cannot exceed the index build radius. `gaussian_aperture`
+integrates a circular Gaussian PSF over the configured circular aperture and
+normalizes the result to the centered target throughput. The older
+`gaussian_psf` mode remains available as a simple point-response approximation.
 
 For a tabulated radial aperture curve, use:
 

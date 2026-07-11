@@ -18,7 +18,7 @@ from photo_cat.build_neighbors_index import (
     write_checkpoint,
 )
 from photo_cat.index_manifest import load_index_manifest, validate_index_structure
-from photo_cat.load_config import QueryConfig
+from photo_cat.load_config import ContaminationModelConfig, QueryConfig
 from photo_cat.path_policy import index_paths
 from photo_cat.query_contamination_from_index import (
     load_catalog_arrays,
@@ -242,3 +242,32 @@ def test_query_uses_persisted_neighbor_separations_when_available() -> None:
     assert result is not None
     assert result["num_contaminants"] == 1
     assert result["contaminants"][0]["sep_arcsec"] == 1.0
+
+
+@pytest.mark.unit
+def test_query_reports_weighted_leakage_from_outside_aperture() -> None:
+    """A source outside the aperture but inside the influence radius should be explicit in output."""
+    result = process_target(
+        internal_target=1,
+        offsets=np.array([0, 1, 1], dtype=np.int64),
+        neighbors_mm=np.array([2], dtype=np.int64),
+        ra=np.array([10.0, 20.0], dtype=np.float64),
+        dec=np.array([20.0, 20.0], dtype=np.float64),
+        gmag=np.array([10.0, 10.0], dtype=np.float64),
+        real_ids_int=np.array([1001, 1002], dtype=np.int64),
+        internal_to_special_name={},
+        field_of_view_arcsec=10.0,
+        influence_radius_arcsec=30.0,
+        delta_mag=5.0,
+        neighbor_separations_mm=np.array([15.0], dtype=np.float64),
+        contamination_model=ContaminationModelConfig(mode="gaussian_aperture", gaussian_fwhm_arcsec=10.0),
+    )
+
+    assert result is not None
+    assert result["num_neighbors_in_radius"] == 0
+    assert result["num_neighbors_outside_aperture"] == 1
+    assert result["num_contaminants_outside_aperture"] == 1
+    assert result["flux_fraction_inside_aperture"] == 0.0
+    assert result["flux_fraction_outside_aperture"] > 0.0
+    assert result["flux_fraction_total_weighted"] == result["flux_fraction_outside_aperture"]
+    assert result["outside_aperture_contaminants"][0]["aperture_location"] == "outside"

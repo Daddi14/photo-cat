@@ -108,8 +108,11 @@ def summarize_results(rows: list[dict[str, Any]], *, source_path: str | Path | N
     """Return stable aggregate statistics for one PHOTO-CAT result table."""
     selected_fluxes = [_selected_flux(row) for row in rows]
     all_neighbor_fluxes = [_all_neighbor_flux(row) for row in rows]
+    outside_fluxes = [_number(row.get("flux_fraction_outside_aperture", 0.0)) for row in rows]
+    total_weighted_fluxes = [_number(row.get("flux_fraction_total_weighted", _all_neighbor_flux(row))) for row in rows]
     contaminant_counts = [_int_number(row.get("num_contaminants", row.get("num_contaminants_selected", 0))) for row in rows]
     neighbor_counts = [_int_number(row.get("num_neighbors_in_radius", count)) for row, count in zip(rows, contaminant_counts)]
+    outside_neighbor_counts = [_int_number(row.get("num_neighbors_outside_aperture", 0)) for row in rows]
     separations = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
 
     target_count = len(rows)
@@ -122,6 +125,7 @@ def summarize_results(rows: list[dict[str, Any]], *, source_path: str | Path | N
         "targets_without_contaminants": target_count - targets_with_contaminants,
         "total_selected_contaminants": int(sum(contaminant_counts)),
         "total_neighbors_in_radius": int(sum(neighbor_counts)),
+        "total_neighbors_outside_aperture": int(sum(outside_neighbor_counts)),
         "selected_flux_fraction_percent": {
             "mean": round(_mean(selected_fluxes), 6),
             "median": round(_median(selected_fluxes), 6),
@@ -131,6 +135,16 @@ def summarize_results(rows: list[dict[str, Any]], *, source_path: str | Path | N
             "mean": round(_mean(all_neighbor_fluxes), 6),
             "median": round(_median(all_neighbor_fluxes), 6),
             "max": round(max(all_neighbor_fluxes), 6) if all_neighbor_fluxes else 0.0,
+        },
+        "outside_aperture_flux_fraction_percent": {
+            "mean": round(_mean(outside_fluxes), 6),
+            "median": round(_median(outside_fluxes), 6),
+            "max": round(max(outside_fluxes), 6) if outside_fluxes else 0.0,
+        },
+        "total_weighted_flux_fraction_percent": {
+            "mean": round(_mean(total_weighted_fluxes), 6),
+            "median": round(_median(total_weighted_fluxes), 6),
+            "max": round(max(total_weighted_fluxes), 6) if total_weighted_fluxes else 0.0,
         },
         "contaminants_per_target": {
             "mean": round(_mean([float(value) for value in contaminant_counts]), 6),
@@ -151,6 +165,8 @@ def summary_text(summary: dict[str, Any]) -> str:
     """Render a compact human-readable summary."""
     selected = summary["selected_flux_fraction_percent"]
     all_neighbors = summary["all_neighbor_flux_fraction_percent"]
+    outside = summary["outside_aperture_flux_fraction_percent"]
+    total_weighted = summary["total_weighted_flux_fraction_percent"]
     counts = summary["contaminants_per_target"]
     return "\n".join(
         [
@@ -160,8 +176,11 @@ def summary_text(summary: dict[str, Any]) -> str:
             f"Without selected contaminants: {summary['targets_without_contaminants']}",
             f"Selected contaminants: {summary['total_selected_contaminants']}",
             f"Neighbours in radius: {summary['total_neighbors_in_radius']}",
+            f"Neighbours outside aperture: {summary['total_neighbors_outside_aperture']}",
             f"Selected flux % mean/median/max: {selected['mean']}/{selected['median']}/{selected['max']}",
             f"All-neighbour flux % mean/median/max: {all_neighbors['mean']}/{all_neighbors['median']}/{all_neighbors['max']}",
+            f"Outside-aperture flux % mean/median/max: {outside['mean']}/{outside['median']}/{outside['max']}",
+            f"Total weighted flux % mean/median/max: {total_weighted['mean']}/{total_weighted['median']}/{total_weighted['max']}",
             f"Contaminants per target mean/median/max: {counts['mean']}/{counts['median']}/{counts['max']}",
         ]
     )
@@ -204,12 +223,19 @@ def flatten_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "targets_without_contaminants": summary["targets_without_contaminants"],
         "total_selected_contaminants": summary["total_selected_contaminants"],
         "total_neighbors_in_radius": summary["total_neighbors_in_radius"],
+        "total_neighbors_outside_aperture": summary["total_neighbors_outside_aperture"],
         "selected_flux_mean": summary["selected_flux_fraction_percent"]["mean"],
         "selected_flux_median": summary["selected_flux_fraction_percent"]["median"],
         "selected_flux_max": summary["selected_flux_fraction_percent"]["max"],
         "all_neighbor_flux_mean": summary["all_neighbor_flux_fraction_percent"]["mean"],
         "all_neighbor_flux_median": summary["all_neighbor_flux_fraction_percent"]["median"],
         "all_neighbor_flux_max": summary["all_neighbor_flux_fraction_percent"]["max"],
+        "outside_aperture_flux_mean": summary["outside_aperture_flux_fraction_percent"]["mean"],
+        "outside_aperture_flux_median": summary["outside_aperture_flux_fraction_percent"]["median"],
+        "outside_aperture_flux_max": summary["outside_aperture_flux_fraction_percent"]["max"],
+        "total_weighted_flux_mean": summary["total_weighted_flux_fraction_percent"]["mean"],
+        "total_weighted_flux_median": summary["total_weighted_flux_fraction_percent"]["median"],
+        "total_weighted_flux_max": summary["total_weighted_flux_fraction_percent"]["max"],
         "contaminants_per_target_mean": summary["contaminants_per_target"]["mean"],
         "contaminants_per_target_median": summary["contaminants_per_target"]["median"],
         "contaminants_per_target_max": summary["contaminants_per_target"]["max"],
@@ -342,6 +368,20 @@ def _scatter(points: list[tuple[float, float]], title: str, x_label: str, y_labe
     return _svg_frame(width, height, title, "\n".join(body))
 
 
+def _severity_style(count: int) -> tuple[str, float, float]:
+    """Map contaminant count to a colourblind-safe colour plus a redundant marker size.
+
+    Encoding severity by marker size as well as hue keeps the three levels
+    distinguishable without relying on colour vision (Paul Tol bright palette).
+    Returns (hex_colour, svg_radius, matplotlib_area).
+    """
+    if (count == 0):
+        return "#228833", 2.0, 6.0
+    if (count <= 3):
+        return "#CCBB44", 3.2, 16.0
+    return "#EE6677", 4.6, 34.0
+
+
 def _sky_map(rows: list[dict[str, Any]], width: int = 760, height: int = 420) -> str:
     plot_left, plot_top, plot_width, plot_height = 60, 48, width - 100, height - 100
     body = [
@@ -354,11 +394,11 @@ def _sky_map(rows: list[dict[str, Any]], width: int = 760, height: int = 420) ->
         if ra is None or dec is None:
             continue
         count = _int_number(row.get("num_contaminants", 0))
-        color = "#228833" if count == 0 else ("#CCBB44" if count <= 3 else "#EE6677")
+        color, radius, _ = _severity_style(count)
         x = plot_left + ((ra % 360.0) / 360.0) * plot_width
         y = plot_top + ((90.0 - max(min(dec, 90.0), -90.0)) / 180.0) * plot_height
-        body.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="2.2" fill="{color}" fill-opacity="0.75"/>')
-    body.append(f'<text x="{plot_left}" y="{plot_top - 8}" font-family="sans-serif" font-size="11">green=0, yellow=1–3, red=&gt;3 contaminants</text>')
+        body.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{radius:.1f}" fill="{color}" fill-opacity="0.75"/>')
+    body.append(f'<text x="{plot_left}" y="{plot_top - 8}" font-family="sans-serif" font-size="11">marker size &amp; colour: small=0, medium=1–3, large=&gt;3 contaminants</text>')
     return _svg_frame(width, height, "PHOTO-CAT sky map", "\n".join(body))
 
 
@@ -464,16 +504,19 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
         ra_values = []
         dec_values = []
         colours = []
+        sizes = []
         for row in rows:
             ra = _number(row.get("ra"), None)  # type: ignore[arg-type]
             dec = _number(row.get("dec"), None)  # type: ignore[arg-type]
             if ra is None or dec is None:
                 continue
             count = _int_number(row.get("num_contaminants", 0))
+            colour, _, size = _severity_style(count)
             ra_values.append(ra)
             dec_values.append(dec)
-            colours.append("#228833" if count == 0 else ("#CCBB44" if count <= 3 else "#EE6677"))
-        ax.scatter(ra_values, dec_values, s=6, c=colours, alpha=0.75, linewidths=0)
+            colours.append(colour)
+            sizes.append(size)
+        ax.scatter(ra_values, dec_values, s=sizes, c=colours, alpha=0.75, linewidths=0)
         ax.set_xlabel("RA (deg)")
         ax.set_ylabel("Dec (deg)")
         ax.set_title("PHOTO-CAT sky map")
@@ -528,6 +571,11 @@ def flatten_result_row(row: dict[str, Any]) -> dict[str, Any]:
     contaminants = flattened.get("contaminants", [])
     flattened["contaminants_json"] = json.dumps(contaminants, ensure_ascii=False)
     flattened["contaminants"] = len(contaminants) if isinstance(contaminants, list) else 0
+    outside_contaminants = flattened.get("outside_aperture_contaminants", [])
+    flattened["outside_aperture_contaminants_json"] = json.dumps(outside_contaminants, ensure_ascii=False)
+    flattened["outside_aperture_contaminants"] = (
+        len(outside_contaminants) if isinstance(outside_contaminants, list) else 0
+    )
     return flattened
 
 

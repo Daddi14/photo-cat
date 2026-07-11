@@ -45,6 +45,7 @@ def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_
     assert query.TARGETS_INPUT == str((tmp_path / "targets.csv").resolve())
     assert query.field_of_view_arcsec == 47.0
     assert query.delta_mag == 5.0
+    assert query.influence_radius_arcsec == 47.0
 
     assert isinstance(execution, ExecutionConfig)
     assert execution.run_build is True
@@ -75,6 +76,21 @@ def test_load_config_parses_multiband_and_contamination_model(
     assert query.contamination_bands == ["gaia_g", "gaia_bp"]
     assert query.contamination_model.mode == "gaussian_psf"
     assert query.contamination_model.gaussian_fwhm_arcsec == 30.0
+
+
+@pytest.mark.unit
+def test_query_influence_radius_must_cover_aperture(
+    write_config: Callable[[str | None], Path],
+    config_text: str,
+) -> None:
+    """The leakage search cannot be smaller than the extraction aperture."""
+    modified = config_text.replace(
+        "field_of_view_arcsec: 47.0",
+        "field_of_view_arcsec: 47.0\n    influence_radius_arcsec: 30.0",
+    )
+
+    with pytest.raises(ValueError, match="must be greater than or equal"):
+        load_config("query_contamination_from_index", str(write_config(modified)))
 
 
 @pytest.mark.unit

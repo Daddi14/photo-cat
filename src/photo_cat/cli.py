@@ -157,6 +157,45 @@ def run_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_screen(args: argparse.Namespace) -> int:
+    """Rank targets and write explicit contamination-screening decisions."""
+    from .result_products import load_result_rows
+    from .result_screening import screen_results, write_screening
+
+    rows = load_result_rows(args.result_json)
+    payload = screen_results(
+        rows,
+        metric=args.metric,
+        accept_max_percent=args.accept_max_percent,
+        review_max_percent=args.review_max_percent,
+        source_path=args.result_json,
+    )
+    saved_path = write_screening(payload, args.output, args.format)
+    print(f"Screening decisions saved to: {saved_path}")
+    return 0
+
+
+def run_validate_results(args: argparse.Namespace) -> int:
+    """Compare PHOTO-CAT predictions with an external reference table."""
+    from .reference_validation import validate_against_reference, write_validation
+    from .result_products import load_result_rows
+
+    rows = load_result_rows(args.result_json)
+    payload, matched = validate_against_reference(
+        rows,
+        args.reference_csv,
+        prediction_metric=args.metric,
+        source_id_column=args.source_id_column,
+        reference_column=args.reference_column,
+        threshold_percent=args.threshold_percent,
+    )
+    saved_path, matched_path = write_validation(payload, args.output, matched, args.matched_output)
+    print(f"Validation statistics saved to: {saved_path}")
+    if (matched_path is not None):
+        print(f"Matched validation rows saved to: {matched_path}")
+    return 0
+
+
 def run_provenance(args: argparse.Namespace) -> int:
     """Capture catalogue provenance metadata."""
     from .catalogue_provenance import build_catalogue_provenance, write_catalogue_provenance
@@ -190,6 +229,16 @@ def run_benchmark(args: argparse.Namespace) -> int:
     saved_path = write_benchmark(payload, args.output)
     print(f"Benchmark saved to: {saved_path}")
     return 0 if payload["ok"] else 1
+
+
+def run_benchmark_table(args: argparse.Namespace) -> int:
+    """Render one or more benchmark JSON captures as a compact table."""
+    from .benchmark import benchmark_table_rows, write_benchmark_table
+
+    rows = benchmark_table_rows(args.benchmark_jsons)
+    saved_path = write_benchmark_table(rows, args.output, args.format)
+    print(f"Benchmark table saved to: {saved_path}")
+    return 0
 
 
 def run_reproduce_paper(args: argparse.Namespace) -> int:
@@ -254,7 +303,18 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
     query_group.add_argument("--no-targets-input", action="store_true", help="set TARGETS_INPUT to null and use --targets/manual targets")
     query_group.add_argument("--targets", help="comma-separated manual target source IDs")
     query_group.add_argument("--target-source-id-column", help="source_id column name in the targets CSV")
-    query_group.add_argument("--field-of-view-arcsec", type=float, help="query field-of-view radius in arcseconds")
+    query_group.add_argument(
+        "--field-of-view-arcsec",
+        "--aperture-radius-arcsec",
+        dest="field_of_view_arcsec",
+        type=float,
+        help="circular extraction/screening aperture radius in arcseconds",
+    )
+    query_group.add_argument(
+        "--influence-radius-arcsec",
+        type=float,
+        help="outer radius searched for weighted leakage; must cover the aperture",
+    )
     query_group.add_argument("--delta-mag", type=float, help="maximum contaminant-target magnitude difference")
     query_group.add_argument(
         "--contamination-bands",
@@ -262,7 +322,7 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
     )
     query_group.add_argument(
         "--contamination-model-mode",
-        choices=["top_hat", "radial_weight", "gaussian_psf"],
+        choices=["top_hat", "radial_weight", "gaussian_psf", "gaussian_aperture"],
         help="aperture weighting model for flux metrics",
     )
     query_group.add_argument("--gaussian-fwhm-arcsec", type=float, help="Gaussian PSF FWHM when using gaussian_psf mode")
@@ -402,6 +462,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export_parser.set_defaults(func=run_export)
 
+    screen_parser = subparsers.add_parser(
+        "screen",
+        aliases=["rank"],
+        help="rank targets and assign contamination-screening decisions",
+        formatter_class=OverrideHelpFormatter,
+    )
+    screen_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
+    screen_parser.add_argument("--output", required=True, help="screening output path")
+    screen_parser.add_argument("--format", choices=["json", "csv", "markdown"], default="csv")
+    screen_parser.add_argument(
+        "--metric",
+        default="flux_fraction_total_weighted",
+        help="result metric used as the risk score",
+    )
+    screen_parser.add_argument("--accept-max-percent", type=float, default=5.0)
+    screen_parser.add_argument("--review-max-percent", type=float, default=20.0)
+    screen_parser.set_defaults(func=run_screen)
+
+    validate_parser = subparsers.add_parser(
+        "validate-results",
+        aliases=["validate"],
+        help="compare PHOTO-CAT predictions with a reference contamination table",
+        formatter_class=OverrideHelpFormatter,
+    )
+    validate_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
+    validate_parser.add_argument("reference_csv", help="reference contamination CSV")
+    validate_parser.add_argument("--output", required=True, help="validation statistics JSON")
+    validate_parser.add_argument("--matched-output", help="optional matched residual CSV")
+    validate_parser.add_argument("--metric", default="flux_fraction_total_weighted")
+    validate_parser.add_argument("--source-id-column", default="source_id")
+    validate_parser.add_argument("--reference-column", default="contamination_percent")
+    validate_parser.add_argument("--threshold-percent", type=float)
+    validate_parser.set_defaults(func=run_validate_results)
+
     report_parser = subparsers.add_parser(
         "report",
         help="write an HTML or Markdown report from a PHOTO-CAT query result JSON",
@@ -441,6 +535,16 @@ def build_parser() -> argparse.ArgumentParser:
     add_build_overrides(benchmark_parser)
     add_query_overrides(benchmark_parser)
     benchmark_parser.set_defaults(func=run_benchmark)
+
+    benchmark_table_parser = subparsers.add_parser(
+        "benchmark-table",
+        help="render benchmark JSON captures as a Markdown or CSV table",
+        formatter_class=OverrideHelpFormatter,
+    )
+    benchmark_table_parser.add_argument("benchmark_jsons", nargs="+", help="benchmark JSON file(s)")
+    benchmark_table_parser.add_argument("--output", required=True, help="table output path")
+    benchmark_table_parser.add_argument("--format", choices=["markdown", "csv"], default="markdown")
+    benchmark_table_parser.set_defaults(func=run_benchmark_table)
 
     reproduce_parser = subparsers.add_parser(
         "reproduce-paper",

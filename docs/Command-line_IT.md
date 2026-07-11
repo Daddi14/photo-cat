@@ -16,12 +16,21 @@ photo-cat summarize output/index/output/result.json
 photo-cat export output/index/output/result.json --format csv --output output/result.csv
 photo-cat plot output/index/output/result.json --kind contaminant-counts
 photo-cat report output/index/output/result.json --format html
+photo-cat screen output/index/output/result.json --output output/screening.csv
+photo-cat validate-results output/index/output/result.json data/reference.csv --output output/validation.json
 photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat benchmark-table output/benchmark.json --output output/benchmark_table.md
 photo-cat provenance data/catalog.csv --output output/catalog_provenance.json
 photo-cat reproduce-paper --config examples/paper/paper_config_47arcsec.yaml --output-dir output/paper_products
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
 photo-cat doctor
 ```
+
+`screen` (alias `rank`) ordina i target in base a una metrica di contaminazione
+e assegna `accept`, `review` o `reject` con soglie percentuali esplicite.
+`validate-results` (alias `validate`) unisce per source ID un CSV esterno di
+contaminazione di riferimento e calcola bias, residuo mediano, MAE, RMSE e,
+opzionalmente, accuratezza rispetto a una soglia.
 
 ## Diagnostica doctor per l'automazione
 
@@ -369,6 +378,8 @@ Le opzioni booleane supportano forma positiva e negativa:
 | `query_contamination_from_index.io.targets` | `--targets ID1,ID2,ID3` |
 | `query_contamination_from_index.io.target_source_id_column` | `--target-source-id-column NAME` |
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--field-of-view-arcsec VALUE` |
+| `query_contamination_from_index.settings.field_of_view_arcsec` | `--aperture-radius-arcsec VALUE` (alias più chiaro) |
+| `query_contamination_from_index.settings.influence_radius_arcsec` | `--influence-radius-arcsec VALUE` |
 | `query_contamination_from_index.settings.delta_mag` | `--delta-mag VALUE` |
 | `query_contamination_from_index.settings.include_missing_targets` | `--include-missing-targets` / `--no-include-missing-targets` |
 | `execution.run_build` | `--run-build` / `--no-run-build` |
