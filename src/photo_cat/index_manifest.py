@@ -31,6 +31,7 @@ class IndexManifest:
     number_of_sources: int
     total_neighbors: int
     calculate_separations: bool
+    magnitude_bands: dict[str, dict[str, str]] | None = None
 
 
 def sha256_file(path: str | Path, block_size: int = 1024 * 1024) -> str:
@@ -48,6 +49,7 @@ def build_signature(
     max_radius_arcsec: float,
     calculate_separations: bool,
     columns: list[str],
+    magnitude_columns: dict[str, str] | None = None,
 ) -> str:
     """Hash every input that changes neighbour-index semantics."""
     payload = {
@@ -55,6 +57,7 @@ def build_signature(
         "max_radius_arcsec": max_radius_arcsec,
         "calculate_separations": calculate_separations,
         "columns": columns,
+        "magnitude_columns": magnitude_columns or {},
         "format_version": INDEX_FORMAT_VERSION,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -146,6 +149,7 @@ def load_index_manifest(path: str | Path) -> IndexManifest:
             number_of_sources=int(data["number_of_sources"]),
             total_neighbors=int(data["total_neighbors"]),
             calculate_separations=bool(data["calculate_separations"]),
+            magnitude_bands=data.get("magnitude_bands"),
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise ValueError(f"Index manifest is malformed: {manifest_path}") from error
@@ -186,6 +190,12 @@ def validate_index_structure(paths: Any, manifest: IndexManifest) -> None:
     _load_vector(paths.ra, np.dtype(np.float64), count, "ra.npy")
     _load_vector(paths.dec, np.dtype(np.float64), count, "dec.npy")
     _load_vector(paths.phot_g_mean_mag, np.dtype(np.float64), count, "phot_g_mean_mag.npy")
+    for band, metadata in (manifest.magnitude_bands or {}).items():
+        array_file = metadata.get("array_file") if isinstance(metadata, dict) else None
+        if (not isinstance(array_file, str) or array_file.strip() == ""):
+            raise ValueError(f"Index manifest magnitude band {band!r} is malformed.")
+        if (array_file != "phot_g_mean_mag.npy"):
+            _load_vector(paths.root / array_file, np.dtype(np.float64), count, f"{array_file}")
     _load_vector(paths.real_ids_int, np.dtype(np.int64), count, "real_ids_int.npy")
 
     if (int(offsets[0]) != 0 or np.any(offsets[1:] < offsets[:-1])):

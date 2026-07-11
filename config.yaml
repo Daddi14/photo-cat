@@ -19,6 +19,12 @@ build_neighbors_index:
       ra: ra
       dec: dec
       phot_g_mean_mag: phot_g_mean_mag
+    # Optional additional magnitude bands can be queried later with:
+    # magnitude_columns:
+    #   gaia_bp: phot_bp_mean_mag
+    #   gaia_rp: phot_rp_mean_mag
+    magnitude_columns:
+      gaia_g: phot_g_mean_mag
   settings:
     use_dask: true
     calculate_separations: false
@@ -35,6 +41,14 @@ query_contamination_from_index:
     field_of_view_arcsec: 47.0
     delta_mag: 5.0
     include_missing_targets: false
+    contamination_bands:
+    - gaia_g
+    contamination_model:
+      # top_hat preserves the historical catalogue/aperture flux estimate.
+      # Opt-in alternatives: gaussian_psf or radial_weight.
+      mode: top_hat
+      gaussian_fwhm_arcsec:
+      radial_weight_file:
 execution:
   run_build: true
   run_query: true

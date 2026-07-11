@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import html
 import json
+import math
 import statistics
 from collections import Counter
 from pathlib import Path
@@ -16,7 +17,15 @@ from .index_manifest import atomic_write_json
 
 
 SUMMARY_SCHEMA_VERSION = 1
-PLOT_KINDS = ("contaminant-counts", "flux", "separations", "sky-map")
+PLOT_KINDS = (
+    "contaminant-counts",
+    "flux",
+    "separations",
+    "separations-normalized",
+    "flux-vs-separation",
+    "contamination-vs-magnitude",
+    "sky-map",
+)
 REPORT_FORMATS = ("html", "markdown")
 EXPORT_FORMATS = ("csv", "parquet")
 
@@ -74,6 +83,25 @@ def iter_contaminants(rows: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]
             for contaminant in contaminants:
                 if isinstance(contaminant, dict):
                     yield contaminant
+
+
+def iter_contaminant_points(rows: Iterable[dict[str, Any]]) -> Iterable[dict[str, float]]:
+    """Yield contaminant points with parent-target context for scatter plots."""
+    for row in rows:
+        target_magnitude = _number(row.get("phot_g_mean_mag"), math.nan)
+        for contaminant in iter_contaminants([row]):
+            contaminant_magnitude = _number(contaminant.get("phot_g_mean_mag"), math.nan)
+            separation = _number(contaminant.get("sep_arcsec"), math.nan)
+            if (not math.isfinite(target_magnitude) or not math.isfinite(contaminant_magnitude) or not math.isfinite(separation)):
+                continue
+            flux_ratio_percent = (10.0 ** (-0.4 * (contaminant_magnitude - target_magnitude))) * 100.0
+            yield {
+                "target_magnitude": target_magnitude,
+                "contaminant_magnitude": contaminant_magnitude,
+                "separation_arcsec": separation,
+                "flux_ratio_percent": flux_ratio_percent,
+                "delta_mag": contaminant_magnitude - target_magnitude,
+            }
 
 
 def summarize_results(rows: list[dict[str, Any]], *, source_path: str | Path | None = None) -> dict[str, Any]:
@@ -244,6 +272,76 @@ def _histogram(values: list[float], title: str, x_label: str, bins: int = 20) ->
     return svg
 
 
+def _bar_values(labels: list[str], heights: list[float], title: str, x_label: str, y_label: str, width: int = 760, height: int = 420) -> str:
+    plot_left, plot_top, plot_width, plot_height = 80, 48, width - 125, height - 120
+    max_height = max(heights) if heights else 1.0
+    max_height = max_height if max_height > 0 else 1.0
+    bar_width = max(1, plot_width / max(len(heights), 1))
+    body = [
+        f'<line x1="{plot_left}" y1="{plot_top + plot_height}" x2="{plot_left + plot_width}" y2="{plot_top + plot_height}" stroke="#333"/>',
+        f'<line x1="{plot_left}" y1="{plot_top}" x2="{plot_left}" y2="{plot_top + plot_height}" stroke="#333"/>',
+        f'<text x="{width / 2:.1f}" y="{height - 18}" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(x_label)}</text>',
+        f'<text x="18" y="{plot_top + plot_height / 2:.1f}" transform="rotate(-90 18 {plot_top + plot_height / 2:.1f})" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(y_label)}</text>',
+    ]
+    for index, value in enumerate(heights):
+        bar_height = (value / max_height) * plot_height
+        x = plot_left + index * bar_width
+        y = plot_top + plot_height - bar_height
+        body.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{max(bar_width - 2, 1):.2f}" height="{bar_height:.2f}" fill="#4477AA"/>')
+        if len(labels) <= 20:
+            body.append(f'<text x="{x + bar_width / 2:.2f}" y="{plot_top + plot_height + 14}" text-anchor="middle" font-family="sans-serif" font-size="9">{html.escape(labels[index])}</text>')
+    return _svg_frame(width, height, title, "\n".join(body))
+
+
+def _area_normalized_separation_histogram(rows: list[dict[str, Any]], bins: int = 20) -> str:
+    values = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
+    if (not values):
+        return _bar_values([], [], "Area-normalized contaminant separations", "separation (arcsec)", "contaminants / arcsec²")
+    high = max(values)
+    if (high <= 0.0):
+        high = 1.0
+    step = high / bins
+    counts = [0] * bins
+    for value in values:
+        bucket = min(int(value / step), bins - 1)
+        counts[bucket] += 1
+    densities: list[float] = []
+    labels: list[str] = []
+    for index, count in enumerate(counts):
+        inner = index * step
+        outer = (index + 1) * step
+        annular_area = math.pi * (outer**2 - inner**2)
+        densities.append(count / annular_area if annular_area > 0 else 0.0)
+        labels.append(f"{inner:.0f}-{outer:.0f}")
+    return _bar_values(labels, densities, "Area-normalized contaminant separations", "separation (arcsec)", "contaminants / arcsec²")
+
+
+def _scatter(points: list[tuple[float, float]], title: str, x_label: str, y_label: str, width: int = 760, height: int = 420) -> str:
+    plot_left, plot_top, plot_width, plot_height = 80, 48, width - 125, height - 120
+    if (not points):
+        return _svg_frame(width, height, title, "<text x=\"80\" y=\"80\" font-family=\"sans-serif\" font-size=\"12\">No contaminant points available.</text>")
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    xmin, xmax = min(xs), max(xs)
+    ymin, ymax = min(ys), max(ys)
+    if (xmin == xmax):
+        xmin -= 0.5
+        xmax += 0.5
+    if (ymin == ymax):
+        ymin -= 0.5
+        ymax += 0.5
+    body = [
+        f'<rect x="{plot_left}" y="{plot_top}" width="{plot_width}" height="{plot_height}" fill="#f7f7f7" stroke="#333"/>',
+        f'<text x="{width / 2:.1f}" y="{height - 18}" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(x_label)}</text>',
+        f'<text x="18" y="{plot_top + plot_height / 2:.1f}" transform="rotate(-90 18 {plot_top + plot_height / 2:.1f})" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(y_label)}</text>',
+    ]
+    for x_value, y_value in points:
+        x = plot_left + ((x_value - xmin) / (xmax - xmin)) * plot_width
+        y = plot_top + plot_height - ((y_value - ymin) / (ymax - ymin)) * plot_height
+        body.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="2.2" fill="#4477AA" fill-opacity="0.65"/>')
+    return _svg_frame(width, height, title, "\n".join(body))
+
+
 def _sky_map(rows: list[dict[str, Any]], width: int = 760, height: int = 420) -> str:
     plot_left, plot_top, plot_width, plot_height = 60, 48, width - 100, height - 100
     body = [
@@ -275,6 +373,14 @@ def build_svg_plot(rows: list[dict[str, Any]], kind: str) -> str:
     if kind == "separations":
         values = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
         return _histogram(values, "Contaminant separations", "separation (arcsec)")
+    if kind == "separations-normalized":
+        return _area_normalized_separation_histogram(rows)
+    if kind == "flux-vs-separation":
+        points = [(point["separation_arcsec"], point["flux_ratio_percent"]) for point in iter_contaminant_points(rows)]
+        return _scatter(points, "Contaminant flux ratio vs separation", "separation (arcsec)", "contaminant flux / target flux (%)")
+    if kind == "contamination-vs-magnitude":
+        points = [(_number(row.get("phot_g_mean_mag")), _selected_flux(row)) for row in rows if row.get("phot_g_mean_mag") is not None]
+        return _scatter(points, "Target contamination vs magnitude", "target magnitude", "selected flux fraction (%)")
     if kind == "sky-map":
         return _sky_map(rows)
     raise ValueError(f"Unsupported plot kind: {kind}")
@@ -323,6 +429,37 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
         ax.set_xlabel("separation (arcsec)")
         ax.set_ylabel("selected contaminants")
         ax.set_title("Contaminant separations")
+    elif kind == "separations-normalized":
+        values = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
+        if values:
+            counts, bins, patches = ax.hist(values, bins=40, color="#4477AA")
+            for count, patch, inner, outer in zip(counts, patches, bins[:-1], bins[1:]):
+                area = math.pi * (outer**2 - inner**2)
+                patch.set_height(count / area if area > 0 else 0.0)
+        else:
+            ax.hist(values, bins=40, color="#4477AA")
+        ax.set_xlabel("separation (arcsec)")
+        ax.set_ylabel("contaminants / arcsec²")
+        ax.set_title("Area-normalized contaminant separations")
+    elif kind == "flux-vs-separation":
+        points = list(iter_contaminant_points(rows))
+        ax.scatter(
+            [point["separation_arcsec"] for point in points],
+            [point["flux_ratio_percent"] for point in points],
+            s=8,
+            c="#4477AA",
+            alpha=0.65,
+            linewidths=0,
+        )
+        ax.set_xlabel("separation (arcsec)")
+        ax.set_ylabel("contaminant flux / target flux (%)")
+        ax.set_title("Contaminant flux ratio vs separation")
+    elif kind == "contamination-vs-magnitude":
+        points = [(_number(row.get("phot_g_mean_mag")), _selected_flux(row)) for row in rows if row.get("phot_g_mean_mag") is not None]
+        ax.scatter([point[0] for point in points], [point[1] for point in points], s=8, c="#4477AA", alpha=0.65, linewidths=0)
+        ax.set_xlabel("target magnitude")
+        ax.set_ylabel("selected flux fraction (%)")
+        ax.set_title("Target contamination vs magnitude")
     elif kind == "sky-map":
         ra_values = []
         dec_values = []
@@ -362,7 +499,7 @@ def build_report(rows: list[dict[str, Any]], result_path: str | Path, output_for
 
     plots = "\n".join(
         f"<section>{build_svg_plot(rows, kind)}</section>"
-        for kind in ("contaminant-counts", "flux", "separations", "sky-map")
+        for kind in ("contaminant-counts", "flux", "separations-normalized", "flux-vs-separation", "sky-map")
     )
     escaped_summary = html.escape(summary_text(summary))
     return (

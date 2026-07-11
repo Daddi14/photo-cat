@@ -12,8 +12,10 @@ import pytest
 from photo_cat import cli
 from photo_cat import benchmark as benchmark_module
 from photo_cat import build_neighbors_index, query_contamination_from_index
+from photo_cat import reproducible_products
 from photo_cat.result_products import (
     build_report,
+    build_svg_plot,
     load_result_rows,
     summarize_results,
     write_export,
@@ -105,6 +107,17 @@ def test_cli_summarize_plot_and_report_create_reproducible_products(tmp_path: Pa
     export_path = tmp_path / "result.csv"
     assert cli.main(["export", str(result_path), "--output", str(export_path)]) == 0
     assert "contaminants_json" in export_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_new_reviewer_plot_kinds_build_svg(tmp_path: Path) -> None:
+    """Reviewer-facing plots should be available without optional dependencies."""
+    rows = load_result_rows(write_result_json(tmp_path))
+
+    for kind in ("separations-normalized", "flux-vs-separation", "contamination-vs-magnitude"):
+        svg = build_svg_plot(rows, kind)
+        assert "<svg" in svg
+        assert "font-family" in svg
 
 
 @pytest.mark.regression
@@ -217,3 +230,103 @@ def test_benchmark_runner_records_stage_status_and_memory_keys(
     assert [stage["stage"] for stage in payload["stages"]] == ["build-index", "query"]
     assert all("python_tracemalloc_peak_bytes" in stage for stage in payload["stages"])
     assert all("native_rss_available" in stage for stage in payload["stages"])
+
+
+@pytest.mark.regression
+def test_cli_merge_bright_stars_writes_catalogue_and_provenance(tmp_path: Path) -> None:
+    """The bright-star merge utility should produce a build-ready CSV plus metadata."""
+    base_path = tmp_path / "base.csv"
+    bright_path = tmp_path / "bright.csv"
+    merged_path = tmp_path / "merged.csv"
+    provenance_path = tmp_path / "merge.json"
+    base_path.write_text("source_id,ra,dec,phot_g_mean_mag\n1,10,20,11\n2,11,21,12\n", encoding="utf-8")
+    bright_path.write_text("source_id,ra,dec,phot_g_mean_mag\n2,12,22,9\n3,13,23,8\n", encoding="utf-8")
+
+    assert cli.main([
+        "merge-bright-stars",
+        str(base_path),
+        str(bright_path),
+        "--output",
+        str(merged_path),
+        "--provenance-output",
+        str(provenance_path),
+    ]) == 0
+
+    assert "3,13,23,8" in merged_path.read_text(encoding="utf-8")
+    assert json.loads(provenance_path.read_text(encoding="utf-8"))["merged_rows"] == 3
+
+
+@pytest.mark.regression
+def test_reproduce_paper_products_materializes_manifest_and_plots(tmp_path: Path) -> None:
+    """Paper reproduction should bundle checksummed results with summaries and plots."""
+    result_path = write_result_json(tmp_path)
+    output_dir = tmp_path / "paper"
+
+    payload = reproducible_products.reproduce_paper_products([], [result_path], output_dir)
+
+    manifest_path = Path(payload["manifest_path"])
+    assert manifest_path.is_file()
+    assert payload["products"][0]["result_sha256"]
+    assert Path(payload["products"][0]["summary_json"]).is_file()
+    assert Path(payload["products"][0]["plots"]["flux-vs-separation"]).is_file()
+    assert "paper_reproduction_manifest" in manifest_path.name
+
+
+@pytest.mark.regression
+def test_reproduce_paper_products_can_run_config_and_find_latest_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Configs should be runnable and resolved to the latest index output result."""
+    index_output = tmp_path / "index" / "output"
+    index_output.mkdir(parents=True)
+    result_path = write_result_json(index_output)
+    config_path = tmp_path / "paper_config.yaml"
+    config_path.write_text(
+        "query_contamination_from_index:\n"
+        "  io:\n"
+        "    INDEX_DIR: index\n"
+        "    TARGETS_INPUT:\n"
+        "    targets: ['1001']\n"
+        "    target_source_id_column: source_id\n"
+        "  settings:\n"
+        "    field_of_view_arcsec: 47\n"
+        "    delta_mag: 5\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(reproducible_products, "run_pipeline", lambda path: 0)
+
+    payload = reproducible_products.reproduce_paper_products([config_path], [], tmp_path / "paper_from_config", run_configs=True)
+
+    assert payload["configs"][0]["latest_result_json"] == str(result_path.resolve())
+    assert Path(payload["configs"][0]["config_copy"]).is_file()
+
+
+@pytest.mark.unit
+def test_reproduce_paper_products_rejects_empty_inputs(tmp_path: Path) -> None:
+    """A reproduction manifest with no configs or results would be misleading."""
+    with pytest.raises(ValueError, match="at least one"):
+        reproducible_products.reproduce_paper_products([], [], tmp_path / "paper")
+
+
+@pytest.mark.unit
+def test_latest_result_json_reports_missing_outputs(tmp_path: Path) -> None:
+    """Missing query outputs should produce a direct reproduction error."""
+    (tmp_path / "index" / "output").mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="No query result"):
+        reproducible_products.latest_result_json(tmp_path / "index")
+
+
+@pytest.mark.unit
+def test_reproduce_paper_products_reports_failed_config_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed pre-run should stop before writing misleading products."""
+    config_path = tmp_path / "paper_config.yaml"
+    config_path.write_text("query_contamination_from_index: {}\n", encoding="utf-8")
+    monkeypatch.setattr(reproducible_products, "run_pipeline", lambda path: 1)
+
+    with pytest.raises(RuntimeError, match="Pipeline failed"):
+        reproducible_products.reproduce_paper_products([config_path], [], tmp_path / "paper", run_configs=True)

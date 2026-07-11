@@ -41,6 +41,10 @@ tool unless mission-specific modelling is added downstream.
   `mag_neighbour - mag_target`, for a neighbour to be selected.
 - A `contaminant` in the JSON output means a neighbour that passes both the
   configured circular-radius cut and the `delta_mag` cut.
+- `contamination_model` records the query weighting mode. `top_hat` is the
+  historical unweighted circular-aperture estimate. `gaussian_psf` applies a
+  Gaussian radial weight from the configured FWHM, and `radial_weight` applies
+  a user-supplied `sep_arcsec,weight` table.
 - `flux_fraction_selected` is computed from the same selected contaminants as
   `num_contaminants`, using catalogue magnitude ratios
   `10 ** (-0.4 * (mag_neighbour - mag_target))`, and is reported as a
@@ -50,12 +54,13 @@ tool unless mission-specific modelling is added downstream.
 - `flux_fraction_extra` is retained as a backward-compatible alias of
   `flux_fraction_selected`.
 
-The current implementation does not perform instrumental PSF convolution,
-detector-pixel response modelling, aperture weighting, wavelength-dependent
-bandpass transformations, or non-uniform scattered-light modelling from bright
-sources just outside the configured radius. Those effects require
-mission-specific inputs and should not be inferred from PHOTO-CAT's current
-catalogue-only metrics.
+The optional Gaussian/tabulated weights are radial approximations, not full
+instrument simulations. The current implementation does not perform full
+instrumental PSF convolution, detector-pixel response modelling,
+wavelength-dependent bandpass transformations, or non-uniform scattered-light
+modelling from bright sources just outside the configured radius. Those effects
+require mission-specific inputs and should not be inferred from PHOTO-CAT's
+current catalogue-only metrics.
 
 ## Output JSON
 
@@ -68,6 +73,7 @@ Each target result includes:
 - target magnitude, when available
 - selected-contaminant flux fraction
 - all-neighbour-in-radius flux fraction
+- optional per-band selected/all-neighbour flux-fraction dictionaries
 - number of neighbours inside the circular radius
 - number of selected contaminants
 - contaminant source list
@@ -94,23 +100,29 @@ photo-cat summarize INDEX_DIR/output/result.json --format json --output summary.
 photo-cat export INDEX_DIR/output/result.json --format csv --output result.csv
 photo-cat plot INDEX_DIR/output/result.json --kind contaminant-counts --output counts.svg
 photo-cat plot INDEX_DIR/output/result.json --kind sky-map --backend matplotlib --output sky-map.png
-photo-cat plot INDEX_DIR/output/result.json --kind separations --output separations.svg
+photo-cat plot INDEX_DIR/output/result.json --kind separations-normalized --output separations_area_norm.svg
+photo-cat plot INDEX_DIR/output/result.json --kind flux-vs-separation --output flux_vs_separation.svg
 photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
 photo-cat report INDEX_DIR/output/result.json --format html --output report.html
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
+photo-cat reproduce-paper --result-json INDEX_DIR/output/result.json --output-dir paper_products
+photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
 ```
 
 `summarize` emits aggregate target counts, selected-contaminant counts,
 all-neighbour counts, flux-fraction statistics, and separation statistics.
 `plot` writes dependency-free SVG files for contaminant counts, flux fractions,
 separations, or a simple RA/Dec sky map; `--backend matplotlib` enables richer
-plots when matplotlib is installed. `export` writes flat CSV or Parquet target
+plots when matplotlib is installed, including area-normalized separations and
+flux-vs-separation scatter plots. `export` writes flat CSV or Parquet target
 tables. `report` writes an HTML or Markdown document that bundles the summary
 and plots. `provenance` records catalogue checksums and basic input statistics.
 `benchmark` runs selected pipeline stages and records wall-clock time plus
 Python `tracemalloc` peak allocations; if `psutil` is installed it also samples
-native RSS memory.
+native RSS memory. `reproduce-paper` gathers result products and checksums into
+a paper reproduction manifest. `merge-bright-stars` creates a de-duplicated
+catalogue from a Gaia-like table plus a supplemental bright-star table.
 
 ## Console output
 

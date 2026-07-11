@@ -48,6 +48,9 @@ DEFAULT_CONFIG = {
                 "dec": "dec",
                 "phot_g_mean_mag": "phot_g_mean_mag",
             },
+            "magnitude_columns": {
+                "gaia_g": "phot_g_mean_mag",
+            },
         },
         "settings": {
             "use_dask": True,
@@ -68,6 +71,12 @@ DEFAULT_CONFIG = {
             "field_of_view_arcsec": 47.0,
             "delta_mag": 5,
             "include_missing_targets": False,
+            "contamination_bands": ["gaia_g"],
+            "contamination_model": {
+                "mode": "top_hat",
+                "gaussian_fwhm_arcsec": None,
+                "radial_weight_file": None,
+            },
         },
     },
     "execution": {
@@ -1195,6 +1204,9 @@ class ConfigGui(tk.Tk):
                         "dec": catalog_dec_column,
                         "phot_g_mean_mag": catalog_mag_column,
                     },
+                    "magnitude_columns": {
+                        "gaia_g": catalog_mag_column,
+                    },
                 },
                 "settings": {
                     "use_dask": bool(self.use_dask_var.get()),
@@ -1215,6 +1227,12 @@ class ConfigGui(tk.Tk):
                     "field_of_view_arcsec": float(self.field_of_view_var.get().strip()),
                     "delta_mag": float(self.delta_mag_var.get().strip()),
                     "include_missing_targets": bool(self.include_missing_targets_var.get()),
+                    "contamination_bands": ["gaia_g"],
+                    "contamination_model": {
+                        "mode": "top_hat",
+                        "gaussian_fwhm_arcsec": None,
+                        "radial_weight_file": None,
+                    },
                 },
             },
             "execution": {

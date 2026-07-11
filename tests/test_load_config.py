@@ -52,6 +52,32 @@ def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_
 
 
 @pytest.mark.unit
+def test_load_config_parses_multiband_and_contamination_model(
+    write_config: Callable[[str | None], Path],
+    config_text: str,
+) -> None:
+    """New model settings should be validated while preserving Gaia-G defaults."""
+    modified = config_text.replace(
+        "      phot_g_mean_mag: phot_g_mean_mag\n  settings:",
+        "      phot_g_mean_mag: phot_g_mean_mag\n    magnitude_columns:\n      gaia_bp: phot_bp_mean_mag\n  settings:",
+        1,
+    ).replace(
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n    contamination_bands: [gaia_g, gaia_bp]\n    contamination_model:\n      mode: gaussian_psf\n      gaussian_fwhm_arcsec: 30",
+    )
+
+    build = load_config("build_neighbors_index", str(write_config(modified)), validate_runtime=False)
+    query = load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
+
+    assert isinstance(build, BuildConfig)
+    assert build.magnitude_columns["gaia_bp"] == "phot_bp_mean_mag"
+    assert isinstance(query, QueryConfig)
+    assert query.contamination_bands == ["gaia_g", "gaia_bp"]
+    assert query.contamination_model.mode == "gaussian_psf"
+    assert query.contamination_model.gaussian_fwhm_arcsec == 30.0
+
+
+@pytest.mark.unit
 def test_load_config_rejects_unknown_section(write_config: Callable[[], Path]) -> None:
     """Unknown config sections should fail before a pipeline stage starts."""
     with pytest.raises(ValueError, match="Unknown configuration section"):

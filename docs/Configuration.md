@@ -29,11 +29,53 @@ The build stage creates a neighbour index from the catalogue.
 
 Use this when the catalogue, coordinate columns, search radius, or output/index directory has changed.
 
+Optional multi-band magnitude columns can be stored in the index for later
+screening comparisons:
+
+```yaml
+build_neighbors_index:
+  io:
+    magnitude_columns:
+      gaia_g: phot_g_mean_mag
+      gaia_bp: phot_bp_mean_mag
+      gaia_rp: phot_rp_mean_mag
+```
+
+`gaia_g` defaults to the configured `phot_g_mean_mag` column. Additional bands
+are written as numeric arrays and recorded in `index_manifest.json`.
+
 ## Query stage
 
 The query stage reads an existing index and processes selected targets.
 
 Use this when the index already exists and you only need to query targets or adjust query options.
+
+The default contamination model is `top_hat`, which preserves the historical
+catalogue/aperture estimate. Optional radial weighting can be selected for
+screening experiments:
+
+```yaml
+query_contamination_from_index:
+  settings:
+    contamination_bands: [gaia_g, gaia_bp, gaia_rp]
+    contamination_model:
+      mode: gaussian_psf
+      gaussian_fwhm_arcsec: 47.0
+```
+
+For a tabulated radial aperture curve, use:
+
+```yaml
+query_contamination_from_index:
+  settings:
+    contamination_model:
+      mode: radial_weight
+      radial_weight_file: data/radial_weights.csv
+```
+
+The radial weight CSV must contain `sep_arcsec` and `weight` columns. These
+models are still catalogue-level screening approximations unless the weights
+come from an instrument-specific PSF/aperture calibration.
 
 ## Save + run
 

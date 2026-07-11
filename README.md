@@ -55,10 +55,14 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Build a neighbour index from a photometric catalogue.
 - Screen selected targets for nearby catalogue sources that may contaminate a circular aperture.
 - Report both selected-contaminant flux and all-neighbour-in-radius flux metrics.
+- Optionally compare catalogue-level flux metrics across stored magnitude bands.
+- Use top-hat, Gaussian radial, or tabulated radial-weight contamination screening models.
 - Summarize result JSON files into text, JSON, or CSV statistics.
 - Generate dependency-free SVG plots and HTML/Markdown reports from query results.
 - Export target-result tables to CSV or Parquet for notebooks and external tools.
 - Capture catalogue provenance JSON with checksums, row counts, column stats, and optional ADQL checksums.
+- Generate reproducible paper/review product bundles with summaries, plots, reports, and checksums.
+- Merge supplemental bright-star catalogues before building an index.
 - Run benchmark captures for reproducible runtime and memory-allocation notes.
 - Configure runs through a graphical interface.
 - Run the same workflow from a command-line interface for automation and remote systems, with direct overrides for every config value.
@@ -121,6 +125,8 @@ photo-cat plot output/index/output/result.json --kind contaminant-counts
 photo-cat provenance data/catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat reproduce-paper --result-json output/index/output/result.json --output-dir output/paper_products
+photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
 ```
 
 See [Pipeline and output](docs/Pipeline-and-output.md) for details.

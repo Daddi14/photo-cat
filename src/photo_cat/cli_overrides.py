@@ -34,6 +34,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "dec": "dec",
                 "phot_g_mean_mag": "phot_g_mean_mag",
             },
+            "magnitude_columns": {
+                "gaia_g": "phot_g_mean_mag",
+            },
         },
         "settings": {
             "use_dask": True,
@@ -54,6 +57,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "field_of_view_arcsec": 47.0,
             "delta_mag": 5.0,
             "include_missing_targets": False,
+            "contamination_bands": ["gaia_g"],
+            "contamination_model": {
+                "mode": "top_hat",
+                "gaussian_fwhm_arcsec": None,
+                "radial_weight_file": None,
+            },
         },
     },
     "execution": {
@@ -72,6 +81,7 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "ra_column": ("build_neighbors_index", "io", "columns", "ra"),
     "dec_column": ("build_neighbors_index", "io", "columns", "dec"),
     "phot_g_mean_mag_column": ("build_neighbors_index", "io", "columns", "phot_g_mean_mag"),
+    "magnitude_columns": ("build_neighbors_index", "io", "magnitude_columns"),
     "use_dask": ("build_neighbors_index", "settings", "use_dask"),
     "calculate_separations": ("build_neighbors_index", "settings", "calculate_separations"),
     "max_radius_arcsec": ("build_neighbors_index", "settings", "max_radius_arcsec"),
@@ -84,6 +94,10 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "field_of_view_arcsec": ("query_contamination_from_index", "settings", "field_of_view_arcsec"),
     "delta_mag": ("query_contamination_from_index", "settings", "delta_mag"),
     "include_missing_targets": ("query_contamination_from_index", "settings", "include_missing_targets"),
+    "contamination_bands": ("query_contamination_from_index", "settings", "contamination_bands"),
+    "contamination_model_mode": ("query_contamination_from_index", "settings", "contamination_model", "mode"),
+    "gaussian_fwhm_arcsec": ("query_contamination_from_index", "settings", "contamination_model", "gaussian_fwhm_arcsec"),
+    "radial_weight_file": ("query_contamination_from_index", "settings", "contamination_model", "radial_weight_file"),
     "run_build": ("execution", "run_build"),
     "run_query": ("execution", "run_query"),
     "replace_running_pipeline": ("execution", "replace_running_pipeline"),
@@ -95,6 +109,7 @@ PATH_OVERRIDE_NAMES = {
     "out_dir",
     "index_dir",
     "targets_input",
+    "radial_weight_file",
 }
 
 
@@ -145,6 +160,23 @@ def parse_targets(value: str | None) -> list[str]:
     return parse_csv_list(value)
 
 
+def parse_key_value_list(value: str | None) -> dict[str, str]:
+    """Parse comma-separated key=value pairs for compact CLI mappings."""
+    if (value is None):
+        return {}
+    parsed: dict[str, str] = {}
+    for item in parse_csv_list(value):
+        if ("=" not in item):
+            raise ValueError("Expected comma-separated band=column entries.")
+        key, column = item.split("=", 1)
+        key = key.strip()
+        column = column.strip()
+        if (key == "" or column == ""):
+            raise ValueError("Band and column names cannot be empty in band=column entries.")
+        parsed[key] = column
+    return parsed
+
+
 def collect_overrides(args: Any) -> dict[str, Any]:
     """Collect non-empty override values from parsed CLI arguments."""
     overrides: dict[str, Any] = {}
@@ -161,6 +193,10 @@ def collect_overrides(args: Any) -> dict[str, Any]:
             value = parse_csv_list(value)
         elif (name == "targets"):
             value = parse_targets(value)
+        elif (name == "contamination_bands"):
+            value = parse_csv_list(value)
+        elif (name == "magnitude_columns"):
+            value = parse_key_value_list(value)
         elif (name in PATH_OVERRIDE_NAMES):
             value = resolve_cli_path(value)
 

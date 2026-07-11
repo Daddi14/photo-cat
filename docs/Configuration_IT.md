@@ -29,11 +29,55 @@ La fase di build crea un indice dei vicini dal catalogo.
 
 Usala quando cambiano catalogo, colonne coordinate, raggio di ricerca o cartella output/indice.
 
+Colonne opzionali di magnitudine multi-banda possono essere salvate nell'indice
+per confronti successivi di screening:
+
+```yaml
+build_neighbors_index:
+  io:
+    magnitude_columns:
+      gaia_g: phot_g_mean_mag
+      gaia_bp: phot_bp_mean_mag
+      gaia_rp: phot_rp_mean_mag
+```
+
+`gaia_g` usa per impostazione predefinita la colonna `phot_g_mean_mag`
+configurata. Le bande aggiuntive vengono scritte come array numerici e
+registrate in `index_manifest.json`.
+
 ## Fase di query
 
 La fase di query legge un indice esistente e processa i target selezionati.
 
 Usala quando l’indice esiste già e devi solo interrogare target o modificare opzioni di query.
+
+Il modello di contaminazione predefinito è `top_hat`, che conserva la stima
+storica catalogo/apertura. Per esperimenti di screening si può selezionare una
+pesatura radiale opzionale:
+
+```yaml
+query_contamination_from_index:
+  settings:
+    contamination_bands: [gaia_g, gaia_bp, gaia_rp]
+    contamination_model:
+      mode: gaussian_psf
+      gaussian_fwhm_arcsec: 47.0
+```
+
+Per una curva radiale tabulata dell'apertura, usa:
+
+```yaml
+query_contamination_from_index:
+  settings:
+    contamination_model:
+      mode: radial_weight
+      radial_weight_file: data/radial_weights.csv
+```
+
+Il CSV dei pesi radiali deve contenere le colonne `sep_arcsec` e `weight`.
+Questi modelli restano approssimazioni a livello di catalogo per lo screening,
+salvo che i pesi provengano da una calibrazione PSF/apertura specifica dello
+strumento.
 
 ## Save + run
 

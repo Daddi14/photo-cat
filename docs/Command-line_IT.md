@@ -18,6 +18,8 @@ photo-cat plot output/index/output/result.json --kind contaminant-counts
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
 photo-cat provenance data/catalog.csv --output output/catalog_provenance.json
+photo-cat reproduce-paper --config examples/paper/paper_config_47arcsec.yaml --output-dir output/paper_products
+photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
 photo-cat doctor
 ```
 
@@ -112,6 +114,9 @@ Crea plot SVG senza dipendenze opzionali:
 photo-cat plot output/my_index/output/result.json --kind contaminant-counts --output output/counts.svg
 photo-cat plot output/my_index/output/result.json --kind flux --output output/flux.svg
 photo-cat plot output/my_index/output/result.json --kind separations --output output/separations.svg
+photo-cat plot output/my_index/output/result.json --kind separations-normalized --output output/separations_area_norm.svg
+photo-cat plot output/my_index/output/result.json --kind flux-vs-separation --output output/flux_vs_separation.svg
+photo-cat plot output/my_index/output/result.json --kind contamination-vs-magnitude --output output/contamination_vs_magnitude.svg
 photo-cat plot output/my_index/output/result.json --kind sky-map --output output/sky-map.svg
 photo-cat plot output/my_index/output/result.json --kind sky-map --backend matplotlib --output output/sky-map.png
 ```
@@ -153,6 +158,26 @@ Il JSON di provenance include percorso del catalogo, SHA-256, dimensione in byte
 numero di righe, colonne, conteggi nulli, range numerici per RA/Dec/magnitudine,
 conteggio dei source ID duplicati e checksum opzionale del file ADQL/query.
 
+Genera prodotti per articolo/revisione da risultati esistenti o configurazioni riproducibili:
+
+```bash
+photo-cat reproduce-paper --result-json output/my_index/output/result.json --output-dir output/paper_products
+photo-cat reproduce-paper --config examples/paper/paper_config_47arcsec.yaml --config examples/paper/paper_config_75arcsec.yaml --output-dir output/paper_products
+photo-cat reproduce-paper --config config.yaml --run-configs --output-dir output/paper_products
+```
+
+Il comando copia configurazioni/risultati, scrive riassunti, plot, report HTML e
+`paper_reproduction_manifest.json` con checksum.
+
+Unisci un CSV supplementare di stelle brillanti a un catalogo in stile Gaia prima
+di creare l'indice:
+
+```bash
+photo-cat merge-bright-stars data/gaia.csv data/bright_stars.csv --output data/merged_catalog.csv --provenance-output output/merge_provenance.json
+```
+
+Gli ID sorgente duplicati vengono de-duplicati con `--prefer bright` per impostazione predefinita.
+
 ## Gestione dei percorsi
 
 I percorsi passati tramite override CLI sono risolti rispetto alla cartella da cui viene eseguito il comando.
@@ -193,9 +218,12 @@ photo-cat run ^
   --ra-column ra ^
   --dec-column dec ^
   --mag-column phot_g_mean_mag ^
+  --magnitude-columns gaia_g=phot_g_mean_mag,gaia_bp=phot_bp_mean_mag,gaia_rp=phot_rp_mean_mag ^
   --max-radius-arcsec 120 ^
   --field-of-view-arcsec 47 ^
   --delta-mag 5 ^
+  --contamination-bands gaia_g,gaia_bp,gaia_rp ^
+  --contamination-model-mode top_hat ^
   --chunk-size 10000 ^
   --buffer-flush-interval 200 ^
   --use-dask ^

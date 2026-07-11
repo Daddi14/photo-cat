@@ -55,10 +55,14 @@ Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più com
 - Crea un indice dei vicini da un catalogo fotometrico.
 - Esegue screening dei target rispetto a sorgenti di catalogo vicine che possono contaminare un'apertura circolare.
 - Riporta sia il flusso dei contaminanti selezionati sia il flusso di tutti i vicini dentro il raggio.
+- Confronta opzionalmente metriche di flusso a livello di catalogo tra bande di magnitudine salvate.
+- Usa modelli di screening della contaminazione top-hat, gaussiano radiale o con pesi radiali tabulati.
 - Riassume i JSON dei risultati in statistiche text, JSON o CSV.
 - Genera plot SVG senza dipendenze aggiuntive e report HTML/Markdown.
 - Esporta tabelle di risultati target in CSV o Parquet per notebook e strumenti esterni.
 - Cattura provenance JSON del catalogo con checksum, conteggi righe, statistiche colonne e checksum ADQL opzionale.
+- Genera pacchetti riproducibili per articolo/revisione con riassunti, plot, report e checksum.
+- Unisce cataloghi supplementari di stelle brillanti prima della creazione dell'indice.
 - Esegue benchmark riproducibili con tempi e allocazioni Python di picco.
 - Configura le esecuzioni tramite interfaccia grafica.
 - Esegui lo stesso workflow da una CLI per automazione e sistemi remoti, con override diretti per ogni valore di configurazione.
@@ -121,6 +125,8 @@ photo-cat plot output/index/output/result.json --kind contaminant-counts
 photo-cat provenance data/catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat reproduce-paper --result-json output/index/output/result.json --output-dir output/paper_products
+photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
 ```
 
 Vedi [Pipeline e output](docs/Pipeline-and-output_IT.md) per i dettagli.

@@ -134,7 +134,7 @@ from .index_manifest import (
 from .target_result import TargetResult
 from .contaminant import Contaminant
 from .logger_setup import get_logger
-from .load_config import QueryConfig, load_config
+from .load_config import ContaminationModelConfig, QueryConfig, load_config
 from .pipeline_display import ActivityBar, progress_bar
 from .path_policy import (
     IndexPaths,
@@ -565,9 +565,18 @@ def source_id_from_internal_id(
     return str(numeric_id) if (numeric_id >= 0) else ""
 
 
-def empty_target_result(source_id: str, ra: float, dec: float, magnitude: float) -> dict:
+def empty_target_result(
+    source_id: str,
+    ra: float,
+    dec: float,
+    magnitude: float,
+    contamination_model: ContaminationModelConfig | None = None,
+    magnitude_bands: list[str] | None = None,
+) -> dict:
     """Create the stable no-contaminant result shape used by query output."""
-    return TargetResult(
+    contamination_model = contamination_model or ContaminationModelConfig()
+    magnitude_bands = magnitude_bands or []
+    result = TargetResult(
         source_id=source_id,
         ra=ra,
         dec=dec,
@@ -580,6 +589,10 @@ def empty_target_result(source_id: str, ra: float, dec: float, magnitude: float)
         num_contaminants=0,
         contaminants=[],
     ).__dict__
+    result["contamination_model"] = contamination_model.mode
+    result["flux_fraction_selected_by_band"] = {band: 0.0 for band in magnitude_bands}
+    result["flux_fraction_all_neighbors_by_band"] = {band: 0.0 for band in magnitude_bands}
+    return result
 
 
 def unresolved_target_result(source_id: str, status: str) -> dict:
@@ -596,6 +609,9 @@ def unresolved_target_result(source_id: str, status: str) -> dict:
         "num_neighbors_in_radius": None,
         "num_contaminants_selected": None,
         "num_contaminants": None,
+        "contamination_model": None,
+        "flux_fraction_selected_by_band": {},
+        "flux_fraction_all_neighbors_by_band": {},
         "contaminants": [],
     }
 
@@ -606,22 +622,158 @@ def valid_neighbor_indices(neighbor_internal_ids: np.ndarray, number_of_sources:
     return candidate_indices[(candidate_indices >= 0) & (candidate_indices < number_of_sources)]
 
 
+def safe_band_name(band: str) -> str:
+    """Return the normalized magnitude-band identifier used by build outputs."""
+    import re
+
+    safe = re.sub(r"[^0-9A-Za-z_]+", "_", str(band).strip().lower()).strip("_")
+    if (safe == ""):
+        raise ValueError("Magnitude band names cannot be empty.")
+    return safe
+
+
+def load_radial_weight_table(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
+    """Load a radial aperture-weight CSV with sep_arcsec and weight columns."""
+    dataframe = pd.read_csv(path)
+    required = {"sep_arcsec", "weight"}
+    missing = required.difference(dataframe.columns)
+    if (missing):
+        raise ValueError(
+            "Radial weight CSV must contain sep_arcsec and weight columns. "
+            f"Missing: {', '.join(sorted(missing))}"
+        )
+    separations = pd.to_numeric(dataframe["sep_arcsec"], errors="coerce").to_numpy(dtype=np.float64)
+    weights = pd.to_numeric(dataframe["weight"], errors="coerce").to_numpy(dtype=np.float64)
+    valid = np.isfinite(separations) & np.isfinite(weights) & (separations >= 0.0)
+    separations = separations[valid]
+    weights = np.clip(weights[valid], 0.0, 1.0)
+    if (separations.size < 2):
+        raise ValueError("Radial weight CSV must contain at least two valid rows.")
+    order = np.argsort(separations, kind="stable")
+    return separations[order], weights[order]
+
+
+def contamination_weights(
+    separations_arcsec: np.ndarray,
+    model: ContaminationModelConfig,
+    radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
+) -> np.ndarray:
+    """Return per-neighbour aperture/PSF weights for the configured model."""
+    if (model.mode == "top_hat"):
+        return np.ones(separations_arcsec.shape, dtype=np.float64)
+
+    if (model.mode == "gaussian_psf"):
+        if (model.gaussian_fwhm_arcsec is None):
+            raise ValueError("gaussian_fwhm_arcsec is required for gaussian_psf contamination weighting.")
+        sigma = float(model.gaussian_fwhm_arcsec) / 2.3548200450309493
+        return np.exp(-0.5 * (separations_arcsec / sigma) ** 2)
+
+    if (model.mode == "radial_weight"):
+        if (radial_weight_table is None):
+            raise ValueError("radial_weight contamination weighting requires a loaded radial weight table.")
+        radial_separations, radial_weights = radial_weight_table
+        return np.interp(
+            separations_arcsec,
+            radial_separations,
+            radial_weights,
+            left=radial_weights[0],
+            right=0.0,
+        )
+
+    raise ValueError(f"Unsupported contamination model: {model.mode}")
+
+
+def manifest_magnitude_bands(manifest: IndexManifest) -> dict[str, dict[str, str]]:
+    """Return magnitude-band metadata, defaulting legacy indexes to Gaia-G."""
+    return manifest.magnitude_bands or {
+        "gaia_g": {
+            "catalog_column": "phot_g_mean_mag",
+            "array_file": "phot_g_mean_mag.npy",
+        }
+    }
+
+
+def resolve_requested_bands(requested_bands: list[str], manifest: IndexManifest) -> list[str]:
+    """Validate requested contamination bands against the completed index manifest."""
+    available = manifest_magnitude_bands(manifest)
+    if (len(requested_bands) == 1 and requested_bands[0].lower() == "all"):
+        return sorted(available)
+    missing = [band for band in requested_bands if band not in available]
+    if (missing):
+        raise ValueError(
+            "Requested contamination band(s) are not stored in this index: "
+            + ", ".join(missing)
+            + ". Available bands: "
+            + ", ".join(sorted(available))
+        )
+    return requested_bands
+
+
+def load_magnitude_arrays(index_dir: str | Path, manifest: IndexManifest, requested_bands: list[str]) -> dict[str, np.ndarray]:
+    """Open requested magnitude arrays as safe NumPy memmaps."""
+    available = manifest_magnitude_bands(manifest)
+    arrays: dict[str, np.ndarray] = {}
+    for band in requested_bands:
+        array_file = available[band]["array_file"]
+        array_path = Path(index_dir) / array_file
+        try:
+            arrays[band] = np.load(array_path, mmap_mode="r", allow_pickle=False)
+        except (OSError, ValueError) as error:
+            raise ValueError(f"Could not load magnitude band {band}: {array_path}") from error
+        if (arrays[band].ndim != 1 or arrays[band].shape[0] != manifest.number_of_sources):
+            raise ValueError(f"Magnitude band {band} does not match the completed index size.")
+    return arrays
+
+
 def calculate_flux_fraction_extra(
     target_magnitude: float,
     contaminant_magnitudes: np.ndarray,
     selected_contaminants: np.ndarray,
+    weights: np.ndarray | None = None,
 ) -> float:
     """Return extra contaminant flux as a percentage of the target flux."""
     if (not np.isfinite(target_magnitude) or not np.any(selected_contaminants)):
         return 0.0
 
     selected_magnitudes = contaminant_magnitudes[selected_contaminants]
-    valid_magnitudes = selected_magnitudes[np.isfinite(selected_magnitudes)]
+    selected_weights = (
+        np.ones(selected_magnitudes.shape, dtype=np.float64)
+        if (weights is None)
+        else np.asarray(weights, dtype=np.float64)[selected_contaminants]
+    )
+    valid_mask = np.isfinite(selected_magnitudes) & np.isfinite(selected_weights)
+    valid_magnitudes = selected_magnitudes[valid_mask]
+    valid_weights = selected_weights[valid_mask]
     if (valid_magnitudes.size == 0):
         return 0.0
 
     flux_ratios = 10.0 ** (-0.4 * (valid_magnitudes - target_magnitude))
-    return float(flux_ratios[np.isfinite(flux_ratios)].sum() * 100.0)
+    weighted_flux_ratios = flux_ratios * valid_weights
+    return float(weighted_flux_ratios[np.isfinite(weighted_flux_ratios)].sum() * 100.0)
+
+
+def flux_fraction_by_band(
+    target_index: int,
+    contaminant_indices: np.ndarray,
+    selected_mask: np.ndarray,
+    magnitude_arrays: dict[str, np.ndarray],
+    weights: np.ndarray,
+) -> dict[str, float]:
+    """Compute flux contamination metrics for every requested magnitude band."""
+    metrics: dict[str, float] = {}
+    for band, magnitudes in magnitude_arrays.items():
+        target_magnitude = float(magnitudes[target_index])
+        contaminant_magnitudes = np.asarray(magnitudes[contaminant_indices], dtype=np.float64)
+        metrics[band] = round(
+            calculate_flux_fraction_extra(
+                target_magnitude,
+                contaminant_magnitudes,
+                selected_mask,
+                weights,
+            ),
+            2,
+        )
+    return metrics
 
 
 def build_contaminant_records(
@@ -669,8 +821,13 @@ def process_target(
     field_of_view_arcsec: float,
     delta_mag: float,
     neighbor_separations_mm: Optional[np.ndarray] = None,
+    contamination_model: ContaminationModelConfig | None = None,
+    radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
+    magnitude_arrays: dict[str, np.ndarray] | None = None,
 ) -> dict | None:
     """Evaluate one target while keeping numerical work separate from loop orchestration."""
+    contamination_model = contamination_model or ContaminationModelConfig()
+    magnitude_arrays = magnitude_arrays or {}
     number_of_sources = ra.shape[0]
     if (internal_target < 1 or internal_target > number_of_sources):
         logger.warning("internal_target %s out of range; skipping.", internal_target)
@@ -685,14 +842,28 @@ def process_target(
     start = int(offsets[target_index])
     end = int(offsets[target_index + 1])
     if (start == end):
-        return empty_target_result(source_id, target_ra, target_dec, target_magnitude)
+        return empty_target_result(
+            source_id,
+            target_ra,
+            target_dec,
+            target_magnitude,
+            contamination_model,
+            list(magnitude_arrays),
+        )
 
     neighbor_internal_ids = np.asarray(neighbors_mm[start:end], dtype=np.int64)
     candidate_indices = neighbor_internal_ids - 1
     valid_mask = (candidate_indices >= 0) & (candidate_indices < number_of_sources)
     contaminant_indices = candidate_indices[valid_mask]
     if (contaminant_indices.size == 0):
-        return empty_target_result(source_id, target_ra, target_dec, target_magnitude)
+        return empty_target_result(
+            source_id,
+            target_ra,
+            target_dec,
+            target_magnitude,
+            contamination_model,
+            list(magnitude_arrays),
+        )
 
     contaminant_ra = ra[contaminant_indices]
     contaminant_dec = dec[contaminant_indices]
@@ -715,15 +886,32 @@ def process_target(
         )[valid_mask]
     inside_field_of_view = contaminant_separations <= field_of_view_arcsec
     selected_mask = inside_field_of_view & ((contaminant_magnitudes - target_magnitude) <= delta_mag)
+    weights = contamination_weights(contaminant_separations, contamination_model, radial_weight_table)
     flux_fraction_selected = calculate_flux_fraction_extra(
         target_magnitude,
         contaminant_magnitudes,
         selected_mask,
+        weights,
     )
     flux_fraction_all_neighbors = calculate_flux_fraction_extra(
         target_magnitude,
         contaminant_magnitudes,
         inside_field_of_view,
+        weights,
+    )
+    selected_by_band = flux_fraction_by_band(
+        target_index,
+        contaminant_indices,
+        selected_mask,
+        magnitude_arrays,
+        weights,
+    )
+    all_neighbors_by_band = flux_fraction_by_band(
+        target_index,
+        contaminant_indices,
+        inside_field_of_view,
+        magnitude_arrays,
+        weights,
     )
 
     contaminants = build_contaminant_records(
@@ -737,7 +925,7 @@ def process_target(
         internal_to_special_name,
     )
 
-    return TargetResult(
+    result = TargetResult(
         source_id=source_id,
         ra=target_ra,
         dec=target_dec,
@@ -750,6 +938,10 @@ def process_target(
         num_contaminants=len(contaminants),
         contaminants=contaminants,
     ).__dict__
+    result["contamination_model"] = contamination_model.mode
+    result["flux_fraction_selected_by_band"] = selected_by_band
+    result["flux_fraction_all_neighbors_by_band"] = all_neighbors_by_band
+    return result
 
 
 def loop_over_targets(
@@ -764,6 +956,9 @@ def loop_over_targets(
     delta_mag: float,
     targets_internal: list[int],
     neighbor_separations_mm: Optional[np.ndarray] = None,
+    contamination_model: ContaminationModelConfig | None = None,
+    radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
+    magnitude_arrays: dict[str, np.ndarray] | None = None,
 ) -> list[dict]:
     """Evaluate configured targets while leaving one-target logic independently testable."""
     total_targets = len(targets_internal)
@@ -785,6 +980,9 @@ def loop_over_targets(
             field_of_view_arcsec,
             delta_mag,
             neighbor_separations_mm,
+            contamination_model,
+            radial_weight_table,
+            magnitude_arrays,
         )
         if (result is not None):
             results.append(result)
@@ -927,6 +1125,12 @@ def main(config_path: str | Path | None = None) -> int:
                 shape=(total_neighbors,),
             )
 
+    radial_weight_table = None
+    if (config_query.contamination_model.mode == "radial_weight"):
+        if (config_query.contamination_model.radial_weight_file is None):
+            raise ValueError("radial_weight contamination model requires radial_weight_file.")
+        radial_weight_table = load_radial_weight_table(config_query.contamination_model.radial_weight_file)
+
     # ---------------- LOAD CATALOG ARRAYS ----------
     (
         ra,
@@ -958,6 +1162,8 @@ def main(config_path: str | Path | None = None) -> int:
             + "\n\nMake sure Targets CSV/source_id values come from the same catalog used to build the index."
         )
 
+    requested_bands = resolve_requested_bands(config_query.contamination_bands, runtime_plan.manifest)
+    magnitude_arrays = load_magnitude_arrays(paths.root, runtime_plan.manifest, requested_bands)
     
     # ---------------- RUN CONTAMINATION LOOP -------
     results = loop_over_targets(
@@ -972,6 +1178,9 @@ def main(config_path: str | Path | None = None) -> int:
         delta_mag=config_query.delta_mag,
         targets_internal=targets_internal,
         neighbor_separations_mm=neighbor_separations_mm,
+        contamination_model=config_query.contamination_model,
+        radial_weight_table=radial_weight_table,
+        magnitude_arrays=magnitude_arrays,
     )
     if (config_query.include_missing_targets):
         results = merge_unresolved_target_results(results, target_requests)

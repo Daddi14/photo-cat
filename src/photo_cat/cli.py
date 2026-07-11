@@ -192,6 +192,39 @@ def run_benchmark(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def run_reproduce_paper(args: argparse.Namespace) -> int:
+    """Generate reproducible paper summaries, plots, reports, and manifest."""
+    from .reproducible_products import reproduce_paper_products
+
+    payload = reproduce_paper_products(
+        args.configs,
+        args.result_jsons,
+        args.output_dir,
+        run_configs=args.run_configs,
+        matplotlib=args.backend == "matplotlib",
+    )
+    print(f"Paper reproduction manifest saved to: {payload['manifest_path']}")
+    return 0
+
+
+def run_merge_bright_stars(args: argparse.Namespace) -> int:
+    """Merge a base catalogue with a supplemental bright-star catalogue."""
+    from .bright_star_merge import merge_catalogues
+
+    payload = merge_catalogues(
+        args.base_catalog,
+        args.bright_catalog,
+        args.output,
+        source_id_column=args.source_id_column,
+        prefer=args.prefer,
+        provenance_output=args.provenance_output,
+    )
+    print(f"Merged catalogue saved to: {payload['output_catalog']}")
+    if (args.provenance_output):
+        print(f"Merge provenance saved to: {args.provenance_output}")
+    return 0
+
+
 def add_build_overrides(parser: argparse.ArgumentParser) -> None:
     """Register documented build/index CLI overrides."""
     build_group = parser.add_argument_group("build/index overrides")
@@ -202,6 +235,10 @@ def add_build_overrides(parser: argparse.ArgumentParser) -> None:
     build_group.add_argument("--ra-column", help="catalogue right-ascension column name")
     build_group.add_argument("--dec-column", help="catalogue declination column name")
     build_group.add_argument("--mag-column", "--phot-g-mean-mag-column", dest="phot_g_mean_mag_column", help="catalogue magnitude column name")
+    build_group.add_argument(
+        "--magnitude-columns",
+        help="optional comma-separated band=column magnitude map, e.g. gaia_bp=phot_bp_mean_mag,gaia_rp=phot_rp_mean_mag",
+    )
     build_group.add_argument("--use-dask", dest="use_dask", action=argparse.BooleanOptionalAction, default=None, help="enable or disable Dask catalogue loading")
     build_group.add_argument("--calculate-separations", dest="calculate_separations", action=argparse.BooleanOptionalAction, default=None, help="write neighbour separations during index building")
     build_group.add_argument("--max-radius-arcsec", type=float, help="maximum neighbour search radius in arcseconds")
@@ -219,6 +256,17 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
     query_group.add_argument("--target-source-id-column", help="source_id column name in the targets CSV")
     query_group.add_argument("--field-of-view-arcsec", type=float, help="query field-of-view radius in arcseconds")
     query_group.add_argument("--delta-mag", type=float, help="maximum contaminant-target magnitude difference")
+    query_group.add_argument(
+        "--contamination-bands",
+        help="comma-separated magnitude bands to compute; use all to query every band stored in the index",
+    )
+    query_group.add_argument(
+        "--contamination-model-mode",
+        choices=["top_hat", "radial_weight", "gaussian_psf"],
+        help="aperture weighting model for flux metrics",
+    )
+    query_group.add_argument("--gaussian-fwhm-arcsec", type=float, help="Gaussian PSF FWHM when using gaussian_psf mode")
+    query_group.add_argument("--radial-weight-file", help="CSV file with sep_arcsec,weight columns for radial_weight mode")
     query_group.add_argument(
         "--include-missing-targets",
         dest="include_missing_targets",
@@ -318,7 +366,15 @@ def build_parser() -> argparse.ArgumentParser:
     plot_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
     plot_parser.add_argument(
         "--kind",
-        choices=["contaminant-counts", "flux", "separations", "sky-map"],
+        choices=[
+            "contaminant-counts",
+            "flux",
+            "separations",
+            "separations-normalized",
+            "flux-vs-separation",
+            "contamination-vs-magnitude",
+            "sky-map",
+        ],
         default="contaminant-counts",
         help="plot type (default: contaminant-counts)",
     )
@@ -385,6 +441,52 @@ def build_parser() -> argparse.ArgumentParser:
     add_build_overrides(benchmark_parser)
     add_query_overrides(benchmark_parser)
     benchmark_parser.set_defaults(func=run_benchmark)
+
+    reproduce_parser = subparsers.add_parser(
+        "reproduce-paper",
+        help="generate reproducible paper summaries, plots, reports, and a manifest",
+        formatter_class=OverrideHelpFormatter,
+    )
+    reproduce_parser.add_argument(
+        "--config",
+        dest="configs",
+        action="append",
+        default=[],
+        help="paper/run configuration file; may be provided multiple times",
+    )
+    reproduce_parser.add_argument(
+        "--result-json",
+        dest="result_jsons",
+        action="append",
+        default=[],
+        help="existing result JSON to include; may be provided multiple times",
+    )
+    reproduce_parser.add_argument("--output-dir", required=True, help="directory for manifest and generated products")
+    reproduce_parser.add_argument(
+        "--run-configs",
+        action="store_true",
+        help="run each provided config before collecting the latest result JSON",
+    )
+    reproduce_parser.add_argument(
+        "--backend",
+        choices=["svg", "matplotlib"],
+        default="svg",
+        help="plot backend for generated products (default: svg)",
+    )
+    reproduce_parser.set_defaults(func=run_reproduce_paper)
+
+    merge_parser = subparsers.add_parser(
+        "merge-bright-stars",
+        help="merge a Gaia-like catalogue with a supplemental bright-star table",
+        formatter_class=OverrideHelpFormatter,
+    )
+    merge_parser.add_argument("base_catalog", help="base Gaia-like catalogue CSV")
+    merge_parser.add_argument("bright_catalog", help="supplemental bright-star catalogue CSV")
+    merge_parser.add_argument("--output", required=True, help="merged catalogue CSV path")
+    merge_parser.add_argument("--source-id-column", default="source_id", help="source ID column shared by both CSVs")
+    merge_parser.add_argument("--prefer", choices=["bright", "base"], default="bright", help="which table wins duplicate source IDs")
+    merge_parser.add_argument("--provenance-output", help="optional JSON metadata path for the merge")
+    merge_parser.set_defaults(func=run_merge_bright_stars)
 
     provenance_parser = subparsers.add_parser(
         "provenance",

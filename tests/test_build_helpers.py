@@ -57,3 +57,22 @@ def test_catalog_rejects_source_ids_that_collide_after_numeric_normalization(tmp
 
     with pytest.raises(ValueError, match="unique after numeric normalization"):
         load_star_dataframe(str(catalog_path), use_dask=False)
+
+
+@pytest.mark.unit
+def test_catalog_loads_optional_magnitude_bands(tmp_path: Path) -> None:
+    """Additional magnitude columns should be preserved for multi-band queries."""
+    catalog_path = tmp_path / "multiband.csv"
+    catalog_path.write_text(
+        "source_id,ra,dec,phot_g_mean_mag,phot_bp_mean_mag\n"
+        "1,10.0,20.0,11.0,11.5\n",
+        encoding="utf-8",
+    )
+
+    dataframe = load_star_dataframe(
+        str(catalog_path),
+        use_dask=False,
+        magnitude_columns={"gaia_g": "phot_g_mean_mag", "gaia_bp": "phot_bp_mean_mag"},
+    )
+
+    assert dataframe["magnitude_gaia_bp"].tolist() == [11.5]

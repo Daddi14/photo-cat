@@ -9,9 +9,11 @@ import pytest
 
 from photo_cat.query_contamination_from_index import (
     calculate_flux_fraction_extra,
+    contamination_weights,
     source_id_from_internal_id,
     valid_neighbor_indices,
 )
+from photo_cat.load_config import ContaminationModelConfig
 
 
 @pytest.mark.unit
@@ -43,3 +45,28 @@ def test_calculate_flux_fraction_extra_uses_pogson_flux_ratio() -> None:
     )
 
     assert result == pytest.approx((10.0 ** -0.4) * 100.0)
+
+
+@pytest.mark.unit
+def test_flux_fraction_accepts_aperture_weights() -> None:
+    """Weighted models should reduce flux contribution without changing the legacy formula."""
+    result = calculate_flux_fraction_extra(
+        target_magnitude=10.0,
+        contaminant_magnitudes=np.array([10.0, 10.0]),
+        selected_contaminants=np.array([True, True]),
+        weights=np.array([1.0, 0.25]),
+    )
+
+    assert result == pytest.approx(125.0)
+
+
+@pytest.mark.unit
+def test_gaussian_contamination_weights_decline_with_radius() -> None:
+    """The Gaussian model should be opt-in and radial."""
+    weights = contamination_weights(
+        np.array([0.0, 10.0, 20.0]),
+        ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=10.0),
+    )
+
+    assert weights[0] == pytest.approx(1.0)
+    assert weights[0] > weights[1] > weights[2]

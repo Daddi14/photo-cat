@@ -103,6 +103,7 @@ All files listed above are created under out_dir.
 """
 
 import csv
+import re
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -231,7 +232,8 @@ def load_star_dataframe(
     source_id_column: str = "source_id",
     ra_column: str = "ra",
     dec_column: str = "dec",
-    phot_g_mean_mag_column: str = "phot_g_mean_mag"
+    phot_g_mean_mag_column: str = "phot_g_mean_mag",
+    magnitude_columns: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
     Load the star catalog from CSV using pandas or Dask, keep only valid rows,
@@ -261,12 +263,16 @@ def load_star_dataframe(
     logger.info(f"Loading catalog: {input_catalog}")
     logger.info(f"Using {'Dask' if use_dask else 'Pandas'}...")
 
+    magnitude_columns = {"gaia_g": phot_g_mean_mag_column, **(magnitude_columns or {})}
     usecolumns = [
         source_id_column,
         ra_column,
         dec_column,
         phot_g_mean_mag_column,
     ]
+    for column in magnitude_columns.values():
+        if (column not in usecolumns):
+            usecolumns.append(column)
 
     if (any(column == "" for column in usecolumns)):
         raise ValueError("Catalog column names cannot be empty.")
@@ -279,6 +285,9 @@ def load_star_dataframe(
     logger.info(f" - ra: {ra_column}")
     logger.info(f" - dec: {dec_column}")
     logger.info(f" - phot_g_mean_mag: {phot_g_mean_mag_column}")
+    if (len(magnitude_columns) > 1):
+        for band, column in sorted(magnitude_columns.items()):
+            logger.info(f" - magnitude band {band}: {column}")
 
     validate_required_columns(input_catalog, usecolumns)
 
@@ -317,6 +326,13 @@ def load_star_dataframe(
         }
     )
 
+    for band, source_column in magnitude_columns.items():
+        safe_band = safe_band_name(band)
+        if (source_column == phot_g_mean_mag_column):
+            continue
+        band_column = f"magnitude_{safe_band}"
+        star_dataframe[band_column] = star_dataframe[source_column]
+
     logger.info(f"Loaded {len(star_dataframe)} rows.")
 
     if (len(star_dataframe) == 0):
@@ -325,7 +341,12 @@ def load_star_dataframe(
             "Add at least one catalog row below the header."
         )
 
-    numeric_columns = ["ra", "dec", "phot_g_mean_mag"]
+    band_numeric_columns = [
+        f"magnitude_{safe_band_name(band)}"
+        for band, source_column in magnitude_columns.items()
+        if (source_column != phot_g_mean_mag_column)
+    ]
+    numeric_columns = ["ra", "dec", "phot_g_mean_mag", *band_numeric_columns]
     numeric_errors = []
     for column in numeric_columns:
         star_dataframe[column] = pd.to_numeric(star_dataframe[column], errors="coerce")
@@ -425,6 +446,27 @@ def load_star_dataframe(
 
     logger.info(f"Final catalog contains {len(final_star_dataframe)} valid rows.\n")
     return final_star_dataframe
+
+
+def safe_band_name(band: str) -> str:
+    """Return a stable filesystem-safe magnitude-band identifier."""
+    safe = re.sub(r"[^0-9A-Za-z_]+", "_", str(band).strip().lower()).strip("_")
+    if (safe == ""):
+        raise ValueError("Magnitude band names cannot be empty.")
+    return safe
+
+
+def magnitude_band_manifest(magnitude_columns: dict[str, str], phot_g_mean_mag_column: str) -> dict[str, dict[str, str]]:
+    """Describe persisted magnitude arrays for query-time multi-band metrics."""
+    manifest: dict[str, dict[str, str]] = {}
+    for band, source_column in magnitude_columns.items():
+        safe_band = safe_band_name(band)
+        array_file = "phot_g_mean_mag.npy" if (source_column == phot_g_mean_mag_column) else f"magnitude_{safe_band}.npy"
+        manifest[band] = {
+            "catalog_column": source_column,
+            "array_file": array_file,
+        }
+    return manifest
 
 
 def convert_ra_dec_to_unit_vectors(
@@ -803,6 +845,8 @@ def save_final_outputs(
     catalog_sha256: str,
     max_radius_arcsec: float,
     total_neighbors: int,
+    magnitude_columns: dict[str, str],
+    phot_g_mean_mag_column: str,
 ) -> str:
     """
     Finalize temporary files atomically, build compact ID mapping arrays,
@@ -977,6 +1021,18 @@ def save_final_outputs(
             final_star_dataframe['phot_g_mean_mag'].to_numpy(dtype=np.float64)
         )
 
+    magnitude_bands = magnitude_band_manifest(magnitude_columns, phot_g_mean_mag_column)
+    for metadata in magnitude_bands.values():
+        array_file = metadata["array_file"]
+        if (array_file == "phot_g_mean_mag.npy"):
+            continue
+        column_name = Path(array_file).stem
+        if (column_name in final_star_dataframe.columns):
+            atomic_save_npy(
+                Path(out_dir) / array_file,
+                final_star_dataframe[column_name].to_numpy(dtype=np.float64),
+            )
+
     manifest = IndexManifest(
         format_version=2,
         status="complete",
@@ -986,6 +1042,7 @@ def save_final_outputs(
         number_of_sources=len(final_star_dataframe),
         total_neighbors=total_neighbors,
         calculate_separations=calculate_separations,
+        magnitude_bands=magnitude_bands,
     )
     write_index_manifest(manifest_path, manifest)
     validate_index_structure(index_paths(out_dir), manifest)
@@ -1007,7 +1064,8 @@ def run_build(config_build: BuildConfig) -> int:
         config_build.source_id_column,
         config_build.ra_column,
         config_build.dec_column,
-        config_build.phot_g_mean_mag_column
+        config_build.phot_g_mean_mag_column,
+        config_build.magnitude_columns,
     )
 
     catalog_digest = sha256_file(config_build.input_catalog)
@@ -1016,6 +1074,7 @@ def run_build(config_build: BuildConfig) -> int:
         max_radius_arcsec=config_build.max_radius_arcsec,
         calculate_separations=config_build.calculate_separations,
         columns=config_build.usecolumns,
+        magnitude_columns=config_build.magnitude_columns,
     )
     existing_manifest_path = Path(config_build.out_dir) / INDEX_MANIFEST_FILENAME
     if (existing_manifest_path.is_file()):
@@ -1118,6 +1177,8 @@ def run_build(config_build: BuildConfig) -> int:
             catalog_sha256=catalog_digest,
             max_radius_arcsec=config_build.max_radius_arcsec,
             total_neighbors=checkpoint_total,
+            magnitude_columns=config_build.magnitude_columns,
+            phot_g_mean_mag_column=config_build.phot_g_mean_mag_column,
         )
     Path(checkpoint_path).unlink(missing_ok=True)
 

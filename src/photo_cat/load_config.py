@@ -7,7 +7,7 @@ from __future__ import annotations
 import copy
 import math
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +44,16 @@ class BuildConfig:
     ra_column: str
     dec_column: str
     phot_g_mean_mag_column: str
+    magnitude_columns: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ContaminationModelConfig:
+    """Validated query-side contamination weighting model."""
+
+    mode: str = "top_hat"
+    gaussian_fwhm_arcsec: float | None = None
+    radial_weight_file: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +67,8 @@ class QueryConfig:
     targets: list[str | int]
     target_source_id_column: str
     include_missing_targets: bool = False
+    contamination_model: ContaminationModelConfig = field(default_factory=ContaminationModelConfig)
+    contamination_bands: list[str] = field(default_factory=lambda: ["gaia_g"])
 
 
 @dataclass(frozen=True)
@@ -281,6 +293,89 @@ def validate_columns(columns: list[str]) -> None:
         raise ValueError("Catalog source_id, ra, dec, and phot_g_mean_mag columns must be different.")
 
 
+def parse_text_mapping(value: Any, label: str) -> dict[str, str]:
+    """Parse a YAML mapping whose keys and values must be non-empty text."""
+    if (value is None):
+        return {}
+    mapping = require_mapping(value, label)
+    parsed: dict[str, str] = {}
+    for key, item in mapping.items():
+        parsed[require_text(key, f"{label} key")] = require_text(item, f"{label}.{key}")
+    return parsed
+
+
+def normalize_magnitude_columns(
+    configured_columns: dict[str, str],
+    phot_g_mean_mag_column: str,
+) -> dict[str, str]:
+    """Return a band-to-catalogue-column map with a stable Gaia-G default."""
+    magnitude_columns = {"gaia_g": phot_g_mean_mag_column}
+    magnitude_columns.update(configured_columns)
+
+    for band in magnitude_columns:
+        if (band.strip() == ""):
+            raise ValueError("build_neighbors_index.io.magnitude_columns band names cannot be empty.")
+
+    return magnitude_columns
+
+
+def parse_contamination_model(settings: dict[str, Any], config_dir: Path) -> ContaminationModelConfig:
+    """Parse opt-in aperture/PSF-style weighting settings for query flux metrics."""
+    raw_model = settings.get("contamination_model")
+    if (raw_model is None):
+        return ContaminationModelConfig()
+    model = require_mapping(raw_model, f"{QUERY_SECTION}.settings.contamination_model")
+    mode = require_text(model.get("mode"), f"{QUERY_SECTION}.settings.contamination_model.mode", "top_hat")
+    normalized_mode = mode.lower().replace("-", "_")
+    if (normalized_mode not in {"top_hat", "radial_weight", "gaussian_psf"}):
+        raise ValueError(
+            "query_contamination_from_index.settings.contamination_model.mode "
+            "must be one of: top_hat, radial_weight, gaussian_psf."
+        )
+
+    gaussian_fwhm_arcsec = None
+    if (model.get("gaussian_fwhm_arcsec") is not None):
+        gaussian_fwhm_arcsec = parse_float(
+            model.get("gaussian_fwhm_arcsec"),
+            f"{QUERY_SECTION}.settings.contamination_model.gaussian_fwhm_arcsec",
+            0.0,
+            minimum=0.0,
+            exclusive_minimum=True,
+        )
+
+    radial_weight_file = resolve_path(model.get("radial_weight_file"), config_dir)
+
+    if (normalized_mode == "gaussian_psf" and gaussian_fwhm_arcsec is None):
+        raise ValueError(
+            "query_contamination_from_index.settings.contamination_model.gaussian_fwhm_arcsec "
+            "is required when mode is gaussian_psf."
+        )
+    if (normalized_mode == "radial_weight" and radial_weight_file is None):
+        raise ValueError(
+            "query_contamination_from_index.settings.contamination_model.radial_weight_file "
+            "is required when mode is radial_weight."
+        )
+
+    return ContaminationModelConfig(
+        mode=normalized_mode,
+        gaussian_fwhm_arcsec=gaussian_fwhm_arcsec,
+        radial_weight_file=radial_weight_file,
+    )
+
+
+def parse_contamination_bands(settings: dict[str, Any]) -> list[str]:
+    """Parse requested result bands while keeping Gaia-G as the default metric."""
+    raw_bands = settings.get("contamination_bands")
+    if (raw_bands is None):
+        return ["gaia_g"]
+    if (not isinstance(raw_bands, list)):
+        raise ValueError("query_contamination_from_index.settings.contamination_bands must be a list.")
+    bands = [require_text(item, "query_contamination_from_index.settings.contamination_bands[]") for item in raw_bands]
+    if (not bands):
+        raise ValueError("query_contamination_from_index.settings.contamination_bands cannot be empty.")
+    return bands
+
+
 def load_build_config(section_config: dict[str, Any], config_dir: Path) -> BuildConfig:
     """Parse a build config without checking files or creating output directories."""
     io = require_mapping(section_config.get("io"), f"{BUILD_SECTION}.io")
@@ -295,6 +390,10 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
     ra_column = column_name(columns, legacy_usecolumns, "ra", 1, "ra")
     dec_column = column_name(columns, legacy_usecolumns, "dec", 2, "dec")
     phot_g_mean_mag_column = column_name(columns, legacy_usecolumns, "phot_g_mean_mag", 3, "phot_g_mean_mag")
+    magnitude_columns = normalize_magnitude_columns(
+        parse_text_mapping(io.get("magnitude_columns"), f"{BUILD_SECTION}.io.magnitude_columns"),
+        phot_g_mean_mag_column,
+    )
     usecolumns = [source_id_column, ra_column, dec_column, phot_g_mean_mag_column]
     validate_columns(usecolumns)
 
@@ -330,6 +429,7 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
         ra_column=ra_column,
         dec_column=dec_column,
         phot_g_mean_mag_column=phot_g_mean_mag_column,
+        magnitude_columns=magnitude_columns,
     )
 
 
@@ -386,13 +486,22 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
             "query_contamination_from_index.settings.include_missing_targets",
             False,
         ),
+        contamination_model=parse_contamination_model(settings, config_dir),
+        contamination_bands=parse_contamination_bands(settings),
     )
 
 
 def validate_query_config_runtime(config: QueryConfig) -> QueryConfig:
     """Validate query target inputs after pure parsing and resolution succeed."""
     targets_input = require_file(config.TARGETS_INPUT, "TARGETS_INPUT")
-    return replace(config, TARGETS_INPUT=targets_input)
+    radial_weight_file = config.contamination_model.radial_weight_file
+    if (radial_weight_file is not None):
+        radial_weight_file = require_file(radial_weight_file, "contamination_model.radial_weight_file")
+    return replace(
+        config,
+        TARGETS_INPUT=targets_input,
+        contamination_model=replace(config.contamination_model, radial_weight_file=radial_weight_file),
+    )
 
 
 def load_execution_config(section_config: dict[str, Any]) -> ExecutionConfig:
