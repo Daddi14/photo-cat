@@ -70,6 +70,7 @@ class QueryConfig:
     contamination_model: ContaminationModelConfig = field(default_factory=ContaminationModelConfig)
     contamination_bands: list[str] = field(default_factory=lambda: ["gaia_g"])
     influence_radius_arcsec: float | None = None
+    bandpass_transform_file: str | None = None
 
     @property
     def aperture_radius_arcsec(self) -> float:
@@ -515,6 +516,7 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
         contamination_model=parse_contamination_model(settings, config_dir),
         contamination_bands=parse_contamination_bands(settings),
         influence_radius_arcsec=influence_radius_arcsec,
+        bandpass_transform_file=resolve_path(settings.get("bandpass_transform_file"), config_dir),
     )
 
 
@@ -524,10 +526,12 @@ def validate_query_config_runtime(config: QueryConfig) -> QueryConfig:
     radial_weight_file = config.contamination_model.radial_weight_file
     if (radial_weight_file is not None):
         radial_weight_file = require_file(radial_weight_file, "contamination_model.radial_weight_file")
+    bandpass_transform_file = require_file(config.bandpass_transform_file, "bandpass_transform_file")
     return replace(
         config,
         TARGETS_INPUT=targets_input,
         contamination_model=replace(config.contamination_model, radial_weight_file=radial_weight_file),
+        bandpass_transform_file=bandpass_transform_file,
     )
 
 

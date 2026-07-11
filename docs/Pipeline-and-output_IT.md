@@ -63,8 +63,9 @@ un'analisi successiva aggiunga modellazione specifica della missione.
 Le pesature gaussiane/tabulate opzionali restano modelli radiali circolari, non
 simulazioni complete dello strumento. Possono stimare il leakage delle sorgenti
 fra apertura e raggio di influenza, ma non modellano PSF asimmetriche o variabili,
-pixel del detector, diffrazione o luce diffusa, né trasformazioni di banda
-dipendenti dalla lunghezza d'onda.
+pixel del detector, diffrazione o luce diffusa. Un profilo empirico versionato
+con polinomio di colore può stimare una magnitudine di missione, ma PHOTO-CAT
+non integra una distribuzione spettrale di energia sulla banda strumentale.
 
 ## Output JSON
 
@@ -78,6 +79,8 @@ Ogni risultato target include:
 - frazione di flusso dei contaminanti selezionati
 - frazione di flusso di tutti i vicini dentro il raggio
 - dizionari opzionali multi-banda per le frazioni di flusso selezionate/tutti i vicini
+- metriche opzionali nella banda di missione trasformata, magnitudini di
+  target/contaminanti e stato di validità per target
 - frazioni di flusso pesate dentro l'apertura, fuori dall'apertura e totali
 - conteggi e record delle sorgenti selezionate fuori dall'apertura
 - numero di vicini dentro il raggio circolare
@@ -89,6 +92,7 @@ Per la riproducibilità, ogni query scrive anche un metadata sidecar JSON in
 `INDEX_DIR/output/metadata/`. Il sidecar registra versione di PHOTO-CAT, valori
 di configurazione selezionati, numero di target, manifest dell'indice, SHA-256
 del catalogo usato nella build e le note sull'ambito del modello riportate sopra.
+Il sidecar include anche il checksum del profilo di trasformazione opzionale.
 Il JSON dei risultati rimane una lista semplice di target per compatibilità con
 gli script esistenti.
 

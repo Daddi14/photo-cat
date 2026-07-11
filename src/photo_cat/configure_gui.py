@@ -73,6 +73,7 @@ DEFAULT_CONFIG = {
             "delta_mag": 5,
             "include_missing_targets": False,
             "contamination_bands": ["gaia_g"],
+            "bandpass_transform_file": None,
             "contamination_model": {
                 "mode": "top_hat",
                 "gaussian_fwhm_arcsec": None,
@@ -140,6 +141,7 @@ class ConfigGui(tk.Tk):
         self.max_radius_var = tk.StringVar()
         self.field_of_view_var = tk.StringVar()
         self.influence_radius_var = tk.StringVar()
+        self.bandpass_transform_file_var = tk.StringVar()
         self.delta_mag_var = tk.StringVar()
         self.include_missing_targets_var = tk.BooleanVar()
         self.chunk_size_var = tk.StringVar()
@@ -592,6 +594,7 @@ class ConfigGui(tk.Tk):
         self.add_entry_row(settings_tab, 1, "Query aperture radius, arcsec", self.field_of_view_var)
         self.add_entry_row(settings_tab, 2, "Outer influence radius, arcsec", self.influence_radius_var)
         self.add_entry_row(settings_tab, 3, "Delta magnitude", self.delta_mag_var)
+        self.add_entry_row(settings_tab, 4, "Bandpass profile YAML (optional)", self.bandpass_transform_file_var)
 
         settings_note = ttk.Label(
             settings_tab,
@@ -604,10 +607,10 @@ class ConfigGui(tk.Tk):
             wraplength=900,
             justify="left"
         )
-        settings_note.grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 8))
+        settings_note.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 8))
 
         advanced = ttk.LabelFrame(settings_tab, text="Advanced performance settings", padding=8)
-        advanced.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        advanced.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         advanced.columnconfigure(1, weight=1)
 
         advanced_warning = ttk.Label(
@@ -726,6 +729,7 @@ class ConfigGui(tk.Tk):
         self.max_radius_var.set(str(build_settings.get("max_radius_arcsec", 120.0)))
         self.field_of_view_var.set(str(query_settings.get("field_of_view_arcsec", 47.0)))
         self.influence_radius_var.set(str(query_settings.get("influence_radius_arcsec", query_settings.get("field_of_view_arcsec", 47.0))))
+        self.bandpass_transform_file_var.set(str(query_settings.get("bandpass_transform_file") or ""))
         self.delta_mag_var.set(str(query_settings.get("delta_mag", 5)))
         self.include_missing_targets_var.set(bool(query_settings.get("include_missing_targets", False)))
         self.chunk_size_var.set(str(build_settings.get("chunk_size", 10000)))
@@ -1241,6 +1245,7 @@ class ConfigGui(tk.Tk):
                     "delta_mag": float(self.delta_mag_var.get().strip()),
                     "include_missing_targets": bool(self.include_missing_targets_var.get()),
                     "contamination_bands": ["gaia_g"],
+                    "bandpass_transform_file": self.bandpass_transform_file_var.get().strip() or None,
                     "contamination_model": {
                         "mode": "top_hat",
                         "gaussian_fwhm_arcsec": None,

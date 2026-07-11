@@ -321,6 +321,10 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
         help="comma-separated magnitude bands to compute; use all to query every band stored in the index",
     )
     query_group.add_argument(
+        "--bandpass-transform-file",
+        help="YAML profile for an empirical catalogue-to-mission band transformation",
+    )
+    query_group.add_argument(
         "--contamination-model-mode",
         choices=["top_hat", "radial_weight", "gaussian_psf", "gaussian_aperture"],
         help="aperture weighting model for flux metrics",

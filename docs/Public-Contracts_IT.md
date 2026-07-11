@@ -82,6 +82,12 @@ Ogni risultato per target preserva i campi documentati per:
 - record dei contaminanti con ID sorgente, coordinate, magnitudine e separazione;
 - sorgenti selezionate fuori dall'apertura identificate separatamente quando è
   configurato un raggio di influenza;
+- magnitudini additive per banda di target/contaminanti e dizionari di flusso
+  nella banda trasformata quando è configurato un profilo empirico;
+- campi di provenienza `bandpass_transform_status`,
+  `bandpass_transform_profile` e `bandpass_transformed_band`;
+- alias scalari `*_transformed` utilizzabili dagli strumenti di screening e
+  validazione;
 - righe target non risolte quando richieste esplicitamente, con `status` uguale
   a `missing_from_index` o `invalid_target_id`.
 

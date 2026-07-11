@@ -46,6 +46,7 @@ def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_
     assert query.field_of_view_arcsec == 47.0
     assert query.delta_mag == 5.0
     assert query.influence_radius_arcsec == 47.0
+    assert query.bandpass_transform_file is None
 
     assert isinstance(execution, ExecutionConfig)
     assert execution.run_build is True
@@ -91,6 +92,24 @@ def test_query_influence_radius_must_cover_aperture(
 
     with pytest.raises(ValueError, match="must be greater than or equal"):
         load_config("query_contamination_from_index", str(write_config(modified)))
+
+
+@pytest.mark.unit
+def test_query_resolves_optional_bandpass_profile_against_config_directory(
+    write_config: Callable[[str | None], Path],
+    config_text: str,
+    tmp_path: Path,
+) -> None:
+    """A versioned calibration profile should follow the normal config-relative path policy."""
+    profile_path = tmp_path / "profiles" / "mission.yaml"
+    modified = config_text.replace(
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n    bandpass_transform_file: profiles/mission.yaml",
+    )
+    query = load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
+
+    assert isinstance(query, QueryConfig)
+    assert query.bandpass_transform_file == str(profile_path.resolve())
 
 
 @pytest.mark.unit

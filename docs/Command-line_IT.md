@@ -32,6 +32,9 @@ e assegna `accept`, `review` o `reject` con soglie percentuali esplicite.
 contaminazione di riferimento e calcola bias, residuo mediano, MAE, RMSE e,
 opzionalmente, accuratezza rispetto a una soglia.
 
+Quando è stato usato un profilo di banda, esegui screening o validazione della
+stima di missione con `--metric flux_fraction_total_weighted_transformed`.
+
 ## Diagnostica doctor per l'automazione
 
 Per impostazione predefinita `photo-cat doctor` stampa un report leggibile:
@@ -97,6 +100,7 @@ minima di comandi è:
 photo-cat --version
 photo-cat build-index --config config.yaml --input-catalog data/my_catalog.csv --out-dir output/my_index --max-radius-arcsec 120
 photo-cat query --config config.yaml --index-dir output/my_index --targets-input data/my_targets.csv --field-of-view-arcsec 47 --delta-mag 5
+photo-cat query --config config.yaml --bandpass-transform-file examples/paper/bandpass_transform_example.yaml
 ```
 
 La build scrive `index_manifest.json` con SHA-256 del catalogo e impostazioni
@@ -380,6 +384,7 @@ Le opzioni booleane supportano forma positiva e negativa:
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--field-of-view-arcsec VALUE` |
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--aperture-radius-arcsec VALUE` (alias più chiaro) |
 | `query_contamination_from_index.settings.influence_radius_arcsec` | `--influence-radius-arcsec VALUE` |
+| `query_contamination_from_index.settings.bandpass_transform_file` | `--bandpass-transform-file PATH` |
 | `query_contamination_from_index.settings.delta_mag` | `--delta-mag VALUE` |
 | `query_contamination_from_index.settings.include_missing_targets` | `--include-missing-targets` / `--no-include-missing-targets` |
 | `execution.run_build` | `--run-build` / `--no-run-build` |

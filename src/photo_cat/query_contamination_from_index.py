@@ -16,10 +16,11 @@ neighbouring catalogue sources inside a configured circular angular radius and
 estimates flux ratios from configured catalogue magnitude columns. Optional
 circular radial models estimate aperture throughput and leakage from a larger
 influence radius. It does not perform spatially varying or asymmetric PSF
-convolution, detector-pixel modelling, scattered-light modelling, or
-wavelength-dependent transformations between catalogue and mission bandpasses.
-Treat the result as a contamination risk-assessment / target-screening metric
-unless calibrated mission inputs support the selected model.
+convolution, detector-pixel modelling, scattered-light modelling, or full
+spectral/passband integration. An optional provenance-tracked empirical colour
+transformation can estimate a calibrated mission band. Treat the result as a
+contamination risk-assessment / target-screening metric unless calibrated
+mission inputs support the selected model.
 
 Index files (produced by build_neighbors_index.py)
 --------------------------------------------------
@@ -132,6 +133,12 @@ import pandas as pd
 from scipy.stats import ncx2
 
 from . import __version__
+from .bandpass_transform import (
+    BandpassTransformProfile,
+    load_bandpass_profile,
+    transform_magnitudes,
+    transform_status_name,
+)
 from .index_manifest import (
     IndexManifest,
     atomic_write_json,
@@ -580,6 +587,10 @@ def empty_target_result(
     magnitude: float,
     contamination_model: ContaminationModelConfig | None = None,
     magnitude_bands: list[str] | None = None,
+    bandpass_output_band: str | None = None,
+    bandpass_profile_name: str | None = None,
+    bandpass_status: str | None = None,
+    target_magnitudes_by_band: dict[str, float | None] | None = None,
 ) -> dict:
     """Create the stable no-contaminant result shape used by query output."""
     contamination_model = contamination_model or ContaminationModelConfig()
@@ -609,6 +620,14 @@ def empty_target_result(
     result["num_neighbors_outside_aperture"] = 0
     result["num_contaminants_outside_aperture"] = 0
     result["outside_aperture_contaminants"] = []
+    result["bandpass_transformed_band"] = bandpass_output_band
+    result["bandpass_transform_profile"] = bandpass_profile_name
+    result["bandpass_transform_status"] = bandpass_status
+    result["target_magnitudes_by_band"] = target_magnitudes_by_band or {}
+    result["flux_fraction_selected_transformed"] = 0.0 if bandpass_output_band is not None else None
+    result["flux_fraction_all_neighbors_transformed"] = 0.0 if bandpass_output_band is not None else None
+    result["flux_fraction_outside_aperture_transformed"] = 0.0 if bandpass_output_band is not None else None
+    result["flux_fraction_total_weighted_transformed"] = 0.0 if bandpass_output_band is not None else None
     return result
 
 
@@ -638,6 +657,14 @@ def unresolved_target_result(source_id: str, status: str) -> dict:
         "num_neighbors_outside_aperture": None,
         "num_contaminants_outside_aperture": None,
         "outside_aperture_contaminants": [],
+        "bandpass_transformed_band": None,
+        "bandpass_transform_profile": None,
+        "bandpass_transform_status": None,
+        "target_magnitudes_by_band": {},
+        "flux_fraction_selected_transformed": None,
+        "flux_fraction_all_neighbors_transformed": None,
+        "flux_fraction_outside_aperture_transformed": None,
+        "flux_fraction_total_weighted_transformed": None,
         "contaminants": [],
     }
 
@@ -829,6 +856,7 @@ def build_contaminant_records(
     real_ids_int: np.ndarray,
     internal_to_special_name: dict[int, str],
     aperture_location: str | None = None,
+    magnitude_arrays: dict[str, np.ndarray] | None = None,
 ) -> list[dict]:
     """Build public contaminant records from selected catalogue positions."""
     contaminants: list[dict] = []
@@ -849,6 +877,11 @@ def build_contaminant_records(
             ).__dict__
         if (aperture_location is not None):
             record["aperture_location"] = aperture_location
+        if (magnitude_arrays):
+            record["magnitudes_by_band"] = {
+                band: (float(values[catalogue_index]) if np.isfinite(values[catalogue_index]) else None)
+                for band, values in magnitude_arrays.items()
+            }
         contaminants.append(record)
 
     return contaminants
@@ -870,6 +903,9 @@ def process_target(
     radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
     influence_radius_arcsec: float | None = None,
+    bandpass_status_codes: np.ndarray | None = None,
+    bandpass_output_band: str | None = None,
+    bandpass_profile_name: str | None = None,
 ) -> dict | None:
     """Evaluate one target while keeping numerical work separate from loop orchestration."""
     contamination_model = contamination_model or ContaminationModelConfig()
@@ -883,6 +919,13 @@ def process_target(
         return None
 
     target_index = internal_target - 1
+    bandpass_status = (
+        None if bandpass_status_codes is None else transform_status_name(bandpass_status_codes, target_index)
+    )
+    target_magnitudes_by_band = {
+        band: (float(values[target_index]) if np.isfinite(values[target_index]) else None)
+        for band, values in magnitude_arrays.items()
+    }
     target_ra = float(ra[target_index])
     target_dec = float(dec[target_index])
     target_magnitude = float(gmag[target_index]) if (gmag is not None) else np.nan
@@ -898,6 +941,10 @@ def process_target(
             target_magnitude,
             contamination_model,
             list(magnitude_arrays),
+            bandpass_output_band,
+            bandpass_profile_name,
+            bandpass_status,
+            target_magnitudes_by_band,
         )
 
     neighbor_internal_ids = np.asarray(neighbors_mm[start:end], dtype=np.int64)
@@ -912,6 +959,10 @@ def process_target(
             target_magnitude,
             contamination_model,
             list(magnitude_arrays),
+            bandpass_output_band,
+            bandpass_profile_name,
+            bandpass_status,
+            target_magnitudes_by_band,
         )
 
     contaminant_ra = ra[contaminant_indices]
@@ -1008,6 +1059,7 @@ def process_target(
         real_ids_int,
         internal_to_special_name,
         "inside",
+        magnitude_arrays,
     )
     outside_contaminants = build_contaminant_records(
         contaminant_indices,
@@ -1019,6 +1071,7 @@ def process_target(
         real_ids_int,
         internal_to_special_name,
         "outside",
+        magnitude_arrays,
     )
 
     result = TargetResult(
@@ -1046,6 +1099,22 @@ def process_target(
     result["num_neighbors_outside_aperture"] = int(np.count_nonzero(outside_aperture))
     result["num_contaminants_outside_aperture"] = len(outside_contaminants)
     result["outside_aperture_contaminants"] = outside_contaminants
+    result["bandpass_transformed_band"] = bandpass_output_band
+    result["bandpass_transform_profile"] = bandpass_profile_name
+    result["bandpass_transform_status"] = bandpass_status
+    result["target_magnitudes_by_band"] = target_magnitudes_by_band
+    result["flux_fraction_selected_transformed"] = (
+        None if bandpass_output_band is None else selected_by_band.get(bandpass_output_band)
+    )
+    result["flux_fraction_all_neighbors_transformed"] = (
+        None if bandpass_output_band is None else all_neighbors_by_band.get(bandpass_output_band)
+    )
+    result["flux_fraction_outside_aperture_transformed"] = (
+        None if bandpass_output_band is None else outside_by_band.get(bandpass_output_band)
+    )
+    result["flux_fraction_total_weighted_transformed"] = (
+        None if bandpass_output_band is None else total_weighted_by_band.get(bandpass_output_band)
+    )
     return result
 
 
@@ -1065,6 +1134,9 @@ def loop_over_targets(
     radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
     influence_radius_arcsec: float | None = None,
+    bandpass_status_codes: np.ndarray | None = None,
+    bandpass_output_band: str | None = None,
+    bandpass_profile_name: str | None = None,
 ) -> list[dict]:
     """Evaluate configured targets while leaving one-target logic independently testable."""
     total_targets = len(targets_internal)
@@ -1090,6 +1162,9 @@ def loop_over_targets(
             radial_weight_table,
             magnitude_arrays,
             influence_radius_arcsec,
+            bandpass_status_codes,
+            bandpass_output_band,
+            bandpass_profile_name,
         )
         if (result is not None):
             results.append(result)
@@ -1152,6 +1227,7 @@ def save_query_metadata(
     result_json_path: str | Path,
     config_path: str | Path | None,
     processed_targets: int,
+    bandpass_profile: BandpassTransformProfile | None = None,
 ) -> str:
     """Save a non-breaking sidecar with the settings needed to reproduce a query."""
     selected_config_path = None if (config_path is None) else str(Path(config_path).resolve())
@@ -1176,10 +1252,11 @@ def save_query_metadata(
             "not_included": [
                 "spatially varying or asymmetric instrumental PSF convolution",
                 "detector pixel response",
-                "wavelength-dependent transformation between catalogue and mission bandpasses",
+                "full SED integration or synthetic photometry beyond an optional empirical colour transformation",
                 "scattered-light or diffraction features not represented by the selected radial model",
             ],
         },
+        "bandpass_transform": None if bandpass_profile is None else bandpass_profile.metadata(),
     }
     atomic_write_json(metadata_path, payload)
     return str(metadata_path)
@@ -1239,6 +1316,15 @@ def main(config_path: str | Path | None = None) -> int:
             raise ValueError("radial_weight contamination model requires radial_weight_file.")
         radial_weight_table = load_radial_weight_table(config_query.contamination_model.radial_weight_file)
 
+    bandpass_profile = None
+    if (config_query.bandpass_transform_file is not None):
+        bandpass_profile = load_bandpass_profile(config_query.bandpass_transform_file)
+        if (bandpass_profile.output_band in manifest_magnitude_bands(runtime_plan.manifest)):
+            raise ValueError(
+                f"Bandpass transformation output_band {bandpass_profile.output_band} conflicts with "
+                "a catalogue band already stored in the index. Choose a distinct mission-band name."
+            )
+
     # ---------------- LOAD CATALOG ARRAYS ----------
     (
         ra,
@@ -1271,7 +1357,17 @@ def main(config_path: str | Path | None = None) -> int:
         )
 
     requested_bands = resolve_requested_bands(config_query.contamination_bands, runtime_plan.manifest)
-    magnitude_arrays = load_magnitude_arrays(paths.root, runtime_plan.manifest, requested_bands)
+    bands_to_load = list(requested_bands)
+    if (bandpass_profile is not None):
+        resolve_requested_bands(list(bandpass_profile.required_bands), runtime_plan.manifest)
+        bands_to_load.extend(band for band in bandpass_profile.required_bands if band not in bands_to_load)
+    loaded_magnitude_arrays = load_magnitude_arrays(paths.root, runtime_plan.manifest, bands_to_load)
+    magnitude_arrays = {band: loaded_magnitude_arrays[band] for band in requested_bands}
+    bandpass_status_codes = None
+    if (bandpass_profile is not None):
+        transformed = transform_magnitudes(bandpass_profile, loaded_magnitude_arrays)
+        magnitude_arrays[bandpass_profile.output_band] = transformed.magnitudes
+        bandpass_status_codes = transformed.status_codes
     
     # ---------------- RUN CONTAMINATION LOOP -------
     results = loop_over_targets(
@@ -1290,6 +1386,9 @@ def main(config_path: str | Path | None = None) -> int:
         radial_weight_table=radial_weight_table,
         magnitude_arrays=magnitude_arrays,
         influence_radius_arcsec=config_query.effective_influence_radius_arcsec,
+        bandpass_status_codes=bandpass_status_codes,
+        bandpass_output_band=None if bandpass_profile is None else bandpass_profile.output_band,
+        bandpass_profile_name=None if bandpass_profile is None else bandpass_profile.name,
     )
     if (config_query.include_missing_targets):
         results = merge_unresolved_target_results(results, target_requests)
@@ -1303,6 +1402,7 @@ def main(config_path: str | Path | None = None) -> int:
             json_path,
             config_path,
             len(results),
+            bandpass_profile,
         )
 
     evaluated_results = [r for r in results if (r.get("status", "found") == "found")]

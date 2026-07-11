@@ -31,7 +31,7 @@ PHOTO-CAT is a local Python tool for catalogue-level photometric contamination r
 
 It can build a neighbour index from a source catalogue, query selected targets, and write a JSON summary containing catalogue/aperture-based contamination metrics and neighbouring sources that match the configured field-of-view and magnitude limits.
 
-The current 2.0.0 model is intentionally scoped: it uses catalogue magnitudes, a circular aperture, and optional circular radial throughput models. A separate influence radius can include weighted leakage from nearby sources outside the aperture. It does not perform spatially varying/asymmetric PSF convolution, detector-pixel modelling, scattered-light modelling, or wavelength-dependent bandpass transformations. For instrument-calibrated photometry, treat PHOTO-CAT output as a screening/risk metric unless calibrated mission inputs support the selected radial model.
+The current 2.0.0 model is intentionally scoped: it uses catalogue magnitudes, a circular aperture, and optional circular radial throughput models. A separate influence radius can include weighted leakage from nearby sources outside the aperture. An optional calibrated colour-polynomial profile can estimate a named mission band with validity tracking and provenance. It does not perform spatially varying/asymmetric PSF convolution, detector-pixel modelling, scattered-light modelling, or full spectral/passband integration. Treat PHOTO-CAT output as a screening/risk metric unless calibrated mission inputs support the selected models.
 
 PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly launchers, a graphical configuration window, automatic dependency setup, project-local runtime handling so user/system Python installations are not modified, versioned index manifests, and query metadata sidecars that record the package version, query settings, index manifest, and model scope.
 
@@ -56,6 +56,7 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Screen selected targets for nearby catalogue sources that may contaminate a circular aperture.
 - Report both selected-contaminant flux and all-neighbour-in-radius flux metrics.
 - Optionally compare catalogue-level flux metrics across stored magnitude bands.
+- Apply a provenance-tracked empirical colour transformation into a mission band.
 - Use top-hat, Gaussian radial, or tabulated radial-weight contamination screening models.
 - Summarize result JSON files into text, JSON, or CSV statistics.
 - Generate dependency-free SVG plots and HTML/Markdown reports from query results.

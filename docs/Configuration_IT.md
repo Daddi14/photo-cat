@@ -88,6 +88,33 @@ Questi modelli restano approssimazioni a livello di catalogo per lo screening,
 salvo che i pesi provengano da una calibrazione PSF/apertura specifica dello
 strumento.
 
+### Trasformazioni empiriche nella banda di missione
+
+Un profilo YAML opzionale e versionato può derivare una magnitudine di missione
+da bande di catalogo memorizzate:
+
+```yaml
+query_contamination_from_index:
+  settings:
+    bandpass_transform_file: examples/paper/bandpass_transform_example.yaml
+```
+
+Il profilo definisce `output_band`, `base_band`, due `color_bands`, i
+`coefficients` del polinomio, limiti calibrati di colore/magnitudine, una
+politica `out_of_range` e il riferimento della calibrazione. La convenzione è:
+
+```text
+m_output = m_base + c0 + c1*colore + c2*colore^2 + ...
+colore = m_color_band_1 - m_color_band_2
+```
+
+Le bande richieste devono essere state memorizzate tramite `magnitude_columns`
+durante la build. `out_of_range: null` esclude valori non calibrati;
+`out_of_range: extrapolate` li conserva ma marca ogni target interessato come
+`extrapolated`. Profilo e checksum SHA-256 vengono copiati nei metadata della
+query. Si tratta di una trasformazione empirica di colore, non di integrazione
+della banda su una distribuzione spettrale di energia.
+
 ## Save + run
 
 `Save + run` scrive le impostazioni correnti della GUI in `config.yaml`, poi avvia la pipeline in una console separata.

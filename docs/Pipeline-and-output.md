@@ -61,8 +61,9 @@ tool unless mission-specific modelling is added downstream.
 The optional Gaussian/tabulated weights remain circular radial models, not full
 instrument simulations. They can estimate leakage from sources between the
 aperture and influence radii, but do not model asymmetric or spatially varying
-PSFs, detector pixels, diffraction or scattered light, or wavelength-dependent
-bandpass transformations.
+PSFs, detector pixels, diffraction or scattered light. A versioned empirical
+colour-polynomial profile can estimate a mission-band magnitude, but PHOTO-CAT
+does not perform full spectral-energy-distribution or passband integration.
 
 ## Output JSON
 
@@ -76,6 +77,8 @@ Each target result includes:
 - selected-contaminant flux fraction
 - all-neighbour-in-radius flux fraction
 - optional per-band selected/all-neighbour flux-fraction dictionaries
+- optional transformed mission-band metrics, target/contaminant magnitudes,
+  and per-target validity status
 - weighted inside-aperture, outside-aperture, and total flux fractions
 - outside-aperture neighbour counts and selected-source records
 - number of neighbours inside the circular radius
@@ -86,7 +89,8 @@ Each target result includes:
 For reproducibility, each query also writes a sidecar metadata JSON file under
 `INDEX_DIR/output/metadata/`. The sidecar records the PHOTO-CAT version, selected
 configuration values, target count, index manifest, catalogue SHA-256 from the
-index build, and the model-scope notes above. The target-result JSON remains a
+index build, optional bandpass-profile checksum, and the model-scope notes
+above. The target-result JSON remains a
 plain list of target entries for compatibility with existing scripts.
 
 By default, target IDs that are invalid or absent from the index are skipped with

@@ -30,3 +30,11 @@ Archive together:
 - query result JSON files;
 - query metadata sidecars under `output/metadata/`;
 - generated summaries, SVG plots, and reports.
+
+`bandpass_transform_example.yaml` documents the supported empirical
+catalogue-to-mission transformation schema. Its coefficients are deliberately
+zero placeholders and are not a Mauve or other mission calibration. Before
+using such a profile, store every required input band through
+`build_neighbors_index.io.magnitude_columns`, replace the coefficients and
+validity limits with cited calibration values, and retain the generated profile
+checksum in the query metadata.

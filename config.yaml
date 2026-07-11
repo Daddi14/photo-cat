@@ -45,6 +45,8 @@ query_contamination_from_index:
     include_missing_targets: false
     contamination_bands:
     - gaia_g
+    # Optional empirical colour transformation into a named mission band.
+    bandpass_transform_file:
     contamination_model:
       # top_hat preserves the historical catalogue/aperture flux estimate.
       # Opt-in alternatives: gaussian_psf, gaussian_aperture, or radial_weight.

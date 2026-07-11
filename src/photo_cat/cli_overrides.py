@@ -59,6 +59,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "delta_mag": 5.0,
             "include_missing_targets": False,
             "contamination_bands": ["gaia_g"],
+            "bandpass_transform_file": None,
             "contamination_model": {
                 "mode": "top_hat",
                 "gaussian_fwhm_arcsec": None,
@@ -97,6 +98,7 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "delta_mag": ("query_contamination_from_index", "settings", "delta_mag"),
     "include_missing_targets": ("query_contamination_from_index", "settings", "include_missing_targets"),
     "contamination_bands": ("query_contamination_from_index", "settings", "contamination_bands"),
+    "bandpass_transform_file": ("query_contamination_from_index", "settings", "bandpass_transform_file"),
     "contamination_model_mode": ("query_contamination_from_index", "settings", "contamination_model", "mode"),
     "gaussian_fwhm_arcsec": ("query_contamination_from_index", "settings", "contamination_model", "gaussian_fwhm_arcsec"),
     "radial_weight_file": ("query_contamination_from_index", "settings", "contamination_model", "radial_weight_file"),
@@ -112,6 +114,7 @@ PATH_OVERRIDE_NAMES = {
     "index_dir",
     "targets_input",
     "radial_weight_file",
+    "bandpass_transform_file",
 }
 
 

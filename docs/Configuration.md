@@ -85,6 +85,33 @@ The radial weight CSV must contain `sep_arcsec` and `weight` columns. These
 models are still catalogue-level screening approximations unless the weights
 come from an instrument-specific PSF/aperture calibration.
 
+### Empirical mission-band transformations
+
+An optional versioned YAML profile can derive one named mission magnitude from
+stored catalogue bands:
+
+```yaml
+query_contamination_from_index:
+  settings:
+    bandpass_transform_file: examples/paper/bandpass_transform_example.yaml
+```
+
+The profile defines `output_band`, `base_band`, two `color_bands`, polynomial
+`coefficients`, calibrated colour/magnitude limits, an `out_of_range` policy,
+and a calibration reference. The convention is:
+
+```text
+m_output = m_base + c0 + c1*colour + c2*colour^2 + ...
+colour = m_color_band_1 - m_color_band_2
+```
+
+The required input bands must have been stored with `magnitude_columns` during
+the index build. `out_of_range: null` excludes uncalibrated values;
+`out_of_range: extrapolate` retains them but marks each affected target as
+`extrapolated`. The profile and its SHA-256 checksum are copied into query
+metadata. This is an empirical colour transformation, not passband integration
+over a spectral energy distribution.
+
 ## Save + run
 
 `Save + run` writes the current GUI settings to `config.yaml`, then starts the pipeline in a separate console.

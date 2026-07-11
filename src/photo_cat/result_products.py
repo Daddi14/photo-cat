@@ -59,6 +59,15 @@ def _int_number(value: Any, default: int = 0) -> int:
         return default
 
 
+def _optional_number(value: Any) -> float | None:
+    """Return a finite float or None without converting missing science values to zero."""
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
 def _median(values: list[float]) -> float:
     return float(statistics.median(values)) if values else 0.0
 
@@ -110,6 +119,11 @@ def summarize_results(rows: list[dict[str, Any]], *, source_path: str | Path | N
     all_neighbor_fluxes = [_all_neighbor_flux(row) for row in rows]
     outside_fluxes = [_number(row.get("flux_fraction_outside_aperture", 0.0)) for row in rows]
     total_weighted_fluxes = [_number(row.get("flux_fraction_total_weighted", _all_neighbor_flux(row))) for row in rows]
+    transformed_fluxes = [
+        value
+        for row in rows
+        if (value := _optional_number(row.get("flux_fraction_total_weighted_transformed"))) is not None
+    ]
     contaminant_counts = [_int_number(row.get("num_contaminants", row.get("num_contaminants_selected", 0))) for row in rows]
     neighbor_counts = [_int_number(row.get("num_neighbors_in_radius", count)) for row, count in zip(rows, contaminant_counts)]
     outside_neighbor_counts = [_int_number(row.get("num_neighbors_outside_aperture", 0)) for row in rows]
@@ -146,6 +160,12 @@ def summarize_results(rows: list[dict[str, Any]], *, source_path: str | Path | N
             "median": round(_median(total_weighted_fluxes), 6),
             "max": round(max(total_weighted_fluxes), 6) if total_weighted_fluxes else 0.0,
         },
+        "transformed_total_weighted_flux_fraction_percent": {
+            "count": len(transformed_fluxes),
+            "mean": round(_mean(transformed_fluxes), 6) if transformed_fluxes else None,
+            "median": round(_median(transformed_fluxes), 6) if transformed_fluxes else None,
+            "max": round(max(transformed_fluxes), 6) if transformed_fluxes else None,
+        },
         "contaminants_per_target": {
             "mean": round(_mean([float(value) for value in contaminant_counts]), 6),
             "median": round(_median([float(value) for value in contaminant_counts]), 6),
@@ -167,9 +187,9 @@ def summary_text(summary: dict[str, Any]) -> str:
     all_neighbors = summary["all_neighbor_flux_fraction_percent"]
     outside = summary["outside_aperture_flux_fraction_percent"]
     total_weighted = summary["total_weighted_flux_fraction_percent"]
+    transformed = summary["transformed_total_weighted_flux_fraction_percent"]
     counts = summary["contaminants_per_target"]
-    return "\n".join(
-        [
+    lines = [
             "PHOTO-CAT result summary",
             f"Targets: {summary['target_count']}",
             f"With selected contaminants: {summary['targets_with_contaminants']}",
@@ -183,7 +203,12 @@ def summary_text(summary: dict[str, Any]) -> str:
             f"Total weighted flux % mean/median/max: {total_weighted['mean']}/{total_weighted['median']}/{total_weighted['max']}",
             f"Contaminants per target mean/median/max: {counts['mean']}/{counts['median']}/{counts['max']}",
         ]
-    )
+    if (transformed["count"] > 0):
+        lines.append(
+            "Transformed total weighted flux % mean/median/max: "
+            f"{transformed['mean']}/{transformed['median']}/{transformed['max']}"
+        )
+    return "\n".join(lines)
 
 
 def write_summary(summary: dict[str, Any], output_path: str | Path | None, output_format: str) -> str:
@@ -236,6 +261,10 @@ def flatten_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "total_weighted_flux_mean": summary["total_weighted_flux_fraction_percent"]["mean"],
         "total_weighted_flux_median": summary["total_weighted_flux_fraction_percent"]["median"],
         "total_weighted_flux_max": summary["total_weighted_flux_fraction_percent"]["max"],
+        "transformed_total_weighted_flux_count": summary["transformed_total_weighted_flux_fraction_percent"]["count"],
+        "transformed_total_weighted_flux_mean": summary["transformed_total_weighted_flux_fraction_percent"]["mean"],
+        "transformed_total_weighted_flux_median": summary["transformed_total_weighted_flux_fraction_percent"]["median"],
+        "transformed_total_weighted_flux_max": summary["transformed_total_weighted_flux_fraction_percent"]["max"],
         "contaminants_per_target_mean": summary["contaminants_per_target"]["mean"],
         "contaminants_per_target_median": summary["contaminants_per_target"]["median"],
         "contaminants_per_target_max": summary["contaminants_per_target"]["max"],

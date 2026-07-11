@@ -26,7 +26,8 @@ def test_cli_run_accepts_all_override_groups(tmp_path: Path, monkeypatch) -> Non
         "--calculate-separations", "--max-radius-arcsec", "180", "--chunk-size", "500",
         "--buffer-flush-interval", "25", "--index-dir", "output/run", "--no-targets-input",
         "--targets", "1001,HD 216608A", "--target-source-id-column", "id", "--field-of-view-arcsec", "60",
-        "--delta-mag", "4", "--run-build", "--no-run-query", "--no-replace-running-pipeline",
+        "--delta-mag", "4", "--bandpass-transform-file", "profiles/mission.yaml",
+        "--run-build", "--no-run-query", "--no-replace-running-pipeline",
     ])
 
     overrides = collect_overrides(args)
@@ -49,6 +50,7 @@ def test_cli_run_accepts_all_override_groups(tmp_path: Path, monkeypatch) -> Non
     assert overrides["target_source_id_column"] == "id"
     assert overrides["field_of_view_arcsec"] == 60.0
     assert overrides["delta_mag"] == 4.0
+    assert overrides["bandpass_transform_file"] == str((tmp_path / "profiles" / "mission.yaml").resolve())
     assert overrides["run_build"] is True
     assert overrides["run_query"] is False
     assert overrides["replace_running_pipeline"] is False

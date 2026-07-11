@@ -82,6 +82,11 @@ Each target result preserves the documented fields for:
 - contaminant records including source ID, coordinates, magnitude, and separation;
 - separately identified selected sources outside the aperture when an influence
   radius is configured;
+- additive per-band target/contaminant magnitudes and transformed-band flux
+  dictionaries when an empirical bandpass profile is configured;
+- `bandpass_transform_status`, `bandpass_transform_profile`, and
+  `bandpass_transformed_band` provenance fields;
+- scalar `*_transformed` aliases suitable for screening and validation tools;
 - unresolved target rows when explicitly requested, with `status` set to
   `missing_from_index` or `invalid_target_id`.
 
