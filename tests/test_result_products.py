@@ -13,7 +13,7 @@ from photo_cat import cli
 from photo_cat import benchmark as benchmark_module
 from photo_cat import build_neighbors_index, query_contamination_from_index
 from photo_cat import reproducible_products
-from photo_cat.reference_validation import validate_against_reference
+from photo_cat.reference_validation import validate_against_reference, write_validation
 from photo_cat.result_products import (
     build_report,
     build_svg_plot,
@@ -22,7 +22,7 @@ from photo_cat.result_products import (
     write_export,
     write_matplotlib_plot,
 )
-from photo_cat.result_screening import screen_results
+from photo_cat.result_screening import screen_results, write_screening
 
 
 def write_result_json(tmp_path: Path) -> Path:
@@ -117,6 +117,41 @@ def test_cli_screen_writes_github_friendly_markdown(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_screening_covers_review_unresolved_and_outside_flux_reasons(tmp_path: Path) -> None:
+    """Every screening state and outside-aperture warning should remain explicit."""
+    rows = [
+        {"source_id": "review", "flux_fraction_total_weighted": 10.0, "flux_fraction_outside_aperture": 2.5},
+        {"source_id": "missing", "flux_fraction_total_weighted": None},
+    ]
+    payload = screen_results(rows, accept_max_percent=5.0, review_max_percent=20.0, source_path=tmp_path / "result.json")
+
+    assert payload["summary"] == {"accept": 0, "review": 1, "reject": 0, "unresolved": 1}
+    assert payload["decisions"][0]["decision"] == "review"
+    assert "outside-aperture weighted flux" in payload["decisions"][0]["decision_reasons"][1]
+    assert payload["decisions"][1]["risk_score_percent"] is None
+    assert payload["source_result_json"].endswith("result.json")
+
+
+@pytest.mark.unit
+def test_screening_validates_thresholds_and_writes_json_and_csv(tmp_path: Path) -> None:
+    """Threshold mistakes should fail, while both machine-readable formats remain stable."""
+    with pytest.raises(ValueError, match="finite"):
+        screen_results([], accept_max_percent=float("nan"))
+    with pytest.raises(ValueError, match="Require"):
+        screen_results([], accept_max_percent=10.0, review_max_percent=5.0)
+
+    payload = screen_results([{"source_id": "1", "flux_fraction_total_weighted": 1.0}])
+    json_path = tmp_path / "screening.json"
+    csv_path = tmp_path / "screening.csv"
+    assert write_screening(payload, json_path, "json") == str(json_path)
+    assert write_screening(payload, csv_path, "csv") == str(csv_path)
+    assert json.loads(json_path.read_text(encoding="utf-8"))["summary"]["accept"] == 1
+    assert "decision_reasons" in csv_path.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="format"):
+        write_screening(payload, tmp_path / "bad.txt", "text")
+
+
+@pytest.mark.unit
 def test_reference_validation_reports_bias_and_error_metrics(tmp_path: Path) -> None:
     """Reference comparisons should quantify agreement instead of relying on visual inspection."""
     rows = load_result_rows(write_result_json(tmp_path))
@@ -147,6 +182,31 @@ def test_cli_validate_results_writes_statistics_and_matches(tmp_path: Path) -> N
     ]) == 0
     assert json.loads(output_path.read_text(encoding="utf-8"))["statistics"]["matched_targets"] == 1
     assert "residual_percent" in matches_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_reference_validation_handles_bad_rows_empty_matches_and_invalid_inputs(tmp_path: Path) -> None:
+    """Malformed measurements must be excluded without producing misleading statistics."""
+    missing_column = tmp_path / "missing.csv"
+    missing_column.write_text("source_id,wrong\n1,2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="missing required columns"):
+        validate_against_reference([], missing_column)
+
+    reference_path = tmp_path / "reference.csv"
+    reference_path.write_text("source_id,contamination_percent\n1,bad\n2,nan\n3,4\n", encoding="utf-8")
+    payload, matched = validate_against_reference(
+        [{"source_id": "3", "flux_fraction_total_weighted": "bad"}, {"source_id": "4", "flux_fraction_total_weighted": 2}],
+        reference_path,
+        threshold_percent=5.0,
+    )
+    assert matched == []
+    assert payload["statistics"]["bias_percent"] is None
+    assert payload["statistics"]["threshold_accuracy"] is None
+    with pytest.raises(ValueError, match="non-negative"):
+        validate_against_reference([], reference_path, threshold_percent=-1.0)
+
+    output_path = tmp_path / "validation.json"
+    assert write_validation(payload, output_path, matched) == (str(output_path), None)
 
 
 @pytest.mark.regression
@@ -325,6 +385,36 @@ def test_benchmark_table_renders_paper_ready_markdown(tmp_path: Path) -> None:
     rendered = table_path.read_text(encoding="utf-8")
     assert "| benchmark | photo cat version | stage |" in rendered
     assert "| benchmark.json | 2.0.0 | query |" in rendered
+
+
+@pytest.mark.unit
+def test_benchmark_table_supports_csv_empty_tables_and_bad_json(tmp_path: Path) -> None:
+    """Table serialization and malformed benchmark input should have deterministic behavior."""
+    benchmark_path = tmp_path / "benchmark.json"
+    benchmark_path.write_text(json.dumps({
+        "photo_cat_version": "2.0.0",
+        "platform": {},
+        "workload": {},
+        "stages": [{"stage": "query", "status": 0, "duration_seconds": 1, "python_tracemalloc_peak_bytes": 0}],
+    }), encoding="utf-8")
+    rows = benchmark_module.benchmark_table_rows([benchmark_path])
+    assert rows[0]["peak_rss_mib"] is None
+    assert rows[0]["hardware"] == ""
+
+    csv_path = tmp_path / "benchmark.csv"
+    assert benchmark_module.write_benchmark_table(rows, csv_path, "csv") == str(csv_path)
+    assert "duration_seconds" in csv_path.read_text(encoding="utf-8")
+
+    empty_path = tmp_path / "empty.md"
+    benchmark_module.write_benchmark_table([], empty_path, "markdown")
+    assert "benchmark | stage | duration seconds" in empty_path.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="format"):
+        benchmark_module.write_benchmark_table([], tmp_path / "bad.txt", "html")
+
+    bad_json = tmp_path / "bad.json"
+    bad_json.write_text("not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="Could not read benchmark JSON"):
+        benchmark_module.benchmark_table_rows([bad_json])
 
 
 @pytest.mark.regression
