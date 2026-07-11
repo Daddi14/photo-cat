@@ -558,11 +558,38 @@ class ConfigGui(tk.Tk):
         content = ttk.Frame(canvas, padding=padding, style=frame_style)
         window_id = canvas.create_window((0, 0), window=content, anchor="nw")
 
+        # Coalesce the two expensive resize reactions with after_idle so a burst of
+        # Configure events (dragging/maximizing) collapses into a single reflow once
+        # the geometry settles, instead of reflowing on every intermediate pixel.
+        state = {"scroll_id": None, "width_id": None, "applied_width": -1, "target_width": -1}
+
+        def apply_scroll_region():
+            state["scroll_id"] = None
+            try:
+                canvas.configure(scrollregion=canvas.bbox("all"))
+            except tk.TclError:
+                pass
+
         def update_scroll_region(event=None):
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            if (state["scroll_id"] is None):
+                state["scroll_id"] = canvas.after_idle(apply_scroll_region)
+
+        def apply_content_width():
+            state["width_id"] = None
+            width = state["target_width"]
+            if (width != state["applied_width"]):
+                state["applied_width"] = width
+                try:
+                    canvas.itemconfigure(window_id, width=width)
+                except tk.TclError:
+                    pass
 
         def resize_content(event):
-            canvas.itemconfigure(window_id, width=event.width)
+            # Reflowing the embedded window (wrapped labels, grid geometry) is the costly
+            # step, so defer it to idle and only when the width truly changed.
+            state["target_width"] = event.width
+            if (state["width_id"] is None):
+                state["width_id"] = canvas.after_idle(apply_content_width)
 
         content.bind("<Configure>", update_scroll_region)
         canvas.bind("<Configure>", resize_content)
@@ -613,6 +640,10 @@ class ConfigGui(tk.Tk):
 
         outer, content = self.create_scrollable_frame(parent)
         outer.grid(row=0, column=0, sticky="nsew")
+        # Start hidden: only the active section stays mapped, so inactive panels do
+        # not receive resize/Configure events and cannot reflow while the window is
+        # dragged or maximized. This is the main fix for resize/fullscreen lag.
+        outer.grid_remove()
         content.columnconfigure(1, weight=1)
         self.section_frames[key] = outer
         return content
@@ -622,7 +653,12 @@ class ConfigGui(tk.Tk):
         if (frame is None):
             return
 
-        frame.tkraise()
+        if (self.current_section is not None and self.current_section != key):
+            previous = self.section_frames.get(self.current_section)
+            if (previous is not None):
+                previous.grid_remove()
+
+        frame.grid()
         self.current_section = key
 
         for section_key, button in self.section_buttons.items():
