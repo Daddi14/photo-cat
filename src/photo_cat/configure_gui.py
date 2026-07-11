@@ -2,10 +2,13 @@
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
 """
-Small beginner-friendly GUI for editing config.yaml.
+Graphical configurator and command centre for PHOTO-CAT.
 
-This script is intentionally simple and uses tkinter from the Python standard
-library. Runtime dependencies are installed from pyproject.toml into the local .venv.
+This GUI edits config.yaml for the build/query pipeline and also exposes every
+public ``photo-cat`` subcommand (summarize, plot, export, screen, report,
+validate, provenance, merge, benchmark, reproduce, doctor, ...) as an intuitive
+form. It uses tkinter from the Python standard library. Runtime dependencies are
+installed from pyproject.toml into the local .venv.
 """
 
 import csv
@@ -15,6 +18,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 import tkinter as tk
 from pathlib import Path
@@ -27,6 +31,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 SRC_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = SRC_DIR.parent
 CONFIG_PATH = Path(os.environ.get("PHOTO_CAT_CONFIG", str(PROJECT_DIR / "config.yaml"))).resolve()
+ASSETS_DIR = PROJECT_DIR / "assets"
 PROJECT_DISPLAY_NAME = "PHOTO-CAT - Photometric Contamination Analyzer Tool"
 PROJECT_SHORT_NAME = "PHOTO-CAT"
 
@@ -89,7 +94,19 @@ DEFAULT_CONFIG = {
 }
 
 
-HELP_TEXT = """Basic usage:
+CONTAMINATION_MODES = ["top_hat", "radial_weight", "gaussian_psf", "gaussian_aperture"]
+PLOT_KINDS = [
+    "contaminant-counts",
+    "flux",
+    "separations",
+    "separations-normalized",
+    "flux-vs-separation",
+    "contamination-vs-magnitude",
+    "sky-map",
+]
+
+
+HELP_TEXT = """Basic pipeline usage:
 
 1. Select your catalog CSV.
 2. The GUI automatically sets:
@@ -104,12 +121,15 @@ Targets CSV: source_id
 
 If your catalog uses different names, change the column fields in the GUI to match your CSV header exactly.
 Column names are case-sensitive: ra is different from RA, and phot_g_mean_mag is different from PHOT_G_MEAN_MAG.
-For example, if your RA column is named RA_ICRS instead of ra, set the RA column field to RA_ICRS.
 
 Targets:
 - Easiest mode: leave Targets CSV equal to the catalog CSV.
 - CSV mode: select a different CSV containing the configured target source_id column.
 - Manual mode: empty the Targets CSV field and write source_ids in the manual list.
+
+Result and catalogue tools (left sidebar, "Results", "Catalogue", "Benchmark", "Diagnostics"):
+Each panel maps directly to a photo-cat subcommand. Fill the fields and click Run.
+The command output is streamed into the "Tool output" console at the bottom.
 
 Tip for beginners:
 Use the default example files first. They are already configured and should run immediately.
@@ -122,13 +142,14 @@ class ConfigGui(tk.Tk):
 
         self.title(f"{PROJECT_DISPLAY_NAME} - Configurator")
         self.resizable(True, True)
-        self.minsize(900, 620)
+        self.minsize(1040, 660)
         self.dark_mode = self.detect_dark_mode()
         self.colors = self.get_theme_colors()
         self.configure(bg=self.colors["window_bg"])
         self.create_styles()
         self.config_data = self.load_config()
 
+        # Pipeline variables.
         self.input_catalog_var = tk.StringVar()
         self.catalog_source_id_column_var = tk.StringVar()
         self.catalog_ra_column_var = tk.StringVar()
@@ -143,6 +164,10 @@ class ConfigGui(tk.Tk):
         self.influence_radius_var = tk.StringVar()
         self.bandpass_transform_file_var = tk.StringVar()
         self.delta_mag_var = tk.StringVar()
+        self.contamination_bands_var = tk.StringVar()
+        self.contamination_mode_var = tk.StringVar(value="top_hat")
+        self.gaussian_fwhm_var = tk.StringVar()
+        self.radial_weight_file_var = tk.StringVar()
         self.include_missing_targets_var = tk.BooleanVar()
         self.chunk_size_var = tk.StringVar()
         self.buffer_flush_var = tk.StringVar()
@@ -153,23 +178,39 @@ class ConfigGui(tk.Tk):
         self.run_build_var = tk.BooleanVar()
         self.run_query_var = tk.BooleanVar()
         self.replace_running_pipeline_var = tk.BooleanVar(value=True)
+
         self.pipeline_processes = []
         self.pipeline_sessions = []
         self.targets_text = None
+        self.magnitude_columns_text = None
         self.catalog_entry = None
         self._applying_catalog_defaults = False
         self._catalog_auto_update_after_id = None
+
+        # Navigation / theming registries.
         self.section_buttons = {}
         self.section_frames = {}
         self.current_section = None
+        self._canvases = []
+        self._text_widgets = []
+        self._recolor_hooks = []
+        self.logo_label = None
+        self.logo_images = {}
+        self.theme_button = None
+        self.output_text = None
+        self.model_dependent_entries = {}
 
         self.create_widgets()
         self.load_values_into_fields()
         self.install_catalog_path_auto_update()
         self.set_advanced_widgets_state()
+        self.update_model_field_state()
         self.protocol("WM_DELETE_WINDOW", self.on_window_close)
         self.center_window()
 
+    # ------------------------------------------------------------------
+    # Configuration loading
+    # ------------------------------------------------------------------
     def load_config(self) -> dict:
         if (not CONFIG_PATH.is_file()):
             return DEFAULT_CONFIG.copy()
@@ -197,6 +238,9 @@ class ConfigGui(tk.Tk):
 
         return result
 
+    # ------------------------------------------------------------------
+    # Theming
+    # ------------------------------------------------------------------
     def detect_dark_mode(self) -> bool:
         if (os.name == "nt"):
             try:
@@ -234,7 +278,9 @@ class ConfigGui(tk.Tk):
             return {
                 "window_bg": "#1f2023",
                 "panel_bg": "#25272b",
+                "sidebar_bg": "#191a1d",
                 "entry_bg": "#17181b",
+                "console_bg": "#101114",
                 "text": "#f2f2f2",
                 "muted": "#c2c6cf",
                 "warning": "#ffd166",
@@ -250,7 +296,9 @@ class ConfigGui(tk.Tk):
         return {
             "window_bg": "#f3f4f6",
             "panel_bg": "#ffffff",
+            "sidebar_bg": "#e9ebef",
             "entry_bg": "#ffffff",
+            "console_bg": "#0f1115",
             "text": "#111827",
             "muted": "#4b5563",
             "warning": "#9a5400",
@@ -280,12 +328,17 @@ class ConfigGui(tk.Tk):
             font=("Segoe UI", 10),
         )
         self.style.configure("TFrame", background=colors["window_bg"])
+        self.style.configure("Sidebar.TFrame", background=colors["sidebar_bg"])
+        self.style.configure("Header.TFrame", background=colors["window_bg"])
         self.style.configure("TLabelframe", background=colors["window_bg"], foreground=colors["text"], bordercolor=colors["border"])
         self.style.configure("TLabelframe.Label", background=colors["window_bg"], foreground=colors["text"], font=("Segoe UI", 10, "bold"))
         self.style.configure("TLabel", background=colors["window_bg"], foreground=colors["text"])
         self.style.configure("Muted.TLabel", background=colors["window_bg"], foreground=colors["muted"])
         self.style.configure("Warning.TLabel", background=colors["window_bg"], foreground=colors["warning"])
-        self.style.configure("Title.TLabel", background=colors["window_bg"], foreground=colors["text"], font=("Segoe UI", 13, "bold"))
+        self.style.configure("Title.TLabel", background=colors["window_bg"], foreground=colors["text"], font=("Segoe UI", 15, "bold"))
+        self.style.configure("Subtitle.TLabel", background=colors["window_bg"], foreground=colors["muted"], font=("Segoe UI", 10))
+        self.style.configure("SidebarHeader.TLabel", background=colors["sidebar_bg"], foreground=colors["muted"], font=("Segoe UI", 8, "bold"))
+        self.style.configure("PanelTitle.TLabel", background=colors["window_bg"], foreground=colors["text"], font=("Segoe UI", 13, "bold"))
         self.style.configure(
             "TEntry",
             fieldbackground=colors["entry_bg"],
@@ -298,6 +351,19 @@ class ConfigGui(tk.Tk):
         self.style.map(
             "TEntry",
             fieldbackground=[("disabled", colors["panel_bg"]), ("readonly", colors["entry_bg"]), ("!disabled", colors["entry_bg"])],
+            foreground=[("disabled", colors["muted"]), ("!disabled", colors["text"])],
+        )
+        self.style.configure(
+            "TCombobox",
+            fieldbackground=colors["entry_bg"],
+            background=colors["button_bg"],
+            foreground=colors["text"],
+            arrowcolor=colors["text"],
+            bordercolor=colors["border"],
+        )
+        self.style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", colors["entry_bg"]), ("disabled", colors["panel_bg"])],
             foreground=[("disabled", colors["muted"]), ("!disabled", colors["text"])],
         )
         self.style.configure("TCheckbutton", background=colors["window_bg"], foreground=colors["text"])
@@ -334,39 +400,13 @@ class ConfigGui(tk.Tk):
             foreground=[("active", "#ffffff"), ("pressed", "#ffffff")],
         )
         self.style.configure(
-            "Visible.TNotebook",
-            background=colors["window_bg"],
-            borderwidth=0,
-            tabmargins=(0, 3, 0, 0),
-        )
-        self.style.configure(
-            "Visible.TNotebook.Tab",
-            background=colors["tab_bg"],
-            foreground=colors["text"],
-            bordercolor=colors["border"],
-            lightcolor=colors["border"],
-            darkcolor=colors["border"],
-            padding=(13, 6),
-            font=("Segoe UI", 9, "bold"),
-        )
-        self.style.map(
-            "Visible.TNotebook.Tab",
-            background=[("selected", colors["panel_bg"]), ("active", colors["tab_active"]), ("!selected", colors["tab_bg"])],
-            foreground=[("selected", colors["text"]), ("active", colors["text"]), ("!selected", colors["muted"])],
-        )
-        self.style.configure(
-            "TabNote.TLabel",
-            background=colors["window_bg"],
-            foreground=colors["muted"],
-            font=("Segoe UI", 9),
-        )
-        self.style.configure(
             "Section.TButton",
-            background=colors["button_bg"],
+            background=colors["sidebar_bg"],
             foreground=colors["muted"],
-            bordercolor=colors["border"],
-            padding=(16, 7),
-            font=("Segoe UI", 10, "bold"),
+            bordercolor=colors["sidebar_bg"],
+            anchor="w",
+            padding=(12, 6),
+            font=("Segoe UI", 10),
         )
         self.style.map(
             "Section.TButton",
@@ -378,7 +418,8 @@ class ConfigGui(tk.Tk):
             background=colors["accent"],
             foreground="#ffffff",
             bordercolor=colors["accent_active"],
-            padding=(16, 7),
+            anchor="w",
+            padding=(12, 6),
             font=("Segoe UI", 10, "bold"),
         )
         self.style.map(
@@ -386,9 +427,121 @@ class ConfigGui(tk.Tk):
             background=[("active", colors["accent_active"]), ("pressed", colors["accent_active"])],
             foreground=[("active", "#ffffff"), ("pressed", "#ffffff")],
         )
+        for orient in ("Vertical", "Horizontal"):
+            self.style.configure(
+                f"{orient}.TScrollbar",
+                background=colors["button_bg"],
+                troughcolor=colors["window_bg"],
+                bordercolor=colors["border"],
+                arrowcolor=colors["muted"],
+                darkcolor=colors["button_bg"],
+                lightcolor=colors["button_bg"],
+                relief="flat",
+                gripcount=0,
+            )
+            self.style.map(
+                f"{orient}.TScrollbar",
+                background=[("active", colors["button_active"]), ("pressed", colors["accent"])],
+                arrowcolor=[("disabled", colors["border"]), ("!disabled", colors["muted"])],
+            )
 
-    def create_scrollable_tab(self, notebook) -> tuple[ttk.Frame, ttk.Frame]:
-        outer = ttk.Frame(notebook)
+    def load_logo_image(self, dark: bool) -> tk.PhotoImage | None:
+        # White logo on a dark background, black logo on a light background.
+        name = "photo-cat-logo-dark.png" if dark else "photo-cat-logo-light.png"
+        path = ASSETS_DIR / name
+        if (not path.is_file()):
+            return None
+
+        try:
+            image = tk.PhotoImage(file=str(path))
+        except Exception:
+            return None
+
+        target_height = 54
+        height = max(1, image.height())
+        factor = max(1, round(height / target_height))
+        if (factor > 1):
+            try:
+                image = image.subsample(factor, factor)
+            except Exception:
+                pass
+
+        return image
+
+    def set_theme(self, dark: bool) -> None:
+        self.dark_mode = dark
+        self.colors = self.get_theme_colors()
+        self.create_styles()
+        self.configure(bg=self.colors["window_bg"])
+
+        for canvas in self._canvases:
+            try:
+                canvas.configure(background=self.colors[getattr(canvas, "_photocat_bg_key", "window_bg")])
+            except Exception:
+                pass
+
+        for text_widget in self._text_widgets:
+            self.apply_text_colors(text_widget)
+
+        for hook in self._recolor_hooks:
+            try:
+                hook()
+            except Exception:
+                pass
+
+        self.update_logo_image()
+        if (self.theme_button is not None):
+            self.theme_button.configure(text=self.theme_button_label())
+
+        if (self.current_section is not None):
+            self.show_section(self.current_section)
+
+    def toggle_theme(self) -> None:
+        self.set_theme(not self.dark_mode)
+
+    def theme_button_label(self) -> str:
+        return "Switch to light mode" if self.dark_mode else "Switch to dark mode"
+
+    def apply_text_colors(self, text_widget: tk.Text) -> None:
+        is_console = getattr(text_widget, "_photocat_console", False)
+        background = self.colors["console_bg"] if is_console else self.colors["entry_bg"]
+        foreground = "#e6e6e6" if is_console else self.colors["text"]
+        try:
+            text_widget.configure(
+                bg=background,
+                fg=foreground,
+                insertbackground=foreground,
+                selectbackground=self.colors["accent"],
+                selectforeground="#ffffff",
+                highlightbackground=self.colors["border"],
+            )
+        except Exception:
+            pass
+
+    def update_logo_image(self) -> None:
+        if (self.logo_label is None):
+            return
+
+        image = self.load_logo_image(self.dark_mode)
+        if (image is None):
+            self.logo_label.configure(image="", text=PROJECT_SHORT_NAME, style="Title.TLabel")
+            self.logo_images["current"] = None
+            return
+
+        self.logo_images["current"] = image
+        self.logo_label.configure(image=image, text="")
+
+    # ------------------------------------------------------------------
+    # Scrollable panels + navigation
+    # ------------------------------------------------------------------
+    def create_scrollable_frame(
+        self,
+        parent,
+        background_key: str = "window_bg",
+        padding: int = 12,
+        frame_style: str = "TFrame",
+    ) -> tuple[ttk.Frame, ttk.Frame]:
+        outer = ttk.Frame(parent)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(0, weight=1)
 
@@ -396,9 +549,11 @@ class ConfigGui(tk.Tk):
             outer,
             borderwidth=0,
             highlightthickness=0,
-            background=self.colors["window_bg"],
+            background=self.colors[background_key],
         )
-        content = ttk.Frame(canvas, padding=10)
+        canvas._photocat_bg_key = background_key
+        self._canvases.append(canvas)
+        content = ttk.Frame(canvas, padding=padding, style=frame_style)
         window_id = canvas.create_window((0, 0), window=content, anchor="nw")
 
         def update_scroll_region(event=None):
@@ -410,6 +565,10 @@ class ConfigGui(tk.Tk):
         content.bind("<Configure>", update_scroll_region)
         canvas.bind("<Configure>", resize_content)
         canvas.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ttk.Scrollbar(outer, orient="vertical", style="Vertical.TScrollbar", command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        canvas.configure(yscrollcommand=scrollbar.set)
 
         def on_mousewheel(event):
             if (event.delta != 0):
@@ -436,22 +595,25 @@ class ConfigGui(tk.Tk):
 
         return outer, content
 
-    def create_section(self, key: str, label: str, parent: ttk.Frame, button_parent: ttk.Frame, column: int) -> ttk.Frame:
+    def add_sidebar_header(self, parent, text: str, row: int) -> None:
+        label = ttk.Label(parent, text=text.upper(), style="SidebarHeader.TLabel")
+        label.grid(row=row, column=0, sticky="w", padx=12, pady=(12, 2))
+
+    def add_section(self, key: str, label: str, parent: ttk.Frame, sidebar: ttk.Frame, row: int) -> ttk.Frame:
         button = ttk.Button(
-            button_parent,
+            sidebar,
             text=label,
             style="Section.TButton",
             command=lambda section_key=key: self.show_section(section_key),
         )
-        button.grid(row=0, column=column, sticky="ew", padx=(0, 8))
-        button_parent.columnconfigure(column, weight=0)
+        button.grid(row=row, column=0, sticky="ew", padx=6, pady=1)
         self.section_buttons[key] = button
 
-        frame = ttk.Frame(parent, padding=10)
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.columnconfigure(1, weight=1)
-        self.section_frames[key] = frame
-        return frame
+        outer, content = self.create_scrollable_frame(parent)
+        outer.grid(row=0, column=0, sticky="nsew")
+        content.columnconfigure(1, weight=1)
+        self.section_frames[key] = outer
+        return content
 
     def show_section(self, key: str) -> None:
         frame = self.section_frames.get(key)
@@ -465,138 +627,270 @@ class ConfigGui(tk.Tk):
             style = "SectionActive.TButton" if (section_key == key) else "Section.TButton"
             button.configure(style=style)
 
+    # ------------------------------------------------------------------
+    # Top-level layout
+    # ------------------------------------------------------------------
     def create_widgets(self) -> None:
-        self.geometry("1080x820")
+        self.geometry("1180x840")
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
         root = ttk.Frame(self, padding=12)
         root.grid(row=0, column=0, sticky="nsew")
         root.columnconfigure(0, weight=1)
-        root.rowconfigure(3, weight=1)
+        root.rowconfigure(1, weight=3)
+        root.rowconfigure(2, weight=1)
 
-        title = ttk.Label(
-            root,
-            text=PROJECT_DISPLAY_NAME,
-            style="Title.TLabel"
+        self.build_header(root)
+
+        body = ttk.Frame(root)
+        body.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+
+        sidebar_outer, sidebar = self.create_scrollable_frame(
+            body, background_key="sidebar_bg", padding=0, frame_style="Sidebar.TFrame"
         )
-        title.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        sidebar_outer.configure(width=208)
+        sidebar_outer.grid(row=0, column=0, sticky="ns", padx=(0, 10))
+        sidebar_outer.grid_propagate(False)
+        sidebar.columnconfigure(0, weight=1)
 
-        intro = ttk.Label(
-            root,
-            text="Choose the catalog, check the auto-filled paths, then click Save + run.",
-            style="Muted.TLabel"
-        )
-        intro.grid(row=1, column=0, sticky="w", pady=(0, 8))
-
-        section_bar = ttk.Frame(root)
-        section_bar.grid(row=2, column=0, sticky="w", pady=(0, 8))
-
-        section_body = ttk.Frame(root, padding=0)
-        section_body.grid(row=3, column=0, sticky="nsew")
+        section_body = ttk.Frame(body)
+        section_body.grid(row=0, column=1, sticky="nsew")
         section_body.columnconfigure(0, weight=1)
         section_body.rowconfigure(0, weight=1)
 
-        files_tab = self.create_section("files", "Files and columns", section_body, section_bar, 0)
-        settings_tab = self.create_section("settings", "Search settings", section_body, section_bar, 1)
-        options_tab = self.create_section("options", "Run options", section_body, section_bar, 2)
+        self.build_sidebar_and_sections(sidebar, section_body)
+        self.build_output_console(root)
+        self.build_action_bar(root)
 
-        for tab in (files_tab, settings_tab, options_tab):
-            tab.columnconfigure(1, weight=1)
+        self.show_section("files")
 
-        self.catalog_entry = self.add_file_row(files_tab, 0, "Catalog CSV", self.input_catalog_var, self.browse_catalog)
+    def build_header(self, root) -> None:
+        header = ttk.Frame(root, style="Header.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(1, weight=1)
+
+        self.logo_label = ttk.Label(header, style="Title.TLabel")
+        self.logo_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 14))
+        self.update_logo_image()
+
+        title = ttk.Label(header, text=PROJECT_SHORT_NAME, style="Title.TLabel")
+        title.grid(row=0, column=1, sticky="sw")
+
+        subtitle = ttk.Label(
+            header,
+            text="Photometric Contamination Analyzer Tool - configure the pipeline and run every command.",
+            style="Subtitle.TLabel",
+        )
+        subtitle.grid(row=1, column=1, sticky="nw")
+
+        self.theme_button = ttk.Button(header, text=self.theme_button_label(), command=self.toggle_theme)
+        self.theme_button.grid(row=0, column=2, rowspan=2, sticky="e")
+
+    def build_sidebar_and_sections(self, sidebar, section_body) -> None:
+        row = 0
+        self.add_sidebar_header(sidebar, "Configure pipeline", row)
+        row += 1
+        for key, label, builder in (
+            ("files", "Files & columns", self.build_files_panel),
+            ("settings", "Search settings", self.build_settings_panel),
+            ("options", "Run options", self.build_options_panel),
+        ):
+            content = self.add_section(key, label, section_body, sidebar, row)
+            content.columnconfigure(1, weight=1)
+            builder(content)
+            row += 1
+
+        self.add_sidebar_header(sidebar, "Results", row)
+        row += 1
+        for key, label, spec_builder in (
+            ("summarize", "Summarize", self.spec_summarize),
+            ("screen", "Screen / rank", self.spec_screen),
+            ("plot", "Plot (SVG)", self.spec_plot),
+            ("publication", "Publication plots", self.spec_publication_plots),
+            ("report", "Report", self.spec_report),
+            ("export", "Export", self.spec_export),
+            ("validate", "Validate results", self.spec_validate),
+        ):
+            content = self.add_section(key, label, section_body, sidebar, row)
+            self.build_tool_panel(content, spec_builder())
+            row += 1
+
+        self.add_sidebar_header(sidebar, "Catalogue", row)
+        row += 1
+        for key, label, spec_builder in (
+            ("provenance", "Provenance", self.spec_provenance),
+            ("merge", "Merge bright stars", self.spec_merge_bright_stars),
+        ):
+            content = self.add_section(key, label, section_body, sidebar, row)
+            self.build_tool_panel(content, spec_builder())
+            row += 1
+
+        self.add_sidebar_header(sidebar, "Benchmark", row)
+        row += 1
+        for key, label, spec_builder in (
+            ("benchmark", "Benchmark", self.spec_benchmark),
+            ("benchmark-table", "Benchmark table", self.spec_benchmark_table),
+            ("reproduce", "Reproduce paper", self.spec_reproduce_paper),
+        ):
+            content = self.add_section(key, label, section_body, sidebar, row)
+            self.build_tool_panel(content, spec_builder())
+            row += 1
+
+        self.add_sidebar_header(sidebar, "Diagnostics", row)
+        row += 1
+        for key, label, spec_builder in (
+            ("doctor", "Doctor", self.spec_doctor),
+        ):
+            content = self.add_section(key, label, section_body, sidebar, row)
+            self.build_tool_panel(content, spec_builder())
+            row += 1
+
+    def build_output_console(self, root) -> None:
+        console = ttk.LabelFrame(root, text="Tool output", padding=(8, 6))
+        console.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
+        console.columnconfigure(0, weight=1)
+        console.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(console)
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Label(
+            header,
+            text="Output from Results / Catalogue / Benchmark / Diagnostics commands appears here.",
+            style="Muted.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Button(header, text="Clear", command=self.clear_output).grid(row=0, column=1, sticky="e")
+
+        self.output_text = tk.Text(console, height=8, wrap="word", relief="solid", borderwidth=1)
+        self.output_text._photocat_console = True
+        self.output_text.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
+        self._text_widgets.append(self.output_text)
+        self.apply_text_colors(self.output_text)
+
+        scrollbar = ttk.Scrollbar(console, orient="vertical", style="Vertical.TScrollbar", command=self.output_text.yview)
+        scrollbar.grid(row=1, column=1, sticky="ns", pady=(6, 0))
+        self.output_text.configure(yscrollcommand=scrollbar.set, state="disabled")
+
+    def build_action_bar(self, root) -> None:
+        buttons = ttk.Frame(root)
+        buttons.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        buttons.columnconfigure(4, weight=1)
+
+        ttk.Button(buttons, text="Help", command=self.show_help).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(buttons, text="Load example config", command=self.load_example_config).grid(row=0, column=1, padx=(0, 8))
+        ttk.Button(buttons, text="Save config.yaml", command=self.save_config).grid(row=0, column=2, padx=(0, 8))
+        ttk.Button(buttons, text="Save + run pipeline", command=self.save_and_run, style="Accent.TButton").grid(row=0, column=3)
+
+    # ------------------------------------------------------------------
+    # Pipeline panels
+    # ------------------------------------------------------------------
+    def build_files_panel(self, files_tab) -> None:
+        ttk.Label(files_tab, text="Files and columns", style="PanelTitle.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
+
+        self.catalog_entry = self.add_file_row(files_tab, 1, "Catalog CSV", self.input_catalog_var, self.browse_catalog)
         self.catalog_entry.bind("<FocusOut>", self.apply_catalog_defaults_from_event)
         self.catalog_entry.bind("<Return>", self.apply_catalog_defaults_from_event)
 
         catalog_columns = ttk.LabelFrame(files_tab, text="Catalog column names", padding=8)
-        catalog_columns.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        catalog_columns.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         catalog_columns.columnconfigure(1, weight=1)
         catalog_columns.columnconfigure(3, weight=1)
 
-        catalog_columns_note = ttk.Label(
+        ttk.Label(
             catalog_columns,
             text=(
                 "Default Gaia-like names are pre-filled. Change them only if your CSV headers are different. "
                 "The names must match the catalog CSV exactly, including uppercase/lowercase."
             ),
             style="Muted.TLabel",
-            wraplength=900,
-            justify="left"
-        )
-        catalog_columns_note.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 5))
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 5))
 
         self.add_entry_row(catalog_columns, 1, "Catalog Source ID column", self.catalog_source_id_column_var, column_offset=0)
         self.add_entry_row(catalog_columns, 1, "Catalog RA column", self.catalog_ra_column_var, column_offset=2)
         self.add_entry_row(catalog_columns, 2, "Catalog Dec column", self.catalog_dec_column_var, column_offset=0)
         self.add_entry_row(catalog_columns, 2, "Catalog magnitude column", self.catalog_mag_column_var, column_offset=2)
 
-        self.add_file_row(files_tab, 2, "Targets CSV", self.targets_input_var, self.browse_targets)
+        magnitude_bands = ttk.LabelFrame(files_tab, text="Magnitude bands (optional extra bands)", padding=8)
+        magnitude_bands.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        magnitude_bands.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            magnitude_bands,
+            text=(
+                "One band=catalog_column per line, for example gaia_bp=phot_bp_mean_mag. "
+                "gaia_g is always mapped to the catalog magnitude column above. "
+                "Extra bands can then be requested in Search settings > Contamination bands."
+            ),
+            style="Muted.TLabel",
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+
+        self.magnitude_columns_text = self.make_text_widget(magnitude_bands, height=3)
+        self.magnitude_columns_text.grid(row=1, column=0, sticky="ew")
+
+        self.add_file_row(files_tab, 4, "Targets CSV", self.targets_input_var, self.browse_targets)
 
         target_columns = ttk.LabelFrame(files_tab, text="Targets column name", padding=8)
-        target_columns.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        target_columns.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         target_columns.columnconfigure(1, weight=1)
 
-        target_columns_note = ttk.Label(
+        ttk.Label(
             target_columns,
             text=(
                 "Default target column is source_id. Change it only if your targets CSV uses another header. "
                 "This is case-sensitive. Manual targets ignore this field."
             ),
             style="Muted.TLabel",
-            wraplength=900,
-            justify="left"
-        )
-        target_columns_note.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 5))
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 5))
 
         self.add_entry_row(target_columns, 1, "Targets Source ID column", self.targets_source_id_column_var)
 
-        self.add_folder_row(files_tab, 4, "Output/index folder", self.out_dir_var, self.browse_out_dir)
-        self.add_folder_row(files_tab, 5, "Query index folder", self.index_dir_var, self.browse_index_dir)
+        self.add_folder_row(files_tab, 6, "Output/index folder", self.out_dir_var, self.browse_out_dir)
+        self.add_folder_row(files_tab, 7, "Query index folder", self.index_dir_var, self.browse_index_dir)
 
         manual_targets = ttk.LabelFrame(files_tab, text="Manual targets", padding=8)
-        manual_targets.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        manual_targets.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         manual_targets.columnconfigure(0, weight=1)
 
-        manual_targets_label = ttk.Label(
+        ttk.Label(
             manual_targets,
             text=(
                 "Optional. Leave Targets CSV empty/null to use this source_id list instead. "
                 "Use one source_id per line, or separate them with commas."
             ),
             style="Muted.TLabel",
-            wraplength=900,
-            justify="left"
-        )
-        manual_targets_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 5))
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 5))
 
-        self.targets_text = tk.Text(
-            manual_targets,
-            width=88,
-            height=3,
-            wrap="none",
-            bg=self.colors["entry_bg"],
-            fg=self.colors["text"],
-            insertbackground=self.colors["text"],
-            selectbackground=self.colors["accent"],
-            selectforeground="#ffffff",
-            relief="solid",
-            borderwidth=1,
-        )
+        self.targets_text = self.make_text_widget(manual_targets, height=3)
         self.targets_text.grid(row=1, column=0, sticky="ew", padx=(0, 8))
 
-        ttk.Button(
-            manual_targets,
-            text="Use manual list",
-            command=self.use_manual_targets
-        ).grid(row=1, column=1, sticky="n")
+        ttk.Button(manual_targets, text="Use manual list", command=self.use_manual_targets).grid(row=1, column=1, sticky="n")
 
-        self.add_entry_row(settings_tab, 0, "Max build radius, arcsec", self.max_radius_var)
-        self.add_entry_row(settings_tab, 1, "Query aperture radius, arcsec", self.field_of_view_var)
-        self.add_entry_row(settings_tab, 2, "Outer influence radius, arcsec", self.influence_radius_var)
-        self.add_entry_row(settings_tab, 3, "Delta magnitude", self.delta_mag_var)
-        self.add_entry_row(settings_tab, 4, "Bandpass profile YAML (optional)", self.bandpass_transform_file_var)
+    def build_settings_panel(self, settings_tab) -> None:
+        ttk.Label(settings_tab, text="Search settings", style="PanelTitle.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
 
-        settings_note = ttk.Label(
+        self.add_entry_row(settings_tab, 1, "Max build radius, arcsec", self.max_radius_var)
+        self.add_entry_row(settings_tab, 2, "Query aperture radius, arcsec", self.field_of_view_var)
+        self.add_entry_row(settings_tab, 3, "Outer influence radius, arcsec", self.influence_radius_var)
+        self.add_entry_row(settings_tab, 4, "Delta magnitude", self.delta_mag_var)
+        self.add_entry_row(settings_tab, 5, "Contamination bands (comma-separated, or all)", self.contamination_bands_var)
+        self.add_file_row(settings_tab, 6, "Bandpass profile YAML (optional)", self.bandpass_transform_file_var, self.browse_bandpass_file)
+
+        ttk.Label(
             settings_tab,
             text=(
                 "The aperture radius defines the extraction/screening circle. The influence radius can be larger "
@@ -604,40 +898,73 @@ class ConfigGui(tk.Tk):
                 "Both must be equal to or smaller than the max build radius."
             ),
             style="Muted.TLabel",
-            wraplength=900,
-            justify="left"
+            wraplength=880,
+            justify="left",
+        ).grid(row=7, column=0, columnspan=3, sticky="w", pady=(8, 8))
+
+        model = ttk.LabelFrame(settings_tab, text="Contamination weighting model", padding=8)
+        model.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        model.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            model,
+            text=(
+                "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf and gaussian_aperture "
+                "need a Gaussian FWHM. radial_weight needs a CSV of sep_arcsec,weight."
+            ),
+            style="Muted.TLabel",
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+
+        ttk.Label(model, text="Model mode").grid(row=1, column=0, sticky="w", pady=4)
+        mode_combo = ttk.Combobox(
+            model,
+            textvariable=self.contamination_mode_var,
+            values=CONTAMINATION_MODES,
+            state="readonly",
+            width=22,
         )
-        settings_note.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 8))
+        mode_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=4)
+        mode_combo.bind("<<ComboboxSelected>>", lambda event: self.update_model_field_state())
+
+        fwhm_entry = self.add_entry_row(model, 2, "Gaussian FWHM, arcsec", self.gaussian_fwhm_var)
+        radial_entry = self.add_file_row(model, 3, "Radial weight CSV", self.radial_weight_file_var, self.browse_radial_weight_file)
+        self.model_dependent_entries = {"gaussian_fwhm": fwhm_entry, "radial_weight": radial_entry}
 
         advanced = ttk.LabelFrame(settings_tab, text="Advanced performance settings", padding=8)
-        advanced.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        advanced.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         advanced.columnconfigure(1, weight=1)
 
-        advanced_warning = ttk.Label(
+        ttk.Label(
             advanced,
             text=(
                 "Leave these locked unless you know what you are doing. Wrong values can make the tool "
                 "slower, use too much RAM, write too often to disk, or make long runs harder to resume safely."
             ),
             style="Warning.TLabel",
-            wraplength=900,
-            justify="left"
-        )
-        advanced_warning.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         ttk.Checkbutton(
             advanced,
             text="Enable advanced settings",
             variable=self.advanced_settings_var,
-            command=self.toggle_advanced_settings
+            command=self.toggle_advanced_settings,
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 6))
 
         chunk_size_entry = self.add_entry_row(advanced, 2, "Chunk size", self.chunk_size_var)
         buffer_flush_entry = self.add_entry_row(advanced, 3, "Buffer flush / checkpoint every N chunks", self.buffer_flush_var)
         self.advanced_entry_widgets = [chunk_size_entry, buffer_flush_entry]
 
+    def build_options_panel(self, options_tab) -> None:
+        ttk.Label(options_tab, text="Run options", style="PanelTitle.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
+
         checks = ttk.LabelFrame(options_tab, text="Options", padding=8)
-        checks.grid(row=0, column=0, columnspan=3, sticky="ew")
+        checks.grid(row=1, column=0, columnspan=3, sticky="ew")
 
         ttk.Checkbutton(checks, text="Use Dask for very large CSV files", variable=self.use_dask_var).grid(row=0, column=0, sticky="w", pady=2)
         ttk.Checkbutton(checks, text="Store neighbor separations on disk", variable=self.calculate_separations_var).grid(row=1, column=0, sticky="w", pady=2)
@@ -647,49 +974,46 @@ class ConfigGui(tk.Tk):
         ttk.Checkbutton(
             checks,
             text="Replace running pipeline when Save + run is clicked",
-            variable=self.replace_running_pipeline_var
-        ).grid(row=4, column=0, sticky="w", pady=(8, 2))
+            variable=self.replace_running_pipeline_var,
+        ).grid(row=5, column=0, sticky="w", pady=(8, 2))
 
-        replace_note = ttk.Label(
+        ttk.Label(
             checks,
             text=(
                 "Enabled: the previous pipeline window opened by this GUI is closed before a new run starts. "
                 "Disabled: each Save + run opens a separate pipeline window."
             ),
             style="Muted.TLabel",
-            wraplength=900,
-            justify="left"
-        )
-        replace_note.grid(row=5, column=0, sticky="w", pady=(0, 2))
+            wraplength=880,
+            justify="left",
+        ).grid(row=6, column=0, sticky="w", pady=(0, 2))
 
         help_box = ttk.LabelFrame(options_tab, text="Quick help", padding=8)
-        help_box.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        help_box.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(12, 0))
 
-        quick_help = ttk.Label(
+        ttk.Label(
             help_box,
             text=(
                 "Recommended workflow:\n"
-                "1. Select Catalog CSV in the first tab.\n"
+                "1. Select Catalog CSV in Files & columns.\n"
                 "2. Check that Targets CSV and output folders were auto-filled correctly.\n"
                 "3. Leave the Gaia-like column names unchanged unless your CSV uses different headers.\n"
-                "4. Click Save + run."
+                "4. Click Save + run pipeline.\n"
+                "5. Use the Results and Catalogue panels on the output JSON afterwards."
             ),
             style="Muted.TLabel",
-            wraplength=900,
-            justify="left"
-        )
-        quick_help.grid(row=0, column=0, sticky="w")
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w")
 
-        buttons = ttk.Frame(root)
-        buttons.grid(row=4, column=0, sticky="ew", pady=(12, 0))
-        buttons.columnconfigure(4, weight=1)
-
-        ttk.Button(buttons, text="Help", command=self.show_help).grid(row=0, column=0, padx=(0, 8))
-        ttk.Button(buttons, text="Load example config", command=self.load_example_config).grid(row=0, column=1, padx=(0, 8))
-        ttk.Button(buttons, text="Save config.yaml", command=self.save_config).grid(row=0, column=2, padx=(0, 8))
-        ttk.Button(buttons, text="Save + run", command=self.save_and_run, style="Accent.TButton").grid(row=0, column=3)
-
-        self.show_section("files")
+    # ------------------------------------------------------------------
+    # Row helpers
+    # ------------------------------------------------------------------
+    def make_text_widget(self, parent, height: int, wrap: str = "none") -> tk.Text:
+        text_widget = tk.Text(parent, height=height, wrap=wrap, relief="solid", borderwidth=1)
+        self._text_widgets.append(text_widget)
+        self.apply_text_colors(text_widget)
+        return text_widget
 
     def add_file_row(self, parent, row: int, label: str, variable: tk.StringVar, command):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
@@ -709,6 +1033,9 @@ class ConfigGui(tk.Tk):
         entry.grid(row=row, column=column_offset + 1, sticky="w", padx=(10, 18), pady=4)
         return entry
 
+    # ------------------------------------------------------------------
+    # Load config into fields
+    # ------------------------------------------------------------------
     def load_values_into_fields(self) -> None:
         build_io = self.config_data["build_neighbors_index"]["io"]
         build_settings = self.config_data["build_neighbors_index"]["settings"]
@@ -716,6 +1043,7 @@ class ConfigGui(tk.Tk):
         query_settings = self.config_data["query_contamination_from_index"]["settings"]
         execution = self.config_data["execution"]
         build_columns = self.get_catalog_columns_from_io(build_io)
+        model = query_settings.get("contamination_model") or {}
 
         self.input_catalog_var.set(str(build_io.get("input_catalog", "")))
         self.catalog_source_id_column_var.set(str(build_columns.get("source_id", "source_id")))
@@ -731,6 +1059,10 @@ class ConfigGui(tk.Tk):
         self.influence_radius_var.set(str(query_settings.get("influence_radius_arcsec", query_settings.get("field_of_view_arcsec", 47.0))))
         self.bandpass_transform_file_var.set(str(query_settings.get("bandpass_transform_file") or ""))
         self.delta_mag_var.set(str(query_settings.get("delta_mag", 5)))
+        self.contamination_bands_var.set(", ".join(query_settings.get("contamination_bands") or ["gaia_g"]))
+        self.contamination_mode_var.set(str(model.get("mode") or "top_hat"))
+        self.gaussian_fwhm_var.set("" if (model.get("gaussian_fwhm_arcsec") is None) else str(model.get("gaussian_fwhm_arcsec")))
+        self.radial_weight_file_var.set(str(model.get("radial_weight_file") or ""))
         self.include_missing_targets_var.set(bool(query_settings.get("include_missing_targets", False)))
         self.chunk_size_var.set(str(build_settings.get("chunk_size", 10000)))
         self.buffer_flush_var.set(str(build_settings.get("buffer_flush_interval", 200)))
@@ -741,7 +1073,9 @@ class ConfigGui(tk.Tk):
         self.replace_running_pipeline_var.set(bool(execution.get("replace_running_pipeline", True)))
         self.advanced_settings_var.set(False)
         self.set_manual_targets_text(query_io.get("targets", []) or [])
+        self.set_magnitude_columns_text(build_io.get("magnitude_columns", {}) or {}, build_columns.get("phot_g_mean_mag", "phot_g_mean_mag"))
         self.set_advanced_widgets_state()
+        self.update_model_field_state()
 
     def get_catalog_columns_from_io(self, build_io: dict) -> dict:
         columns = build_io.get("columns", {}) or {}
@@ -762,11 +1096,36 @@ class ConfigGui(tk.Tk):
         if (targets):
             self.targets_text.insert("1.0", "\n".join(str(target) for target in targets))
 
+    def set_magnitude_columns_text(self, magnitude_columns: dict, mag_column: str) -> None:
+        if (self.magnitude_columns_text is None):
+            return
+
+        lines = []
+        for band, column in magnitude_columns.items():
+            # gaia_g is derived from the catalog magnitude column; only surface extra bands.
+            if (band == "gaia_g" and str(column) == str(mag_column)):
+                continue
+            lines.append(f"{band}={column}")
+
+        self.magnitude_columns_text.delete("1.0", "end")
+        if (lines):
+            self.magnitude_columns_text.insert("1.0", "\n".join(lines))
+
     def set_advanced_widgets_state(self) -> None:
         state = "normal" if (self.advanced_settings_var.get()) else "disabled"
 
         for widget in self.advanced_entry_widgets:
             widget.configure(state=state)
+
+    def update_model_field_state(self) -> None:
+        if (not self.model_dependent_entries):
+            return
+
+        mode = self.contamination_mode_var.get().strip()
+        fwhm_state = "normal" if (mode in {"gaussian_psf", "gaussian_aperture"}) else "disabled"
+        radial_state = "normal" if (mode == "radial_weight") else "disabled"
+        self.model_dependent_entries["gaussian_fwhm"].configure(state=fwhm_state)
+        self.model_dependent_entries["radial_weight"].configure(state=radial_state)
 
     def toggle_advanced_settings(self) -> None:
         if (self.advanced_settings_var.get()):
@@ -782,6 +1141,9 @@ class ConfigGui(tk.Tk):
 
         self.set_advanced_widgets_state()
 
+    # ------------------------------------------------------------------
+    # Path helpers
+    # ------------------------------------------------------------------
     def make_project_relative_path(self, path_value: str) -> str:
         path_value = str(path_value).strip().replace("\\", "/")
         if (path_value == ""):
@@ -911,8 +1273,6 @@ class ConfigGui(tk.Tk):
 
         return True
 
-
-
     def validate_output_folder_can_be_created(self, folder_value: str) -> bool:
         try:
             folder_path = self.resolve_path(folder_value)
@@ -1029,6 +1389,22 @@ class ConfigGui(tk.Tk):
         if (selected):
             self.targets_input_var.set(self.make_project_relative_path(selected))
 
+    def browse_bandpass_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select bandpass profile YAML",
+            filetypes=[("YAML files", "*.yaml *.yml"), ("All files", "*.*")]
+        )
+        if (selected):
+            self.bandpass_transform_file_var.set(self.make_project_relative_path(selected))
+
+    def browse_radial_weight_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select radial weight CSV",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        if (selected):
+            self.radial_weight_file_var.set(self.make_project_relative_path(selected))
+
     def browse_out_dir(self) -> None:
         selected = filedialog.askdirectory(title="Select output/index folder")
         if (selected):
@@ -1071,28 +1447,101 @@ class ConfigGui(tk.Tk):
 
         return targets
 
+    def parse_magnitude_columns(self) -> dict:
+        if (self.magnitude_columns_text is None):
+            return {}
+
+        raw_text = self.magnitude_columns_text.get("1.0", "end").strip()
+        parsed: dict[str, str] = {}
+        if (raw_text == ""):
+            return parsed
+
+        for line in raw_text.splitlines():
+            line = line.strip()
+            if (line == ""):
+                continue
+
+            if ("=" not in line):
+                raise ValueError(
+                    f'Invalid magnitude band line: "{line}".\n\nUse band=catalog_column, for example gaia_bp=phot_bp_mean_mag.'
+                )
+
+            band, column = line.split("=", 1)
+            band = band.strip()
+            column = column.strip()
+            if (band == "" or column == ""):
+                raise ValueError(f'Invalid magnitude band line: "{line}". Band and column cannot be empty.')
+
+            parsed[band] = column
+
+        return parsed
+
+    def parse_contamination_bands(self) -> list[str]:
+        raw = self.contamination_bands_var.get().strip()
+        if (raw == ""):
+            return ["gaia_g"]
+
+        return [item.strip() for item in raw.split(",") if (item.strip() != "")]
+
+    # ------------------------------------------------------------------
+    # Pipeline validation / config build
+    # ------------------------------------------------------------------
+    def validate_with_engine(self, config: dict, validate_query: bool) -> bool:
+        """Validate config rules with the real pipeline parser, the single source of truth.
+
+        Ranges, influence >= aperture, positive integers, distinct columns, and the
+        contamination-model requirements are all enforced here instead of being
+        re-implemented in the GUI. Only the sections that will actually run are
+        checked, and no filesystem access happens (validate_runtime=False).
+        """
+        from .load_config import (
+            BUILD_SECTION,
+            EXECUTION_SECTION,
+            QUERY_SECTION,
+            load_config,
+        )
+
+        temp_path = PROJECT_DIR / f".photo-cat-gui-validate-{os.getpid()}.yaml"
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(config, f, sort_keys=False, allow_unicode=True)
+
+            load_config(BUILD_SECTION, temp_path, validate_runtime=False)
+            load_config(EXECUTION_SECTION, temp_path, validate_runtime=False)
+            if (validate_query):
+                load_config(QUERY_SECTION, temp_path, validate_runtime=False)
+        except Exception as exc:
+            messagebox.showerror("Invalid configuration", str(exc))
+            return False
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        return True
+
     def validate_fields(self) -> bool:
+        # Cheap "is it even a number?" pre-parse so the user gets a friendly message
+        # before the engine parser reports the same fields with dotted config paths.
         try:
             max_radius = float(self.max_radius_var.get().strip())
-            field_of_view = float(self.field_of_view_var.get().strip())
             influence_radius = float(self.influence_radius_var.get().strip())
-            delta_mag = float(self.delta_mag_var.get().strip())
-            chunk_size = int(self.chunk_size_var.get().strip())
-            buffer_flush = int(self.buffer_flush_var.get().strip())
+            float(self.field_of_view_var.get().strip())
+            float(self.delta_mag_var.get().strip())
+            int(self.chunk_size_var.get().strip())
+            int(self.buffer_flush_var.get().strip())
         except ValueError:
             messagebox.showerror("Invalid values", "Radius, delta magnitude, chunk size, and checkpoint interval must be numbers.")
             return False
 
-        if (max_radius <= 0 or field_of_view <= 0 or influence_radius <= 0):
-            messagebox.showerror("Invalid values", "Radius values must be greater than 0.")
-            return False
-
-        if (influence_radius < field_of_view):
-            messagebox.showerror(
-                "Invalid influence radius",
-                "The outer influence radius must be equal to or larger than the query aperture radius.",
-            )
-            return False
+        fwhm_text = self.gaussian_fwhm_var.get().strip()
+        if (fwhm_text != ""):
+            try:
+                float(fwhm_text)
+            except ValueError:
+                messagebox.showerror("Invalid Gaussian FWHM", "Gaussian FWHM must be a number.")
+                return False
 
         if (influence_radius > max_radius):
             proceed = messagebox.askyesno(
@@ -1104,12 +1553,23 @@ class ConfigGui(tk.Tk):
             if (not proceed):
                 return False
 
-        if (chunk_size <= 0 or buffer_flush <= 0):
-            messagebox.showerror("Invalid values", "Chunk size and checkpoint interval must be greater than 0.")
+        try:
+            magnitude_columns = self.parse_magnitude_columns()
+        except ValueError as exc:
+            messagebox.showerror("Invalid magnitude bands", str(exc))
             return False
 
-        if (delta_mag < 0):
-            messagebox.showerror("Invalid values", "Delta magnitude cannot be negative.")
+        # Extra contamination bands must have a magnitude-column mapping (gaia_g is implicit).
+        contamination_bands = self.parse_contamination_bands()
+        available_bands = {"gaia_g", "all"} | set(magnitude_columns.keys())
+        unknown_bands = [band for band in contamination_bands if band not in available_bands]
+        if (unknown_bands):
+            messagebox.showerror(
+                "Unknown contamination band",
+                "These contamination bands are not defined in Files & columns > Magnitude bands:\n"
+                + "\n".join(f"- {band}" for band in unknown_bands)
+                + "\n\nAdd a band=catalog_column line for each, or use gaia_g / all."
+            )
             return False
 
         if (self.input_catalog_var.get().strip() == ""):
@@ -1118,25 +1578,23 @@ class ConfigGui(tk.Tk):
 
         catalog_path = self.input_catalog_var.get().strip()
 
+        # Delegate ranges, influence >= aperture, distinct columns, positive ints, and
+        # contamination-model requirements to the real engine parser.
+        try:
+            config_preview = self.build_config_from_fields()
+        except ValueError as exc:
+            messagebox.showerror("Invalid values", str(exc))
+            return False
+
+        if (not self.validate_with_engine(config_preview, validate_query=bool(self.run_query_var.get()))):
+            return False
+
         catalog_columns = [
             self.catalog_source_id_column_var.get().strip(),
             self.catalog_ra_column_var.get().strip(),
             self.catalog_dec_column_var.get().strip(),
             self.catalog_mag_column_var.get().strip(),
         ]
-        if (any(column == "" for column in catalog_columns)):
-            messagebox.showerror(
-                "Missing column names",
-                "Catalog column names cannot be empty. Use the default Gaia-like names, or change them to match your CSV."
-            )
-            return False
-
-        if (len(set(catalog_columns)) != len(catalog_columns)):
-            messagebox.showerror(
-                "Duplicate column names",
-                "Catalog Source ID, RA, Dec, and magnitude columns must be four different CSV columns."
-            )
-            return False
 
         if (self.run_build_var.get()):
             if (not self.validate_csv_columns("Catalog CSV", catalog_path, catalog_columns)):
@@ -1203,6 +1661,18 @@ class ConfigGui(tk.Tk):
         catalog_mag_column = self.catalog_mag_column_var.get().strip()
         targets_source_id_column = self.targets_source_id_column_var.get().strip()
 
+        magnitude_columns = {"gaia_g": catalog_mag_column}
+        magnitude_columns.update(self.parse_magnitude_columns())
+
+        contamination_bands = self.parse_contamination_bands()
+
+        mode = self.contamination_mode_var.get().strip() or "top_hat"
+        fwhm_text = self.gaussian_fwhm_var.get().strip()
+        gaussian_fwhm = float(fwhm_text) if (fwhm_text != "") else None
+        radial_weight = self.radial_weight_file_var.get().strip() or None
+        if (radial_weight is not None):
+            radial_weight = self.make_project_relative_path(radial_weight)
+
         return {
             "build_neighbors_index": {
                 "io": {
@@ -1220,9 +1690,7 @@ class ConfigGui(tk.Tk):
                         "dec": catalog_dec_column,
                         "phot_g_mean_mag": catalog_mag_column,
                     },
-                    "magnitude_columns": {
-                        "gaia_g": catalog_mag_column,
-                    },
+                    "magnitude_columns": magnitude_columns,
                 },
                 "settings": {
                     "use_dask": bool(self.use_dask_var.get()),
@@ -1244,12 +1712,12 @@ class ConfigGui(tk.Tk):
                     "influence_radius_arcsec": float(self.influence_radius_var.get().strip()),
                     "delta_mag": float(self.delta_mag_var.get().strip()),
                     "include_missing_targets": bool(self.include_missing_targets_var.get()),
-                    "contamination_bands": ["gaia_g"],
+                    "contamination_bands": contamination_bands,
                     "bandpass_transform_file": self.bandpass_transform_file_var.get().strip() or None,
                     "contamination_model": {
-                        "mode": "top_hat",
-                        "gaussian_fwhm_arcsec": None,
-                        "radial_weight_file": None,
+                        "mode": mode,
+                        "gaussian_fwhm_arcsec": gaussian_fwhm,
+                        "radial_weight_file": radial_weight,
                     },
                 },
             },
@@ -1311,12 +1779,19 @@ class ConfigGui(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Run failed", f"Could not start the pipeline.\n\n{exc}")
 
-    def start_pipeline_window(self, python_exe: Path) -> None:
+    # ------------------------------------------------------------------
+    # Pipeline process management
+    # ------------------------------------------------------------------
+    def pipeline_environment(self) -> dict:
         env = os.environ.copy()
         env["PHOTO_CAT_PROJECT_DIR"] = str(PROJECT_DIR)
         env["PHOTO_CAT_CONFIG"] = str(CONFIG_PATH)
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(SRC_DIR) if (not existing_pythonpath) else str(SRC_DIR) + os.pathsep + existing_pythonpath
+        return env
+
+    def start_pipeline_window(self, python_exe: Path) -> None:
+        env = self.pipeline_environment()
 
         if (os.name == "nt"):
             runner_path = PROJECT_DIR / "scripts" / "run_pipeline_windows.bat"
@@ -1475,6 +1950,420 @@ class ConfigGui(tk.Tk):
 
         return None
 
+    def python_executable(self) -> str:
+        venv_python = self.find_venv_python()
+        if (venv_python is not None):
+            return str(venv_python)
+
+        return sys.executable
+
+    # ------------------------------------------------------------------
+    # Tool panels (photo-cat subcommands)
+    # ------------------------------------------------------------------
+    def build_tool_panel(self, parent, spec: dict) -> None:
+        ttk.Label(parent, text=spec["title"], style="PanelTitle.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 4)
+        )
+        ttk.Label(parent, text=f"Command: photo-cat {spec['command']}", style="Muted.TLabel").grid(
+            row=1, column=0, columnspan=3, sticky="w"
+        )
+        ttk.Label(parent, text=spec["description"], style="Muted.TLabel", wraplength=880, justify="left").grid(
+            row=2, column=0, columnspan=3, sticky="w", pady=(2, 10)
+        )
+
+        form = ttk.Frame(parent)
+        form.grid(row=3, column=0, columnspan=3, sticky="ew")
+        form.columnconfigure(1, weight=1)
+
+        field_states: list[dict] = []
+        row = 0
+        for field in spec["fields"]:
+            state = self.build_tool_field(form, row, field)
+            field_states.append(state)
+            row += 1
+
+        run_button = ttk.Button(
+            parent,
+            text=spec.get("run_label", "Run"),
+            style="Accent.TButton",
+            command=lambda: self.run_tool(spec, field_states),
+        )
+        run_button.grid(row=4, column=0, sticky="w", pady=(12, 0))
+
+    def build_tool_field(self, form, row: int, field: dict) -> dict:
+        kind = field["kind"]
+        label = field["label"]
+        state = {"field": field}
+
+        if (kind == "bool"):
+            var = tk.BooleanVar(value=bool(field.get("default", False)))
+            ttk.Checkbutton(form, text=label, variable=var).grid(row=row, column=0, columnspan=3, sticky="w", pady=4)
+            state["var"] = var
+            return state
+
+        if (kind == "multi_file"):
+            ttk.Label(form, text=label).grid(row=row, column=0, sticky="nw", pady=4)
+            text_widget = self.make_text_widget(form, height=3)
+            text_widget.grid(row=row, column=1, sticky="ew", padx=(10, 8), pady=4)
+            ttk.Button(
+                form,
+                text="Add file...",
+                command=lambda widget=text_widget, f=field: self.append_path_to_text(widget, f),
+            ).grid(row=row, column=2, sticky="n", pady=4)
+            state["text"] = text_widget
+            return state
+
+        var = tk.StringVar(value=str(field.get("default", "")))
+        ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=4)
+
+        if (kind == "choice"):
+            combo = ttk.Combobox(form, textvariable=var, values=field["options"], state="readonly", width=24)
+            combo.grid(row=row, column=1, sticky="w", padx=(10, 8), pady=4)
+        elif (kind in {"file_open", "file_save", "dir"}):
+            entry = ttk.Entry(form, textvariable=var, width=60)
+            entry.grid(row=row, column=1, sticky="ew", padx=(10, 8), pady=4)
+            ttk.Button(
+                form,
+                text="Browse...",
+                command=lambda v=var, f=field: self.browse_for_field(v, f),
+            ).grid(row=row, column=2, pady=4)
+        else:
+            entry = ttk.Entry(form, textvariable=var, width=28)
+            entry.grid(row=row, column=1, sticky="w", padx=(10, 8), pady=4)
+
+        state["var"] = var
+        return state
+
+    def browse_for_field(self, var: tk.StringVar, field: dict) -> None:
+        kind = field["kind"]
+        filetypes = field.get("filetypes", [("All files", "*.*")])
+        if (kind == "dir"):
+            selected = filedialog.askdirectory(title=field["label"])
+        elif (kind == "file_save"):
+            selected = filedialog.asksaveasfilename(title=field["label"], filetypes=filetypes)
+        else:
+            selected = filedialog.askopenfilename(title=field["label"], filetypes=filetypes)
+
+        if (selected):
+            var.set(selected)
+
+    def append_path_to_text(self, text_widget: tk.Text, field: dict) -> None:
+        filetypes = field.get("filetypes", [("All files", "*.*")])
+        selected = filedialog.askopenfilename(title=field["label"], filetypes=filetypes)
+        if (not selected):
+            return
+
+        existing = text_widget.get("1.0", "end").strip()
+        text_widget.delete("1.0", "end")
+        lines = [line for line in existing.splitlines() if line.strip()]
+        lines.append(selected)
+        text_widget.insert("1.0", "\n".join(lines))
+
+    def assemble_tool_argv(self, spec: dict, field_states: list[dict]) -> list[str] | None:
+        positionals: list[str] = []
+        options: list[str] = []
+
+        for state in field_states:
+            field = state["field"]
+            kind = field["kind"]
+            flag = field.get("flag")
+            required = field.get("required", False)
+            label = field["label"]
+
+            if (kind == "bool"):
+                value = bool(state["var"].get())
+                if (field.get("flag_style") == "store_true"):
+                    if (value):
+                        options.append(flag)
+                else:
+                    options.append(flag if value else self.negate_flag(flag))
+                continue
+
+            if (kind == "multi_file"):
+                lines = [line.strip() for line in state["text"].get("1.0", "end").splitlines() if line.strip()]
+                if (not lines and required):
+                    messagebox.showerror("Missing value", f"{label} requires at least one entry.")
+                    return None
+                if (flag is None):
+                    positionals.extend(lines)
+                else:
+                    for line in lines:
+                        options.extend([flag, line])
+                continue
+
+            value = state["var"].get().strip()
+            if (value == ""):
+                if (required):
+                    messagebox.showerror("Missing value", f"{label} is required.")
+                    return None
+                continue
+
+            if (flag is None):
+                positionals.append(value)
+            else:
+                options.extend([flag, value])
+
+        return [spec["command"], *positionals, *options]
+
+    def negate_flag(self, flag: str) -> str:
+        return "--no-" + flag[2:] if flag.startswith("--") else flag
+
+    def run_tool(self, spec: dict, field_states: list[dict]) -> None:
+        argv = self.assemble_tool_argv(spec, field_states)
+        if (argv is None):
+            return
+
+        self.run_cli(argv)
+
+    def run_cli(self, argv: list[str]) -> None:
+        python_exe = self.python_executable()
+        command = [python_exe, "-m", "photo_cat.cli", *argv]
+        env = self.pipeline_environment()
+
+        self.append_output(f"$ photo-cat {' '.join(shlex.quote(part) for part in argv)}\n")
+
+        def worker():
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=PROJECT_DIR,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                for line in process.stdout:
+                    self.after(0, self.append_output, line)
+                process.wait()
+                self.after(0, self.append_output, f"[finished with exit code {process.returncode}]\n\n")
+            except Exception as exc:
+                self.after(0, self.append_output, f"[error] {exc}\n\n")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def append_output(self, text: str) -> None:
+        if (self.output_text is None):
+            return
+
+        self.output_text.configure(state="normal")
+        self.output_text.insert("end", text)
+        self.output_text.see("end")
+        self.output_text.configure(state="disabled")
+
+    def clear_output(self) -> None:
+        if (self.output_text is None):
+            return
+
+        self.output_text.configure(state="normal")
+        self.output_text.delete("1.0", "end")
+        self.output_text.configure(state="disabled")
+
+    # ------------------------------------------------------------------
+    # Tool specifications
+    # ------------------------------------------------------------------
+    def _default_result_json(self) -> str:
+        candidate = PROJECT_DIR / "output" / "results.json"
+        return str(candidate) if candidate.is_file() else ""
+
+    def spec_summarize(self) -> dict:
+        return {
+            "command": "summarize",
+            "title": "Summarize results",
+            "description": "Summarize a PHOTO-CAT query result JSON as text, JSON, or CSV.",
+            "fields": [
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["text", "json", "csv"], "default": "text"},
+                {"kind": "file_save", "label": "Output (optional)", "flag": "--output"},
+            ],
+        }
+
+    def spec_screen(self) -> dict:
+        return {
+            "command": "screen",
+            "title": "Screen / rank targets",
+            "description": "Rank targets by a contamination metric and assign accept / review / reject decisions.",
+            "fields": [
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "file_save", "label": "Output", "flag": "--output", "required": True},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["csv", "json", "markdown"], "default": "csv"},
+                {"kind": "text", "label": "Metric", "flag": "--metric", "default": "flux_fraction_total_weighted"},
+                {"kind": "float", "label": "Accept max percent", "flag": "--accept-max-percent", "default": "5.0"},
+                {"kind": "float", "label": "Review max percent", "flag": "--review-max-percent", "default": "20.0"},
+            ],
+        }
+
+    def spec_plot(self) -> dict:
+        return {
+            "command": "plot",
+            "title": "Plot (SVG / matplotlib)",
+            "description": "Write a plot from a PHOTO-CAT query result JSON.",
+            "fields": [
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "choice", "label": "Kind", "flag": "--kind", "options": PLOT_KINDS, "default": "contaminant-counts"},
+                {"kind": "choice", "label": "Backend", "flag": "--backend", "options": ["svg", "matplotlib"], "default": "svg"},
+                {"kind": "file_save", "label": "Output (optional)", "flag": "--output"},
+            ],
+        }
+
+    def spec_publication_plots(self) -> dict:
+        return {
+            "command": "publication-plots",
+            "title": "Publication plots",
+            "description": "Generate contamination distributions and an accessible sky map for publication.",
+            "fields": [
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "float", "label": "Aperture, arcsec", "flag": "--aperture-arcsec", "required": True, "default": "47.0"},
+                {"kind": "dir", "label": "Output directory", "flag": "--output-dir", "required": True},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["png", "pdf", "svg"], "default": "png"},
+                {"kind": "int", "label": "DPI", "flag": "--dpi", "default": "300"},
+            ],
+        }
+
+    def spec_report(self) -> dict:
+        return {
+            "command": "report",
+            "title": "Report",
+            "description": "Write an HTML or Markdown report from a PHOTO-CAT query result JSON.",
+            "fields": [
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["html", "markdown"], "default": "html"},
+                {"kind": "file_save", "label": "Output (optional)", "flag": "--output"},
+            ],
+        }
+
+    def spec_export(self) -> dict:
+        return {
+            "command": "export",
+            "title": "Export",
+            "description": "Export target-result rows to CSV or Parquet.",
+            "fields": [
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "file_save", "label": "Output", "flag": "--output", "required": True},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["csv", "parquet"], "default": "csv"},
+            ],
+        }
+
+    def spec_validate(self) -> dict:
+        return {
+            "command": "validate-results",
+            "title": "Validate results",
+            "description": "Compare PHOTO-CAT predictions with an external reference contamination table.",
+            "fields": [
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "file_open", "label": "Reference CSV", "flag": None, "required": True,
+                 "filetypes": [("CSV files", "*.csv"), ("All files", "*.*")]},
+                {"kind": "file_save", "label": "Output (stats JSON)", "flag": "--output", "required": True},
+                {"kind": "file_save", "label": "Matched output (optional)", "flag": "--matched-output"},
+                {"kind": "text", "label": "Metric", "flag": "--metric", "default": "flux_fraction_total_weighted"},
+                {"kind": "text", "label": "Source ID column", "flag": "--source-id-column", "default": "source_id"},
+                {"kind": "text", "label": "Reference column", "flag": "--reference-column", "default": "contamination_percent"},
+                {"kind": "float", "label": "Threshold percent (optional)", "flag": "--threshold-percent"},
+            ],
+        }
+
+    def spec_provenance(self) -> dict:
+        return {
+            "command": "provenance",
+            "title": "Catalogue provenance",
+            "description": "Capture provenance metadata for a catalogue CSV.",
+            "fields": [
+                {"kind": "file_open", "label": "Catalog CSV", "flag": None, "required": True,
+                 "filetypes": [("CSV files", "*.csv"), ("All files", "*.*")]},
+                {"kind": "file_save", "label": "Output (JSON)", "flag": "--output", "required": True},
+                {"kind": "file_open", "label": "ADQL file (optional)", "flag": "--adql-file"},
+                {"kind": "text", "label": "Source ID column", "flag": "--source-id-column", "default": "source_id"},
+                {"kind": "text", "label": "RA column", "flag": "--ra-column", "default": "ra"},
+                {"kind": "text", "label": "Dec column", "flag": "--dec-column", "default": "dec"},
+                {"kind": "text", "label": "Magnitude column", "flag": "--mag-column", "default": "phot_g_mean_mag"},
+            ],
+        }
+
+    def spec_merge_bright_stars(self) -> dict:
+        return {
+            "command": "merge-bright-stars",
+            "title": "Merge bright stars",
+            "description": "Merge a Gaia-like base catalogue with a supplemental bright-star table.",
+            "fields": [
+                {"kind": "file_open", "label": "Base catalog CSV", "flag": None, "required": True,
+                 "filetypes": [("CSV files", "*.csv"), ("All files", "*.*")]},
+                {"kind": "file_open", "label": "Bright-star catalog CSV", "flag": None, "required": True,
+                 "filetypes": [("CSV files", "*.csv"), ("All files", "*.*")]},
+                {"kind": "file_save", "label": "Output (merged CSV)", "flag": "--output", "required": True},
+                {"kind": "text", "label": "Source ID column", "flag": "--source-id-column", "default": "source_id"},
+                {"kind": "choice", "label": "Prefer on duplicates", "flag": "--prefer", "options": ["bright", "base"], "default": "bright"},
+                {"kind": "file_save", "label": "Provenance output (optional)", "flag": "--provenance-output"},
+            ],
+        }
+
+    def spec_benchmark(self) -> dict:
+        return {
+            "command": "benchmark",
+            "title": "Benchmark pipeline",
+            "description": "Run selected pipeline stages using the current config and write benchmark metadata JSON. "
+                           "Uses the config.yaml saved by this GUI unless you pick another config file.",
+            "fields": [
+                {"kind": "file_open", "label": "Config file", "flag": "--config", "default": str(CONFIG_PATH),
+                 "filetypes": [("YAML files", "*.yaml *.yml"), ("All files", "*.*")]},
+                {"kind": "file_save", "label": "Output (JSON)", "flag": "--output", "required": True},
+                {"kind": "bool", "label": "Run build stage", "flag": "--run-build", "default": True},
+                {"kind": "bool", "label": "Run query stage", "flag": "--run-query", "default": True},
+            ],
+        }
+
+    def spec_benchmark_table(self) -> dict:
+        return {
+            "command": "benchmark-table",
+            "title": "Benchmark table",
+            "description": "Render one or more benchmark JSON captures as a Markdown or CSV table.",
+            "fields": [
+                {"kind": "multi_file", "label": "Benchmark JSON files", "flag": None, "required": True,
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "file_save", "label": "Output", "flag": "--output", "required": True},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["markdown", "csv"], "default": "markdown"},
+            ],
+        }
+
+    def spec_reproduce_paper(self) -> dict:
+        return {
+            "command": "reproduce-paper",
+            "title": "Reproduce paper",
+            "description": "Generate reproducible paper summaries, plots, reports, and a manifest from configs and/or result JSONs.",
+            "fields": [
+                {"kind": "multi_file", "label": "Config files", "flag": "--config",
+                 "filetypes": [("YAML files", "*.yaml *.yml"), ("All files", "*.*")]},
+                {"kind": "multi_file", "label": "Result JSON files", "flag": "--result-json",
+                 "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
+                {"kind": "dir", "label": "Output directory", "flag": "--output-dir", "required": True},
+                {"kind": "bool", "label": "Run each config before collecting results", "flag": "--run-configs",
+                 "flag_style": "store_true", "default": False},
+                {"kind": "choice", "label": "Backend", "flag": "--backend", "options": ["svg", "matplotlib"], "default": "svg"},
+            ],
+        }
+
+    def spec_doctor(self) -> dict:
+        return {
+            "command": "doctor",
+            "title": "Doctor diagnostics",
+            "description": "Run environment and configuration diagnostic checks.",
+            "run_label": "Run diagnostics",
+            "fields": [
+                {"kind": "file_open", "label": "Config file (optional)", "flag": "--config", "default": str(CONFIG_PATH),
+                 "filetypes": [("YAML files", "*.yaml *.yml"), ("All files", "*.*")]},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["text", "json"], "default": "text"},
+            ],
+        }
+
+    # ------------------------------------------------------------------
+    # Misc actions
+    # ------------------------------------------------------------------
     def load_example_config(self) -> None:
         self.config_data = DEFAULT_CONFIG.copy()
         self.load_values_into_fields()
@@ -1486,8 +2375,8 @@ class ConfigGui(tk.Tk):
         self.update_idletasks()
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
-        width = min(1080, max(900, screen_width - 100))
-        height = min(820, max(620, screen_height - 160))
+        width = min(1180, max(1040, screen_width - 100))
+        height = min(840, max(660, screen_height - 120))
         x = max(0, (screen_width // 2) - (width // 2))
         y = max(0, (screen_height // 2) - (height // 2))
         self.geometry(f"{width}x{height}+{x}+{y}")
