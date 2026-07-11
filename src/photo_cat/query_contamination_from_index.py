@@ -706,6 +706,91 @@ def load_radial_weight_table(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     return separations[order], weights[order]
 
 
+# Full-width-half-maximum to standard-deviation conversion factor, 2 * sqrt(2 * ln 2).
+GAUSSIAN_FWHM_TO_SIGMA = 2.3548200450309493
+
+
+def _gaussian_sigma_arcsec(fwhm_arcsec: float) -> float:
+    """Convert a Gaussian FWHM in arcseconds to its standard deviation."""
+    return float(fwhm_arcsec) / GAUSSIAN_FWHM_TO_SIGMA
+
+
+def _top_hat_weights(
+    separations_arcsec: np.ndarray,
+    model: ContaminationModelConfig,
+    radial_weight_table: tuple[np.ndarray, np.ndarray] | None,
+    aperture_radius_arcsec: float | None,
+) -> np.ndarray:
+    """Compatibility model: full weight inside the aperture, none beyond it."""
+    if (aperture_radius_arcsec is None):
+        return np.ones(separations_arcsec.shape, dtype=np.float64)
+    return np.asarray(separations_arcsec <= aperture_radius_arcsec, dtype=np.float64)
+
+
+def _gaussian_psf_weights(
+    separations_arcsec: np.ndarray,
+    model: ContaminationModelConfig,
+    radial_weight_table: tuple[np.ndarray, np.ndarray] | None,
+    aperture_radius_arcsec: float | None,
+) -> np.ndarray:
+    """Radial Gaussian point-spread-function response, peaking at the centre."""
+    if (model.gaussian_fwhm_arcsec is None):
+        raise ValueError("gaussian_fwhm_arcsec is required for gaussian_psf contamination weighting.")
+    sigma = _gaussian_sigma_arcsec(model.gaussian_fwhm_arcsec)
+    return np.exp(-0.5 * (separations_arcsec / sigma) ** 2)
+
+
+def _gaussian_aperture_weights(
+    separations_arcsec: np.ndarray,
+    model: ContaminationModelConfig,
+    radial_weight_table: tuple[np.ndarray, np.ndarray] | None,
+    aperture_radius_arcsec: float | None,
+) -> np.ndarray:
+    """Integrated Gaussian throughput captured by a circular aperture, target-normalised."""
+    if (model.gaussian_fwhm_arcsec is None):
+        raise ValueError("gaussian_fwhm_arcsec is required for gaussian_aperture weighting.")
+    if (aperture_radius_arcsec is None or aperture_radius_arcsec <= 0.0):
+        raise ValueError("A positive aperture radius is required for gaussian_aperture weighting.")
+    sigma = _gaussian_sigma_arcsec(model.gaussian_fwhm_arcsec)
+    radius_squared = (float(aperture_radius_arcsec) / sigma) ** 2
+    centered_throughput = float(ncx2.cdf(radius_squared, df=2, nc=0.0))
+    if (not np.isfinite(centered_throughput) or centered_throughput <= 0.0):
+        raise ValueError("Could not normalize gaussian_aperture throughput for these settings.")
+    noncentrality = (np.asarray(separations_arcsec, dtype=np.float64) / sigma) ** 2
+    captured = ncx2.cdf(radius_squared, df=2, nc=noncentrality)
+    return np.clip(np.asarray(captured, dtype=np.float64) / centered_throughput, 0.0, 1.0)
+
+
+def _radial_weight_weights(
+    separations_arcsec: np.ndarray,
+    model: ContaminationModelConfig,
+    radial_weight_table: tuple[np.ndarray, np.ndarray] | None,
+    aperture_radius_arcsec: float | None,
+) -> np.ndarray:
+    """Empirical radial weighting interpolated from a user-provided sep/weight table."""
+    if (radial_weight_table is None):
+        raise ValueError("radial_weight contamination weighting requires a loaded radial weight table.")
+    radial_separations, radial_weights = radial_weight_table
+    return np.interp(
+        separations_arcsec,
+        radial_separations,
+        radial_weights,
+        left=radial_weights[0],
+        right=0.0,
+    )
+
+
+# Registry of contamination-weighting models. Adding a model is a single entry here,
+# and each weighter shares the (separations, model, radial_weight_table, aperture)
+# signature so it can be selected by name without a branching dispatch.
+CONTAMINATION_WEIGHTERS = {
+    "top_hat": _top_hat_weights,
+    "gaussian_psf": _gaussian_psf_weights,
+    "gaussian_aperture": _gaussian_aperture_weights,
+    "radial_weight": _radial_weight_weights,
+}
+
+
 def contamination_weights(
     separations_arcsec: np.ndarray,
     model: ContaminationModelConfig,
@@ -713,44 +798,10 @@ def contamination_weights(
     aperture_radius_arcsec: float | None = None,
 ) -> np.ndarray:
     """Return per-neighbour aperture/PSF weights for the configured model."""
-    if (model.mode == "top_hat"):
-        if (aperture_radius_arcsec is None):
-            return np.ones(separations_arcsec.shape, dtype=np.float64)
-        return np.asarray(separations_arcsec <= aperture_radius_arcsec, dtype=np.float64)
-
-    if (model.mode == "gaussian_psf"):
-        if (model.gaussian_fwhm_arcsec is None):
-            raise ValueError("gaussian_fwhm_arcsec is required for gaussian_psf contamination weighting.")
-        sigma = float(model.gaussian_fwhm_arcsec) / 2.3548200450309493
-        return np.exp(-0.5 * (separations_arcsec / sigma) ** 2)
-
-    if (model.mode == "gaussian_aperture"):
-        if (model.gaussian_fwhm_arcsec is None):
-            raise ValueError("gaussian_fwhm_arcsec is required for gaussian_aperture weighting.")
-        if (aperture_radius_arcsec is None or aperture_radius_arcsec <= 0.0):
-            raise ValueError("A positive aperture radius is required for gaussian_aperture weighting.")
-        sigma = float(model.gaussian_fwhm_arcsec) / 2.3548200450309493
-        radius_squared = (float(aperture_radius_arcsec) / sigma) ** 2
-        centered_throughput = float(ncx2.cdf(radius_squared, df=2, nc=0.0))
-        if (not np.isfinite(centered_throughput) or centered_throughput <= 0.0):
-            raise ValueError("Could not normalize gaussian_aperture throughput for these settings.")
-        noncentrality = (np.asarray(separations_arcsec, dtype=np.float64) / sigma) ** 2
-        captured = ncx2.cdf(radius_squared, df=2, nc=noncentrality)
-        return np.clip(np.asarray(captured, dtype=np.float64) / centered_throughput, 0.0, 1.0)
-
-    if (model.mode == "radial_weight"):
-        if (radial_weight_table is None):
-            raise ValueError("radial_weight contamination weighting requires a loaded radial weight table.")
-        radial_separations, radial_weights = radial_weight_table
-        return np.interp(
-            separations_arcsec,
-            radial_separations,
-            radial_weights,
-            left=radial_weights[0],
-            right=0.0,
-        )
-
-    raise ValueError(f"Unsupported contamination model: {model.mode}")
+    weighter = CONTAMINATION_WEIGHTERS.get(model.mode)
+    if (weighter is None):
+        raise ValueError(f"Unsupported contamination model: {model.mode}")
+    return weighter(separations_arcsec, model, radial_weight_table, aperture_radius_arcsec)
 
 
 def manifest_magnitude_bands(manifest: IndexManifest) -> dict[str, dict[str, str]]:

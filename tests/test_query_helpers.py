@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from photo_cat.query_contamination_from_index import (
+    CONTAMINATION_WEIGHTERS,
     calculate_flux_fraction_extra,
     contamination_weights,
     source_id_from_internal_id,
@@ -95,3 +96,47 @@ def test_top_hat_has_no_flux_response_outside_aperture() -> None:
     )
 
     assert weights.tolist() == [1.0, 0.0]
+
+
+@pytest.mark.unit
+def test_radial_weight_model_interpolates_table_and_clamps_beyond_last_row() -> None:
+    """The radial-weight model interpolates the table and drops to zero past its outer edge."""
+    table = (np.array([0.0, 10.0]), np.array([1.0, 0.0]))
+    weights = contamination_weights(
+        np.array([0.0, 5.0, 10.0, 15.0]),
+        ContaminationModelConfig(mode="radial_weight"),
+        radial_weight_table=table,
+    )
+
+    assert weights.tolist() == [1.0, 0.5, 0.0, 0.0]
+
+
+@pytest.mark.unit
+def test_radial_weight_model_requires_a_loaded_table() -> None:
+    """radial_weight cannot run without its sep/weight table loaded."""
+    with pytest.raises(ValueError, match="radial weight table"):
+        contamination_weights(
+            np.array([1.0]),
+            ContaminationModelConfig(mode="radial_weight"),
+        )
+
+
+@pytest.mark.unit
+def test_unsupported_contamination_model_is_rejected() -> None:
+    """An unknown model name must fail loudly rather than silently return no weights."""
+    with pytest.raises(ValueError, match="Unsupported contamination model"):
+        contamination_weights(
+            np.array([1.0]),
+            ContaminationModelConfig(mode="not_a_real_model"),
+        )
+
+
+@pytest.mark.unit
+def test_weighter_registry_covers_exactly_the_supported_modes() -> None:
+    """The registry must stay in sync with the modes accepted by the configuration parser."""
+    assert set(CONTAMINATION_WEIGHTERS) == {
+        "top_hat",
+        "gaussian_psf",
+        "gaussian_aperture",
+        "radial_weight",
+    }
