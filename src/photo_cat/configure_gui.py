@@ -281,6 +281,7 @@ class ConfigGui(tk.Tk):
                 "sidebar_bg": "#191a1d",
                 "entry_bg": "#17181b",
                 "console_bg": "#101114",
+                "console_fg": "#e6e6e6",
                 "text": "#f2f2f2",
                 "muted": "#c2c6cf",
                 "warning": "#ffd166",
@@ -298,7 +299,8 @@ class ConfigGui(tk.Tk):
             "panel_bg": "#ffffff",
             "sidebar_bg": "#e9ebef",
             "entry_bg": "#ffffff",
-            "console_bg": "#0f1115",
+            "console_bg": "#f6f7f9",
+            "console_fg": "#111827",
             "text": "#111827",
             "muted": "#4b5563",
             "warning": "#9a5400",
@@ -505,7 +507,7 @@ class ConfigGui(tk.Tk):
     def apply_text_colors(self, text_widget: tk.Text) -> None:
         is_console = getattr(text_widget, "_photocat_console", False)
         background = self.colors["console_bg"] if is_console else self.colors["entry_bg"]
-        foreground = "#e6e6e6" if is_console else self.colors["text"]
+        foreground = self.colors["console_fg"] if is_console else self.colors["text"]
         try:
             text_widget.configure(
                 bg=background,
