@@ -20,6 +20,7 @@ photo-cat summarize
 photo-cat summary
 photo-cat export
 photo-cat plot
+photo-cat publication-plots
 photo-cat report
 photo-cat screen
 photo-cat rank
@@ -103,8 +104,8 @@ Regression tests should protect field names, result ordering where documented, a
 `photo-cat summarize` reads a target-result JSON file and emits text, JSON, or
 CSV aggregate statistics. `photo-cat export` writes flat CSV or Parquet target
 tables. `photo-cat plot` reads a target-result JSON file and writes SVG plots
-for documented plot kinds by default, with an optional matplotlib backend when
-installed. `photo-cat report` writes HTML or Markdown reports from a
+for documented plot kinds by default, with a matplotlib backend for raster and
+publication outputs. `photo-cat report` writes HTML or Markdown reports from a
 target-result JSON file. `photo-cat benchmark` writes a JSON document with
 schema version `1`, stage durations, status codes, platform metadata, PHOTO-CAT
 version, Python `tracemalloc` peak allocations, and optional psutil RSS samples.
@@ -116,6 +117,11 @@ source-ID counts, and optional ADQL/query checksum.
 thresholds, decisions, scores, and reasons. `photo-cat validate-results` writes
 schema-versioned comparison statistics against a user-supplied reference CSV
 and can export matched residual rows.
+
+`photo-cat publication-plots` accepts one query-result JSON plus its aperture
+and writes contaminant-count, separation, area-normalized separation-density,
+and sky-map products with a checksummed manifest. Sky-map classes are encoded
+redundantly by colour, marker shape, and marker size.
 
 ## Diagnostics and launchers
 

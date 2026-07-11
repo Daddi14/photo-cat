@@ -115,6 +115,7 @@ photo-cat plot INDEX_DIR/output/result.json --kind sky-map --backend matplotlib 
 photo-cat plot INDEX_DIR/output/result.json --kind separations-normalized --output separations_area_norm.svg
 photo-cat plot INDEX_DIR/output/result.json --kind flux-vs-separation --output flux_vs_separation.svg
 photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
+photo-cat publication-plots INDEX_DIR/output/result.json --aperture-arcsec 47 --output-dir publication_plots
 photo-cat report INDEX_DIR/output/result.json --format html --output report.html
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
@@ -129,8 +130,8 @@ photo-cat validate-results INDEX_DIR/output/result.json data/reference.csv --out
 selezionati, conteggi di tutti i vicini, statistiche sulle frazioni di flusso e
 statistiche sulle separazioni. `plot` scrive SVG senza dipendenze aggiuntive per
 conteggi dei contaminanti, frazioni di flusso, separazioni o una semplice mappa
-RA/Dec; `--backend matplotlib` abilita plot più ricchi quando matplotlib è
-installato, incluse separazioni normalizzate per area e scatter plot
+RA/Dec; `--backend matplotlib` abilita output più ricchi da pubblicazione,
+incluse separazioni normalizzate per area e scatter plot
 flusso-vs-separazione. `export` scrive tabelle target piatte CSV o Parquet.
 `report` scrive un documento HTML o Markdown con riassunto e plot. `provenance`
 registra checksum del catalogo e statistiche di input di base. `benchmark`
@@ -144,6 +145,10 @@ stelle brillanti.
 `screen` crea una tabella ordinata e motivata di decisioni accept/review/reject.
 `validate-results` quantifica l'accordo con una tabella esterna di contaminazione
 di missione/riferimento e può esportare i residui abbinati.
+`publication-plots` genera dallo stesso risultato a singola apertura la distribuzione
+dei conteggi, quella delle separazioni e la mappa del cielo colourblind-safe del
+manoscritto. Produce anche la separazione normalizzata per area anulare e salva
+checksum di input e output in un manifest.
 
 ## Output console
 

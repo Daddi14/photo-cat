@@ -111,6 +111,7 @@ photo-cat plot INDEX_DIR/output/result.json --kind sky-map --backend matplotlib 
 photo-cat plot INDEX_DIR/output/result.json --kind separations-normalized --output separations_area_norm.svg
 photo-cat plot INDEX_DIR/output/result.json --kind flux-vs-separation --output flux_vs_separation.svg
 photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
+photo-cat publication-plots INDEX_DIR/output/result.json --aperture-arcsec 47 --output-dir publication_plots
 photo-cat report INDEX_DIR/output/result.json --format html --output report.html
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
@@ -125,7 +126,7 @@ photo-cat validate-results INDEX_DIR/output/result.json data/reference.csv --out
 all-neighbour counts, flux-fraction statistics, and separation statistics.
 `plot` writes dependency-free SVG files for contaminant counts, flux fractions,
 separations, or a simple RA/Dec sky map; `--backend matplotlib` enables richer
-plots when matplotlib is installed, including area-normalized separations and
+publication outputs, including area-normalized separations and
 flux-vs-separation scatter plots. `export` writes flat CSV or Parquet target
 tables. `report` writes an HTML or Markdown document that bundles the summary
 and plots. `provenance` records catalogue checksums and basic input statistics.
@@ -138,6 +139,10 @@ catalogue from a Gaia-like table plus a supplemental bright-star table.
 `screen` creates a ranked, reasoned accept/review/reject decision table.
 `validate-results` quantifies agreement with an external mission/reference
 contamination table and can export matched residuals.
+`publication-plots` generates a contaminant-count distribution, separation
+distribution, and colourblind-safe sky map from the same single-aperture result.
+It also produces an annular-area-normalized separation plot and records input
+and output checksums in a manifest.
 
 ## Console output
 

@@ -134,6 +134,22 @@ def run_plot(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_publication_plots(args: argparse.Namespace) -> int:
+    """Generate publication-oriented contamination plots."""
+    from .publication_plots import generate_publication_plots
+
+    payload = generate_publication_plots(
+        args.result_json,
+        args.output_dir,
+        aperture_arcsec=args.aperture_arcsec,
+        output_format=args.format,
+        dpi=args.dpi,
+    )
+    print(f"Publication plots saved under: {args.output_dir}")
+    print(f"Publication plot manifest saved to: {payload['manifest_path']}")
+    return 0
+
+
 def run_report(args: argparse.Namespace) -> int:
     """Write an HTML or Markdown report from a PHOTO-CAT query result JSON."""
     from .result_products import load_result_rows, write_report
@@ -450,6 +466,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plot_parser.add_argument("--output", help="SVG output path")
     plot_parser.set_defaults(func=run_plot)
+
+    publication_plots_parser = subparsers.add_parser(
+        "publication-plots",
+        help="generate contamination distributions and an accessible sky map",
+        formatter_class=OverrideHelpFormatter,
+    )
+    publication_plots_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
+    publication_plots_parser.add_argument("--aperture-arcsec", type=float, required=True, help="aperture represented by the result")
+    publication_plots_parser.add_argument("--output-dir", required=True, help="directory for plots and manifest")
+    publication_plots_parser.add_argument("--format", choices=["png", "pdf", "svg"], default="png")
+    publication_plots_parser.add_argument("--dpi", type=int, default=300, help="raster resolution (default: 300)")
+    publication_plots_parser.set_defaults(func=run_publication_plots)
 
     export_parser = subparsers.add_parser(
         "export",

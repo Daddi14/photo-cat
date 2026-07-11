@@ -60,6 +60,8 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Use top-hat, Gaussian radial, or tabulated radial-weight contamination screening models.
 - Summarize result JSON files into text, JSON, or CSV statistics.
 - Generate dependency-free SVG plots and HTML/Markdown reports from query results.
+- Generate publication-ready contaminant-count and separation distributions
+  plus a colourblind-safe sky map with redundant marker encodings.
 - Export target-result tables to CSV or Parquet for notebooks and external tools.
 - Capture catalogue provenance JSON with checksums, row counts, column stats, and optional ADQL checksums.
 - Generate reproducible paper/review product bundles with summaries, plots, reports, and checksums.
@@ -126,6 +128,7 @@ Result files can be post-processed with:
 photo-cat summarize output/index/output/result.json
 photo-cat export output/index/output/result.json --format csv --output output/result.csv
 photo-cat plot output/index/output/result.json --kind contaminant-counts
+photo-cat publication-plots output/index/output/result.json --aperture-arcsec 47 --output-dir output/publication_plots
 photo-cat provenance data/catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
 photo-cat report output/index/output/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json

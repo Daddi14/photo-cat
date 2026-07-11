@@ -15,6 +15,7 @@ photo-cat query --config config.yaml
 photo-cat summarize output/index/output/result.json
 photo-cat export output/index/output/result.json --format csv --output output/result.csv
 photo-cat plot output/index/output/result.json --kind contaminant-counts
+photo-cat publication-plots output/index/output/result.json --aperture-arcsec 47 --output-dir output/publication_plots
 photo-cat report output/index/output/result.json --format html
 photo-cat screen output/index/output/result.json --output output/screening.csv
 photo-cat validate-results output/index/output/result.json data/reference.csv --output output/validation.json
@@ -31,6 +32,19 @@ e assegna `accept`, `review` o `reject` con soglie percentuali esplicite.
 `validate-results` (alias `validate`) unisce per source ID un CSV esterno di
 contaminazione di riferimento e calcola bias, residuo mediano, MAE, RMSE e,
 opzionalmente, accuratezza rispetto a una soglia.
+
+`publication-plots` genera un insieme coordinato di plot da pubblicazione da un
+singolo JSON e dall'apertura rappresentata da quel risultato. Scrive:
+
+- distribuzione dei conteggi dei contaminanti, con Y logaritmico e X
+  simmetrico-log che conserva lo zero;
+- distribuzione grezza delle separazioni e versione aggiuntiva
+  normalizzata per area anulare;
+- mappa RA/Dec blu/giallo/viola con marker distinti
+  cerchio/triangolo/X e dimensioni differenti, senza affidarsi al solo colore;
+- un `publication_plots_manifest.json` con checksum.
+
+Sono supportati output PNG, PDF e SVG tramite `--format`.
 
 Quando è stato usato un profilo di banda, esegui screening o validazione della
 stima di missione con `--metric flux_fraction_total_weighted_transformed`.

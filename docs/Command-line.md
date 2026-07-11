@@ -15,6 +15,7 @@ photo-cat query --config config.yaml
 photo-cat summarize output/index/output/result.json
 photo-cat export output/index/output/result.json --format csv --output output/result.csv
 photo-cat plot output/index/output/result.json --kind contaminant-counts
+photo-cat publication-plots output/index/output/result.json --aperture-arcsec 47 --output-dir output/publication_plots
 photo-cat report output/index/output/result.json --format html
 photo-cat screen output/index/output/result.json --output output/screening.csv
 photo-cat validate-results output/index/output/result.json data/reference.csv --output output/validation.json
@@ -31,6 +32,20 @@ assigns `accept`, `review`, or `reject` using explicit percentage thresholds.
 `validate-results` (alias `validate`) joins an external reference contamination
 CSV by source ID and reports bias, median residual, MAE, RMSE, and optional
 threshold-classification accuracy.
+
+`publication-plots` generates a coordinated publication plot set from one
+result JSON and the aperture represented by that result. It writes:
+
+- a contaminant-count distribution with logarithmic Y and zero-safe
+  symmetric-log X scaling;
+- the raw separation distribution and an additional annular-area
+  normalized version;
+- an RA/Dec contamination map using blue/yellow/purple plus distinct
+  circle/triangle/X markers and sizes, so class meaning never relies on colour
+  alone;
+- a checksummed `publication_plots_manifest.json`.
+
+PNG, PDF, and SVG outputs are supported through `--format`.
 
 When a bandpass profile was used, screen or validate its mission-band estimate
 with `--metric flux_fraction_total_weighted_transformed`.

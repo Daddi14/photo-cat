@@ -255,6 +255,9 @@ def test_sky_map_encodes_severity_by_marker_size_not_colour_alone(tmp_path: Path
     radii = {value for value in _svg_circle_radii(svg)}
     assert len(radii) >= 2, "targets with different contaminant counts must render different marker sizes"
     assert "green=0" not in svg
+    assert "#4477AA" in svg
+    assert "#EECC66" in svg
+    assert "#228833" not in svg
 
 
 @pytest.mark.regression

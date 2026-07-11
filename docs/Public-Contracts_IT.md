@@ -20,6 +20,7 @@ photo-cat summarize
 photo-cat summary
 photo-cat export
 photo-cat plot
+photo-cat publication-plots
 photo-cat report
 photo-cat screen
 photo-cat rank
@@ -105,7 +106,7 @@ I test di regressione devono proteggere i nomi dei campi, l'ordine dei risultati
 `photo-cat summarize` legge un JSON di risultati target e produce statistiche
 aggregate text, JSON o CSV. `photo-cat export` scrive tabelle target piatte CSV
 o Parquet. `photo-cat plot` legge un JSON di risultati target e scrive SVG per i
-tipi documentati di default, con backend matplotlib opzionale quando installato.
+tipi documentati di default, con backend matplotlib per output raster e da pubblicazione.
 `photo-cat report` scrive report HTML o Markdown da un JSON di risultati target.
 `photo-cat benchmark` scrive un documento JSON con schema versione `1`, durate
 delle fasi, codici di stato, metadata di piattaforma, versione PHOTO-CAT, picco
@@ -118,6 +119,11 @@ e checksum opzionale del file ADQL/query.
 decisioni, punteggi e motivazioni esplicite. `photo-cat validate-results` scrive
 statistiche di confronto con versione dello schema rispetto a un CSV di
 riferimento fornito dall'utente e può esportare le righe abbinate con i residui.
+
+`photo-cat publication-plots` accetta un JSON di query e la relativa apertura e
+scrive distribuzioni dei conteggi, delle separazioni, densità normalizzate per
+area e mappe del cielo con un manifest dotato di checksum. Le classi della mappa
+sono codificate tramite colore, forma e dimensione dei marker.
 
 ## Diagnostica e launcher
 

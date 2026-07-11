@@ -405,10 +405,10 @@ def _severity_style(count: int) -> tuple[str, float, float]:
     Returns (hex_colour, svg_radius, matplotlib_area).
     """
     if (count == 0):
-        return "#228833", 2.0, 6.0
+        return "#4477AA", 2.0, 6.0
     if (count <= 3):
-        return "#CCBB44", 3.2, 16.0
-    return "#EE6677", 4.6, 34.0
+        return "#EECC66", 3.2, 16.0
+    return "#AA3377", 4.6, 34.0
 
 
 def _sky_map(rows: list[dict[str, Any]], width: int = 760, height: int = 420) -> str:

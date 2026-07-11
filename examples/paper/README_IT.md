@@ -22,6 +22,18 @@ python examples/paper/reproduce_paper_products.py output/paper_47arcsec/output/<
 python examples/paper/reproduce_paper_products.py output/paper_75arcsec/output/<result>.json --out-dir output/paper_products/75arcsec
 ```
 
+Genera plot di contaminazione pronti per la pubblicazione per la singola
+apertura/risultato che vuoi presentare:
+
+```bash
+photo-cat publication-plots output/paper_47arcsec/output/<result>.json --aperture-arcsec 47 --output-dir output/publication_plots/47arcsec --format pdf
+```
+
+La mappa del cielo usa classi blu/giallo/viola con marker cerchio/triangolo/X e
+dimensioni differenti. Le separazioni vengono salvate sia come distribuzione
+dei conteggi originale sia come versione normalizzata per area anulare richiesta
+dal reviewer.
+
 Archivia insieme:
 
 - la query o il notebook esatto di selezione del catalogo;

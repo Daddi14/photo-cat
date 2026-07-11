@@ -21,6 +21,17 @@ python examples/paper/reproduce_paper_products.py output/paper_47arcsec/output/<
 python examples/paper/reproduce_paper_products.py output/paper_75arcsec/output/<result>.json --out-dir output/paper_products/75arcsec
 ```
 
+Generate publication-ready contamination plots for whichever single
+aperture/result is being presented:
+
+```bash
+photo-cat publication-plots output/paper_47arcsec/output/<result>.json --aperture-arcsec 47 --output-dir output/publication_plots/47arcsec --format pdf
+```
+
+The sky map uses blue/yellow/purple classes plus circle/triangle/X markers and
+different sizes. Separations are written both as the original count
+distribution and as an annular-area-normalized reviewer-facing companion.
+
 Archive together:
 
 - the exact catalogue-selection query or notebook;
