@@ -30,8 +30,16 @@ import yaml
 PACKAGE_DIR = Path(__file__).resolve().parent
 SRC_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = SRC_DIR.parent
+FROZEN = bool(getattr(sys, "frozen", False))
+if (FROZEN):
+    # In a PyInstaller build the source tree does not exist: anchor user-facing
+    # files (config, outputs) next to the executable and read bundled assets
+    # from the PyInstaller extraction directory.
+    PROJECT_DIR = Path(sys.executable).resolve().parent
+    ASSETS_DIR = Path(getattr(sys, "_MEIPASS", str(PROJECT_DIR))) / "assets"
+else:
+    ASSETS_DIR = PROJECT_DIR / "assets"
 CONFIG_PATH = Path(os.environ.get("PHOTO_CAT_CONFIG", str(PROJECT_DIR / "config.yaml"))).resolve()
-ASSETS_DIR = PROJECT_DIR / "assets"
 PROJECT_DISPLAY_NAME = "PHOTO-CAT - Photometric Contamination Analyzer Tool"
 PROJECT_SHORT_NAME = "PHOTO-CAT"
 
@@ -1802,7 +1810,7 @@ class ConfigGui(tk.Tk):
             return
 
         python_exe = self.find_venv_python()
-        if (python_exe is None):
+        if (python_exe is None and not FROZEN):
             messagebox.showerror(
                 "Virtual environment missing",
                 "The local virtual environment was not found.\n\nRun START_WINDOWS.bat first so it can create the local virtual environment."
@@ -1832,6 +1840,21 @@ class ConfigGui(tk.Tk):
 
     def start_pipeline_window(self, python_exe: Path) -> None:
         env = self.pipeline_environment()
+
+        if (FROZEN):
+            # The frozen executable is the CLI: run the pipeline via its own `run`
+            # subcommand in a fresh console, with the saved config passed explicitly.
+            command = [sys.executable, "run", "--config", str(CONFIG_PATH)]
+            creationflags = subprocess.CREATE_NEW_CONSOLE if (os.name == "nt") else 0
+            process = subprocess.Popen(
+                command,
+                cwd=PROJECT_DIR,
+                env=env,
+                creationflags=creationflags,
+                start_new_session=(os.name != "nt"),
+            )
+            self.pipeline_processes.append(process)
+            return
 
         if (os.name == "nt"):
             runner_path = PROJECT_DIR / "scripts" / "run_pipeline_windows.bat"
@@ -2158,9 +2181,18 @@ class ConfigGui(tk.Tk):
 
         self.run_cli(argv)
 
+    def cli_command(self, argv: list[str]) -> list[str]:
+        """Build the argv to invoke a photo-cat subcommand for the current runtime.
+
+        In a frozen build the executable itself is the CLI entry point, so it is
+        called directly; otherwise the interpreter runs the CLI module.
+        """
+        if (FROZEN):
+            return [sys.executable, *argv]
+        return [self.python_executable(), "-m", "photo_cat.cli", *argv]
+
     def run_cli(self, argv: list[str]) -> None:
-        python_exe = self.python_executable()
-        command = [python_exe, "-m", "photo_cat.cli", *argv]
+        command = self.cli_command(argv)
         env = self.pipeline_environment()
 
         self.append_output(f"$ photo-cat {' '.join(shlex.quote(part) for part in argv)}\n")
