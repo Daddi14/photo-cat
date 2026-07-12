@@ -145,7 +145,8 @@ def suggested_result_output(
     elif (role == "screening"):
         suffix, extension = "screening", extension_by_format.get(selected_format, "csv")
     elif (role == "plot"):
-        suffix, extension = selected_kind, "svg" if backend == "svg" else "png"
+        suffix = selected_kind
+        extension = selected_format if selected_format in {"svg", "png", "pdf"} else ("svg" if backend == "svg" else "png")
     elif (role == "publication_plots"):
         suffix, extension = "publication_plots", ""
     elif (role == "report"):
@@ -170,6 +171,25 @@ def suggested_result_output(
         if (not numbered.exists()):
             return str(numbered)
     raise RuntimeError("Could not find an available automatic output name.")
+
+
+def tool_progress_text(frame: int, label: str, elapsed_seconds: float, status: str = "working") -> str:
+    """Render one compact GUI-console activity bar without a fabricated percentage."""
+    width = 20
+    if (status == "working"):
+        segment_width = 4
+        travel = width - segment_width
+        cycle = travel * 2
+        offset = max(0, int(frame)) % cycle
+        position = offset if offset <= travel else cycle - offset
+        bar = "-" * position + "=" * segment_width + "-" * (width - position - segment_width)
+    else:
+        bar = "=" * width if status == "completed" else "!" * width
+    elapsed = max(0, int(elapsed_seconds))
+    hours, remainder = divmod(elapsed, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    elapsed_text = f"{hours:d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+    return f"[{bar}] {tr(status)} {elapsed_text} — {label}"
 
 
 def _localize_messageboxes() -> None:
@@ -381,6 +401,8 @@ class ConfigGui(tk.Tk):
         self.output_text = None
         self.model_dependent_entries = {}
         self._tooltips: list[ToolTip] = []
+        self._tool_progress_counter = 0
+        self._tool_progress: dict[int, dict] = {}
 
         self.create_widgets()
         self.load_values_into_fields()
@@ -1000,7 +1022,7 @@ class ConfigGui(tk.Tk):
         for key, label, spec_builder in (
             ("summarize", "Summarize", self.spec_summarize),
             ("screen", "Screen / rank", self.spec_screen),
-            ("plot", "Plot (SVG)", self.spec_plot),
+            ("plot", "Plot", self.spec_plot),
             ("publication", "Publication plots", self.spec_publication_plots),
             ("report", "Report", self.spec_report),
             ("export", "Export", self.spec_export),
@@ -2524,6 +2546,7 @@ class ConfigGui(tk.Tk):
         env = self.pipeline_environment()
 
         self.append_output(f"$ photo-cat {' '.join(shlex.quote(part) for part in argv)}\n")
+        progress_id = self.start_tool_progress(f"photo-cat {argv[0]}")
 
         def worker():
             try:
@@ -2539,11 +2562,66 @@ class ConfigGui(tk.Tk):
                 for line in process.stdout:
                     self.after(0, self.append_output, line)
                 process.wait()
+                self.after(0, self.finish_tool_progress, progress_id, process.returncode == 0)
                 self.after(0, self.append_output, tr("[finished with exit code {code}]", code=process.returncode) + "\n\n")
             except Exception as exc:
+                self.after(0, self.finish_tool_progress, progress_id, False)
                 self.after(0, self.append_output, tr("[error] {error}", error=exc) + "\n\n")
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def start_tool_progress(self, label: str) -> int:
+        """Insert and animate one progress row for a GUI-launched command."""
+        self._tool_progress_counter += 1
+        progress_id = self._tool_progress_counter
+        tag = f"tool_progress_{progress_id}"
+        self._tool_progress[progress_id] = {
+            "tag": tag,
+            "label": label,
+            "started_at": time.monotonic(),
+            "frame": 0,
+        }
+        if (self.output_text is not None):
+            self.output_text.configure(state="normal")
+            self.output_text.insert("end", tool_progress_text(0, label, 0.0), (tag,))
+            self.output_text.insert("end", "\n")
+            self.output_text.see("end")
+            self.output_text.configure(state="disabled")
+        self.after(140, self.animate_tool_progress, progress_id)
+        return progress_id
+
+    def animate_tool_progress(self, progress_id: int) -> None:
+        """Move one tool-console bar while its subprocess is still active."""
+        entry = self._tool_progress.get(progress_id)
+        if (entry is None):
+            return
+        entry["frame"] += 1
+        elapsed = time.monotonic() - entry["started_at"]
+        self.replace_tool_progress_text(entry["tag"], tool_progress_text(entry["frame"], entry["label"], elapsed))
+        self.after(140, self.animate_tool_progress, progress_id)
+
+    def finish_tool_progress(self, progress_id: int, succeeded: bool) -> None:
+        """Stop one animation and leave a durable completed or failed row."""
+        entry = self._tool_progress.pop(progress_id, None)
+        if (entry is None):
+            return
+        elapsed = time.monotonic() - entry["started_at"]
+        status = "completed" if succeeded else "failed"
+        self.replace_tool_progress_text(entry["tag"], tool_progress_text(entry["frame"], entry["label"], elapsed, status))
+
+    def replace_tool_progress_text(self, tag: str, text: str) -> None:
+        """Replace only the tagged activity row without disturbing command output."""
+        if (self.output_text is None):
+            return
+        ranges = self.output_text.tag_ranges(tag)
+        if (len(ranges) < 2):
+            return
+        start, end = ranges[0], ranges[-1]
+        self.output_text.configure(state="normal")
+        self.output_text.delete(start, end)
+        self.output_text.insert(start, text, (tag,))
+        self.output_text.see("end")
+        self.output_text.configure(state="disabled")
 
     def append_output(self, text: str) -> None:
         if (self.output_text is None):
@@ -2662,6 +2740,7 @@ class ConfigGui(tk.Tk):
                 {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "choice", "label": "Kind", "flag": "--kind", "options": PLOT_KINDS, "default": "contaminant-counts"},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["svg", "png", "pdf"], "default": "svg"},
                 {"kind": "choice", "label": "Backend", "flag": "--backend", "options": ["svg", "matplotlib"], "default": "svg"},
                 {"kind": "file_save", "label": "Output image file (path; auto-named next to the result if blank)", "flag": "--output", "autofill_output": "plot"},
             ],
@@ -2686,11 +2765,11 @@ class ConfigGui(tk.Tk):
         return {
             "command": "report",
             "title": "Report",
-            "description": "Write an HTML or Markdown report from a PHOTO-CAT query result JSON.",
+            "description": "Write an HTML, Markdown, or PDF report from a PHOTO-CAT query result JSON.",
             "fields": [
                 {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
-                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["html", "markdown"], "default": "html"},
+                {"kind": "choice", "label": "Format", "flag": "--format", "options": ["html", "markdown", "pdf"], "default": "html"},
                 {"kind": "file_save", "label": "Output report file (path; auto-named next to the result if blank)", "flag": "--output", "autofill_output": "report"},
             ],
         }

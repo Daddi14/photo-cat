@@ -113,6 +113,7 @@ photo-cat plot INDEX_DIR/results/result.json --kind flux-vs-separation --output 
 photo-cat plot INDEX_DIR/results/result.json --kind sky-map --output sky-map.svg
 photo-cat publication-plots INDEX_DIR/results/result.json --aperture-arcsec 47 --output-dir publication_plots
 photo-cat report INDEX_DIR/results/result.json --format html --output report.html
+photo-cat report INDEX_DIR/results/result.json --format pdf --output report.pdf
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
 photo-cat benchmark-table benchmark.json --output benchmark_table.md
@@ -128,7 +129,7 @@ all-neighbour counts, flux-fraction statistics, and separation statistics.
 separations, or a simple RA/Dec sky map; `--backend matplotlib` enables richer
 publication outputs, including area-normalized separations and
 flux-vs-separation scatter plots. `export` writes flat CSV or Parquet target
-tables. `report` writes an HTML or Markdown document that bundles the summary
+tables. `report` writes an HTML, Markdown, or multi-page PDF document that bundles the summary
 and plots. `provenance` records catalogue checksums and basic input statistics.
 `benchmark` runs selected pipeline stages and records wall-clock time plus
 Python `tracemalloc` peak allocations; if `psutil` is installed it also samples

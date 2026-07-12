@@ -330,6 +330,49 @@ def test_optional_matplotlib_backend_writes_a_plot_when_installed(tmp_path: Path
 
 
 @pytest.mark.regression
+@pytest.mark.parametrize(("output_format", "signature"), [("png", b"\x89PNG"), ("pdf", b"%PDF")])
+def test_cli_plot_supports_png_and_pdf_formats(tmp_path: Path, output_format: str, signature: bytes) -> None:
+    """The public plot command selects matplotlib automatically for PNG and PDF products."""
+    pytest.importorskip("matplotlib")
+    result_path = write_result_json(tmp_path)
+    output_path = tmp_path / f"contamination.{output_format}"
+
+    assert cli.main([
+        "plot",
+        str(result_path),
+        "--kind",
+        "flux",
+        "--format",
+        output_format,
+        "--output",
+        str(output_path),
+    ]) == 0
+
+    assert output_path.read_bytes().startswith(signature)
+
+
+@pytest.mark.regression
+def test_cli_report_writes_multipage_pdf(tmp_path: Path) -> None:
+    """PDF reports contain a summary page and diagnostic plot pages rather than renamed HTML."""
+    pytest.importorskip("matplotlib")
+    result_path = write_result_json(tmp_path)
+    report_path = tmp_path / "report.pdf"
+
+    assert cli.main([
+        "report",
+        str(result_path),
+        "--format",
+        "pdf",
+        "--output",
+        str(report_path),
+    ]) == 0
+
+    payload = report_path.read_bytes()
+    assert payload.startswith(b"%PDF")
+    assert payload.count(b"/Type /Page") >= 6
+
+
+@pytest.mark.regression
 def test_cli_benchmark_writes_timing_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

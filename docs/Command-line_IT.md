@@ -157,8 +157,11 @@ photo-cat plot output/my_index/results/result.json --kind separations-normalized
 photo-cat plot output/my_index/results/result.json --kind flux-vs-separation --output output/flux_vs_separation.svg
 photo-cat plot output/my_index/results/result.json --kind contamination-vs-magnitude --output output/contamination_vs_magnitude.svg
 photo-cat plot output/my_index/results/result.json --kind sky-map --output output/sky-map.svg
-photo-cat plot output/my_index/results/result.json --kind sky-map --backend matplotlib --output output/sky-map.png
+photo-cat plot output/my_index/results/result.json --kind sky-map --format png --output output/sky-map.png
+photo-cat plot output/my_index/results/result.json --kind sky-map --format pdf --output output/sky-map.pdf
 ```
+
+`plot --format` accetta `svg`, `png` o `pdf`. PNG e PDF usano automaticamente matplotlib; SVG mantiene il renderer leggero integrato, salvo selezione esplicita di `--backend matplotlib`.
 
 Esporta tabelle target piatte:
 
@@ -172,7 +175,10 @@ Crea un report compatto:
 ```bash
 photo-cat report output/my_index/results/result.json --format html --output output/report.html
 photo-cat report output/my_index/results/result.json --format markdown --output output/report.md
+photo-cat report output/my_index/results/result.json --format pdf --output output/report.pdf
 ```
+
+Il PDF contiene una pagina di riepilogo seguita dalle pagine dei grafici diagnostici. Usa HTML per la consultazione nel browser, Markdown per repository e revisioni testuali, PDF per un documento unico da condividere o inviare.
 
 Registra metadata di benchmark:
 
@@ -196,6 +202,16 @@ photo-cat provenance data/my_catalog.csv --adql-file examples/reproducibility/ga
 Il JSON di provenance include percorso del catalogo, SHA-256, dimensione in byte,
 numero di righe, colonne, conteggi nulli, range numerici per RA/Dec/magnitudine,
 conteggio dei source ID duplicati e checksum opzionale del file ADQL/query.
+
+Usa `provenance` quando scarichi, filtri, unisci o prepari un catalogo per una release. Risponde a “quale tabella e quale selezione esatta sono state usate?” e permette di rilevare file cambiati. Rieseguilo ogni volta che cambiano catalogo o selezione ADQL. Non verifica l'accuratezza scientifica delle previsioni di contaminazione.
+
+Valida le previsioni rispetto a un riferimento indipendente:
+
+```bash
+photo-cat validate-results output/my_index/results/result.json data/reference.csv --reference-column contamination_percent --output output/validation.json --matched-output output/residuals.csv
+```
+
+Usa `validate-results` solo quando esiste una tabella esterna con contaminazione misurata o modellata indipendentemente. Il riferimento deve avere apertura, banda, ID target e definizione percentuale confrontabili. Risponde a “quanto concordano le previsioni PHOTO-CAT con il riferimento?” tramite bias, residuo mediano, MAE, RMSE e accuratezza opzionale rispetto a una soglia. Non dimostra accuratezza assoluta se il riferimento non è fisicamente confrontabile.
 
 Genera prodotti per articolo/revisione da risultati esistenti o configurazioni riproducibili:
 

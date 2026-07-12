@@ -147,7 +147,7 @@ def test_every_static_gui_label_has_an_italian_catalog_entry() -> None:
 
     navigation_labels = {
         "Configure pipeline", "Files & columns", "Search settings", "Run options",
-        "Results", "Summarize", "Screen / rank", "Plot (SVG)", "Catalogue",
+        "Results", "Summarize", "Screen / rank", "Plot", "Catalogue",
         "Provenance", "Benchmark", "Diagnostics", "Switch to light mode", "Switch to dark mode",
     }
     assert navigation_labels <= set(TOOLTIPS_EN)

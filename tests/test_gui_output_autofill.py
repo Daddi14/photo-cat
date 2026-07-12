@@ -31,6 +31,7 @@ class FakeVar:
         ("screening", {"Format": "markdown"}, "result_screening.md"),
         ("plot", {"Kind": "sky-map", "Backend": "svg"}, "result_sky-map.svg"),
         ("plot", {"Kind": "flux", "Backend": "matplotlib"}, "result_flux.png"),
+        ("plot", {"Kind": "separations", "Format": "pdf", "Backend": "svg"}, "result_separations.pdf"),
         ("publication_plots", {"Format": "pdf"}, "result_publication_plots"),
         ("report", {"Format": "markdown"}, "result_report.md"),
         ("export", {"Format": "parquet"}, "result_export.parquet"),

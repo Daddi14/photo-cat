@@ -117,6 +117,7 @@ photo-cat plot INDEX_DIR/results/result.json --kind flux-vs-separation --output 
 photo-cat plot INDEX_DIR/results/result.json --kind sky-map --output sky-map.svg
 photo-cat publication-plots INDEX_DIR/results/result.json --aperture-arcsec 47 --output-dir publication_plots
 photo-cat report INDEX_DIR/results/result.json --format html --output report.html
+photo-cat report INDEX_DIR/results/result.json --format pdf --output report.pdf
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
 photo-cat benchmark-table benchmark.json --output benchmark_table.md
@@ -133,7 +134,7 @@ conteggi dei contaminanti, frazioni di flusso, separazioni o una semplice mappa
 RA/Dec; `--backend matplotlib` abilita output più ricchi da pubblicazione,
 incluse separazioni normalizzate per area e scatter plot
 flusso-vs-separazione. `export` scrive tabelle target piatte CSV o Parquet.
-`report` scrive un documento HTML o Markdown con riassunto e plot. `provenance`
+`report` scrive un documento HTML, Markdown o PDF multipagina con riassunto e plot. `provenance`
 registra checksum del catalogo e statistiche di input di base. `benchmark`
 esegue le fasi selezionate e registra tempo di esecuzione più picco di
 allocazioni Python via `tracemalloc`; se `psutil` è installato campiona anche la

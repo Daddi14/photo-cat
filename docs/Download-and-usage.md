@@ -43,7 +43,9 @@ On macOS, running the launcher from Terminal avoids issues caused by downloaded 
 
 ## Running the pipeline
 
-After configuring the run, click `Save and run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
+After configuring the run, click `Save + run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
+
+Every command launched from a GUI tool panel also receives an animated row in the Tool output console. It shows the command name and elapsed time immediately, then remains as a completed or failed status even when the underlying command produced no intermediate messages.
 
 Determinate percentages always represent measured completed items, rows, chunks, or targets. Operations whose libraries do not expose a reliable total use a moving indeterminate bar with the current activity and elapsed time instead of a fabricated percentage. Environment creation lists its actual phases, and dependency installation identifies the package currently being downloaded or installed.
 

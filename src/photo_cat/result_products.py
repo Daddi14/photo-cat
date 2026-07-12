@@ -9,6 +9,7 @@ import html
 import json
 import math
 import statistics
+import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -33,7 +34,7 @@ SKY_MAP_CLASSES = (
     ("1–3 contaminants", "#E69F00"),
     (">3 contaminants", "#D55E00"),
 )
-REPORT_FORMATS = ("html", "markdown")
+REPORT_FORMATS = ("html", "markdown", "pdf")
 EXPORT_FORMATS = ("csv", "parquet")
 
 
@@ -593,6 +594,8 @@ def build_report(rows: list[dict[str, Any]], result_path: str | Path, output_for
             "```\n"
         )
 
+    if output_format == "pdf":
+        raise ValueError("PDF reports must be written to a file.")
     if output_format != "html":
         raise ValueError(f"Report format must be one of: {', '.join(REPORT_FORMATS)}")
 
@@ -613,10 +616,50 @@ def build_report(rows: list[dict[str, Any]], result_path: str | Path, output_for
     )
 
 
+def _write_pdf_report(rows: list[dict[str, Any]], result_path: str | Path, output_path: str | Path) -> str:
+    """Write a multi-page PDF containing the summary and diagnostic plots."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.image as mpimg
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+    except ImportError as error:
+        raise ImportError("PDF report generation requires matplotlib.") from error
+
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    summary = summarize_results(rows, source_path=result_path)
+    source_text = str(Path(result_path).resolve())
+    with PdfPages(destination, metadata={"Title": "PHOTO-CAT report", "Subject": "Contamination screening summary"}) as pdf:
+        figure = plt.figure(figsize=(8.27, 11.69), constrained_layout=True)
+        figure.text(0.07, 0.95, tr("PHOTO-CAT report"), fontsize=18, weight="bold", va="top")
+        figure.text(0.07, 0.91, f"{tr('Source result')}: {source_text}", fontsize=8, va="top", wrap=True)
+        figure.text(0.07, 0.86, summary_text(summary), fontsize=10, family="monospace", va="top")
+        pdf.savefig(figure, bbox_inches="tight")
+        plt.close(figure)
+
+        with tempfile.TemporaryDirectory(prefix="photo_cat_report_") as temporary_directory:
+            temporary_path = Path(temporary_directory)
+            for kind in ("contaminant-counts", "flux", "separations", "flux-vs-separation", "sky-map"):
+                image_path = temporary_path / f"{kind}.png"
+                write_matplotlib_plot(rows, kind, image_path)
+                image = mpimg.imread(image_path)
+                figure, axis = plt.subplots(figsize=(11.69, 8.27), constrained_layout=True)
+                axis.imshow(image)
+                axis.axis("off")
+                pdf.savefig(figure, bbox_inches="tight")
+                plt.close(figure)
+    return str(destination)
+
+
 def write_report(rows: list[dict[str, Any]], result_path: str | Path, output_path: str | Path, output_format: str) -> str:
     """Write an HTML or Markdown report."""
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if output_format == "pdf":
+        return _write_pdf_report(rows, result_path, destination)
     destination.write_text(build_report(rows, result_path, output_format), encoding="utf-8")
     return str(destination)
 

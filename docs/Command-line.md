@@ -157,8 +157,11 @@ photo-cat plot output/my_index/results/result.json --kind separations-normalized
 photo-cat plot output/my_index/results/result.json --kind flux-vs-separation --output output/flux_vs_separation.svg
 photo-cat plot output/my_index/results/result.json --kind contamination-vs-magnitude --output output/contamination_vs_magnitude.svg
 photo-cat plot output/my_index/results/result.json --kind sky-map --output output/sky-map.svg
-photo-cat plot output/my_index/results/result.json --kind sky-map --backend matplotlib --output output/sky-map.png
+photo-cat plot output/my_index/results/result.json --kind sky-map --format png --output output/sky-map.png
+photo-cat plot output/my_index/results/result.json --kind sky-map --format pdf --output output/sky-map.pdf
 ```
+
+`plot --format` accepts `svg`, `png`, or `pdf`. PNG and PDF automatically use matplotlib; SVG retains the lightweight built-in renderer unless `--backend matplotlib` is selected explicitly.
 
 Export flat target tables:
 
@@ -172,7 +175,10 @@ Create a compact report:
 ```bash
 photo-cat report output/my_index/results/result.json --format html --output output/report.html
 photo-cat report output/my_index/results/result.json --format markdown --output output/report.md
+photo-cat report output/my_index/results/result.json --format pdf --output output/report.pdf
 ```
+
+The PDF contains a summary page followed by diagnostic plot pages. Use HTML for local browser viewing, Markdown for repository/review text, and PDF for a single shareable or submission-ready document.
 
 Record benchmark metadata:
 
@@ -196,6 +202,16 @@ photo-cat provenance data/my_catalog.csv --adql-file examples/reproducibility/ga
 Provenance JSON includes the catalogue path, SHA-256, byte size, row count,
 columns, null counts, numeric ranges for RA/Dec/magnitude columns, duplicate
 source-ID count, and optional ADQL/query-file checksum.
+
+Use `provenance` when a catalogue is downloaded, filtered, merged, or prepared for a release. It answers “exactly which input table and selection did this run use?” and lets collaborators detect a changed file. Run it again whenever the catalogue or ADQL selection changes. It does not test whether contamination predictions are scientifically accurate.
+
+Validate predictions against an independent reference:
+
+```bash
+photo-cat validate-results output/my_index/results/result.json data/reference.csv --reference-column contamination_percent --output output/validation.json --matched-output output/residuals.csv
+```
+
+Use `validate-results` only when an external measured or independently modelled contamination table exists. The reference should use a comparable aperture, bandpass, target IDs, and percentage definition. It answers “how closely do PHOTO-CAT predictions agree with the reference?” through bias, median residual, MAE, RMSE, and optional threshold accuracy. It does not establish absolute accuracy when the reference is not physically comparable.
 
 Generate reproducible products from existing results or reproducible configs:
 

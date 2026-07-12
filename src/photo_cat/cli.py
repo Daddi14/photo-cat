@@ -164,13 +164,19 @@ def run_summarize(args: argparse.Namespace) -> int:
 
 
 def run_plot(args: argparse.Namespace) -> int:
-    """Write a dependency-free SVG plot from a PHOTO-CAT query result JSON."""
+    """Write an SVG, PNG, or PDF plot from a PHOTO-CAT query result JSON."""
     from .result_products import load_result_rows, write_matplotlib_plot, write_plot
 
     result_path = Path(args.result_json)
-    output_path = Path(args.output) if args.output else result_path.with_name(f"{result_path.stem}_{args.kind}.svg")
+    requested_format = args.format
+    if (requested_format is None):
+        requested_format = "svg" if args.backend == "svg" else "png"
+    output_path = Path(args.output) if args.output else result_path.with_name(f"{result_path.stem}_{args.kind}.{requested_format}")
+    if (args.output and args.format and output_path.suffix.lower() != f".{requested_format}"):
+        output_path = output_path.with_suffix(f".{requested_format}")
     rows = load_result_rows(result_path)
-    if (args.backend == "matplotlib"):
+    backend = "matplotlib" if requested_format in {"png", "pdf"} else args.backend
+    if (backend == "matplotlib"):
         saved_path = write_matplotlib_plot(rows, args.kind, output_path)
     else:
         saved_path = write_plot(rows, args.kind, output_path)
@@ -489,7 +495,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     plot_parser = subparsers.add_parser(
         "plot",
-        help="write an SVG plot from a PHOTO-CAT query result JSON",
+        help="write an SVG, PNG, or PDF plot from a PHOTO-CAT query result JSON",
         formatter_class=OverrideHelpFormatter,
     )
     plot_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
@@ -507,12 +513,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="plot type (default: contaminant-counts)",
     )
     plot_parser.add_argument(
+        "--format",
+        choices=["svg", "png", "pdf"],
+        default=None,
+        help="plot output format; PNG and PDF use matplotlib",
+    )
+    plot_parser.add_argument(
         "--backend",
         choices=["svg", "matplotlib"],
         default="svg",
         help="plot backend (default: svg)",
     )
-    plot_parser.add_argument("--output", help="SVG output path")
+    plot_parser.add_argument("--output", help="plot output path")
     plot_parser.set_defaults(func=run_plot)
 
     publication_plots_parser = subparsers.add_parser(
@@ -578,13 +590,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_parser = subparsers.add_parser(
         "report",
-        help="write an HTML or Markdown report from a PHOTO-CAT query result JSON",
+        help="write an HTML, Markdown, or PDF report from a PHOTO-CAT query result JSON",
         formatter_class=OverrideHelpFormatter,
     )
     report_parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
     report_parser.add_argument(
         "--format",
-        choices=["html", "markdown"],
+        choices=["html", "markdown", "pdf"],
         default="html",
         help="report format (default: html)",
     )
