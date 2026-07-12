@@ -167,7 +167,7 @@ The build creates the reusable neighbour index. The query creates the target-res
 
 ### 11. Save and run
 
-1. Click **Save + run pipeline**.
+1. Click **Save and run pipeline**.
 2. Confirm the dialog.
 3. Keep the pipeline console open.
 4. Wait for both stages to finish successfully.

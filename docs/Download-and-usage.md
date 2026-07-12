@@ -45,7 +45,7 @@ On macOS, running the launcher from Terminal avoids issues caused by downloaded 
 
 ## Running the pipeline
 
-After configuring the run, click `Save + run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
+After configuring the run, click `Save and run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
 
 Each build/query step displays a startup activity bar immediately after its heading while Python imports the stage and prepares its first detailed progress output. The startup bar hands over to the child stage as soon as that stage emits output.
 
