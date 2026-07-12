@@ -31,11 +31,8 @@ jobs:
         run: ruff check src tests
 
   typecheck:
-    name: mypy (advisory)
+    name: mypy
     runs-on: ubuntu-latest
-    # Advisory while the type-annotation pass drives the remaining errors to zero;
-    # flip continue-on-error off once `mypy` reports no errors on the checked set.
-    continue-on-error: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
