@@ -16,6 +16,7 @@ from typing import Callable
 from .load_config import EXECUTION_SECTION, ExecutionConfig, load_config, resolve_config_path
 from .i18n import initialize_language, tr
 from .logger_setup import get_logger
+from .pipeline_display import ActivityBar
 
 
 logger = get_logger(__name__)
@@ -184,14 +185,25 @@ def run_stage(
 
     write_step(step_index, step_total, stage.title)
 
-    result = subprocess.run(
-        [sys.executable, "-m", f"photo_cat.{stage.module_name}"],
-        check=False,
-        cwd=PROJECT_DIR,
-        env=compact_environment(config_path),
-    )
+    with ActivityBar(tr("starting stage: {activity}", activity=tr(stage.activity_label))):
+        process = subprocess.Popen(
+            [sys.executable, "-m", f"photo_cat.{stage.module_name}"],
+            cwd=PROJECT_DIR,
+            env=compact_environment(config_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=-1,
+        )
+        first_output = process.stdout.read(1) if process.stdout is not None else b""
 
-    if (result.returncode != 0):
+    if (process.stdout is not None):
+        _write_stage_output(first_output)
+        read_chunk = getattr(process.stdout, "read1", process.stdout.read)
+        while (chunk := read_chunk(4096)):
+            _write_stage_output(chunk)
+    return_code = process.wait()
+
+    if (return_code != 0):
         raise RuntimeError(
             f"{stage.module_name}.py failed.\n"
             "Read the error message above, fix the configuration in the GUI, then run again."
@@ -199,6 +211,21 @@ def run_stage(
 
     print()
     write_success(tr("Completed: {activity}", activity=tr(stage.activity_label)))
+
+
+def _write_stage_output(output: bytes | str) -> None:
+    """Forward child output byte-for-byte, including carriage-return progress bars."""
+    if (not output):
+        return
+    if (isinstance(output, bytes)):
+        binary_stream = getattr(sys.stdout, "buffer", None)
+        if (binary_stream is not None):
+            binary_stream.write(output)
+            binary_stream.flush()
+            return
+        output = output.decode("utf-8", errors="replace")
+    sys.stdout.write(output)
+    sys.stdout.flush()
 
 
 def run_pipeline_stages(

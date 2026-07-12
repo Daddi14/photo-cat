@@ -14,7 +14,7 @@
 
 PHOTO-CAT crea un indice dei vicini a partire da un catalogo astronomico e valuta il rischio di contaminazione da sorgenti vicine per target fotometrici selezionati.
 
-[Download e utilizzo](docs/Download-and-usage_IT.md) · [Riga di comando](docs/Command-line_IT.md) · [Dati di input](docs/Input-data_IT.md) · [Risoluzione problemi](docs/Troubleshooting_IT.md)
+[Download e utilizzo](docs/Download-and-usage_IT.md) · [Riprodurre i risultati del paper](docs/REPRODUCE_PAPER_RESULT_IT.md) · [Riga di comando](docs/Command-line_IT.md) · [Dati di input](docs/Input-data_IT.md) · [Risoluzione problemi](docs/Troubleshooting_IT.md)
 
 ![Python](https://img.shields.io/badge/python-3.10--3.13-blue)
 ![Piattaforme](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)

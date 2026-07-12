@@ -333,6 +333,7 @@ ITALIAN: dict[str, str] = {
     "Dec [deg]": "Dec [gradi]",
     "Build neighbour index": "Costruzione dell'indice dei vicini",
     "Query contamination": "Calcolo della contaminazione",
+    "starting stage: {activity}": "avvio della fase: {activity}",
     "Completed: {activity}": "Completato: {activity}",
     "Version": "Versione",
     "Project folder": "Cartella del progetto",

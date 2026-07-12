@@ -4,6 +4,8 @@
 
 PHOTO-CAT è distribuito come cartella di progetto con launcher per piattaforma. Gli utenti normali dovrebbero partire dalla cartella principale e non devono aprire manualmente `src/` o `scripts/`.
 
+Per rigenerare il catalogo Gaia, eseguire la pipeline e creare i grafici coordinati dei risultati del paper, segui [Riprodurre i risultati del paper](REPRODUCE_PAPER_RESULT_IT.md).
+
 ## Avvio rapido
 
 1. Scarica l’archivio dell’ultima release.
@@ -44,6 +46,8 @@ Su macOS, avviare il launcher dal Terminale evita problemi causati da file coman
 ## Esecuzione della pipeline
 
 Dopo aver configurato l’esecuzione, clicca `Salva e avvia la pipeline` nella GUI. PHOTO-CAT apre una console della pipeline e mostra le fasi correnti, gli indicatori di progresso e il percorso di output.
+
+Ogni fase build/query mostra una barra di avvio subito dopo l'intestazione mentre Python importa il modulo e prepara il primo avanzamento dettagliato. La barra di avvio lascia spazio a quella della fase non appena il processo figlio produce output.
 
 Ogni comando avviato da un pannello della GUI riceve anche una riga animata nella console Output degli strumenti. Mostra subito nome del comando e tempo trascorso, poi resta come stato completato o non riuscito anche quando il comando non produce messaggi intermedi.
 
