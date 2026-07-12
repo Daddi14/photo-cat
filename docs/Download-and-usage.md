@@ -45,6 +45,8 @@ On macOS, running the launcher from Terminal avoids issues caused by downloaded 
 
 After configuring the run, click `Save + run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
 
+Determinate percentages always represent measured completed items, rows, chunks, or targets. Operations whose libraries do not expose a reliable total use a moving indeterminate bar with the current activity and elapsed time instead of a fabricated percentage. Environment creation lists its actual phases, and dependency installation identifies the package currently being downloaded or installed.
+
 ## Command-line interface
 
 After the package is installed, PHOTO-CAT also provides a unified command-line interface.

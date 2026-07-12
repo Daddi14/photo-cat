@@ -45,6 +45,8 @@ Su macOS, avviare il launcher dal Terminale evita problemi causati da file coman
 
 Dopo aver configurato l’esecuzione, clicca `Salva e avvia la pipeline` nella GUI. PHOTO-CAT apre una console della pipeline e mostra le fasi correnti, gli indicatori di progresso e il percorso di output.
 
+Le percentuali determinate rappresentano sempre elementi, righe, blocchi o target realmente completati. Le operazioni per cui le librerie non espongono un totale affidabile usano una barra indeterminata in movimento con attività corrente e tempo trascorso, senza inventare una percentuale. La creazione dell'ambiente elenca le fasi effettive e l'installazione delle dipendenze indica il pacchetto in fase di download o installazione.
+
 ## Interfaccia a riga di comando
 
 Dopo l’installazione del pacchetto, PHOTO-CAT fornisce anche una CLI unificata.
