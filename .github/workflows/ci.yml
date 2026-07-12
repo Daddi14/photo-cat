@@ -52,6 +52,36 @@ jobs:
       - name: mypy
         run: mypy
 
+  package:
+    name: Wheel smoke-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Check distribution metadata
+        run: twine check dist/*
+
+      - name: Install the built wheel in a clean environment and smoke-test the CLI
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/python -m pip install --upgrade pip
+          /tmp/wheel-env/bin/python -m pip install dist/*.whl
+          /tmp/wheel-env/bin/photo-cat --version
+          /tmp/wheel-env/bin/python -c "import photo_cat; print('import ok', photo_cat.__version__)"
+          /tmp/wheel-env/bin/photo-cat --help > /dev/null
+
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
