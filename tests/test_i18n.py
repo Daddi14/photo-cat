@@ -104,6 +104,7 @@ def test_every_static_gui_label_has_an_italian_catalog_entry() -> None:
     source = Path("src/photo_cat/configure_gui.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     labels: set[str] = set()
+    tooltip_labels: set[str] = set()
     option_labels: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -115,6 +116,7 @@ def test_every_static_gui_label_has_an_italian_catalog_entry() -> None:
                     and keyword.value.value
                 ):
                     labels.add(keyword.value.value)
+                    tooltip_labels.add(keyword.value.value)
             if (
                 isinstance(node.func, ast.Attribute)
                 and node.func.attr in {"showerror", "showwarning", "showinfo", "askyesno", "askokcancel"}
@@ -132,17 +134,40 @@ def test_every_static_gui_label_has_an_italian_catalog_entry() -> None:
                     and value.value
                 ):
                     labels.add(value.value)
+                    tooltip_labels.add(value.value)
                     if key.value != "description":
                         option_labels.add(value.value)
 
     assert labels
     assert labels <= set(ITALIAN)
+    assert tooltip_labels <= set(TOOLTIPS_EN)
+    assert tooltip_labels <= set(TOOLTIPS_IT)
     assert option_labels <= set(TOOLTIPS_EN)
     assert option_labels <= set(TOOLTIPS_IT)
+
+    navigation_labels = {
+        "Configure pipeline", "Files & columns", "Search settings", "Run options",
+        "Results", "Summarize", "Screen / rank", "Plot (SVG)", "Catalogue",
+        "Provenance", "Benchmark", "Diagnostics", "Switch to light mode", "Switch to dark mode",
+    }
+    assert navigation_labels <= set(TOOLTIPS_EN)
+    assert navigation_labels <= set(TOOLTIPS_IT)
 
     set_language("it")
     assert tr("Save config.yaml") == "Salva config.yaml"
     assert tr("Save + run pipeline") == "Salva e avvia la pipeline"
+
+
+@pytest.mark.unit
+def test_primary_actions_use_specific_guidance_instead_of_generic_click_text() -> None:
+    """High-value buttons explain effects and prerequisites instead of restating their labels."""
+    for language in ("en", "it"):
+        set_language(language)
+        for label in ("Save config.yaml", "Save + run pipeline", "Load example config", "Clear", "Run diagnostics"):
+            guidance = tooltip_for(label, "button")
+            assert len(guidance) >= 70
+            assert "Click to perform" not in guidance
+            assert "Premi per eseguire" not in guidance
 
 
 @pytest.mark.regression

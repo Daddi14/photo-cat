@@ -806,7 +806,8 @@ class ConfigGui(tk.Tk):
         return outer, content
 
     def add_sidebar_header(self, parent, text: str, row: int) -> None:
-        label = ttk.Label(parent, text=text.upper(), style="SidebarHeader.TLabel")
+        label = ttk.Label(parent, text=text, style="SidebarHeader.TLabel")
+        label._photocat_tooltip_key = text
         label.grid(row=row, column=0, sticky="w", padx=12, pady=(12, 2))
 
     def add_section(self, key: str, label: str, parent: ttk.Frame, sidebar: ttk.Frame, row: int) -> ttk.Frame:
@@ -1001,6 +1002,7 @@ class ConfigGui(tk.Tk):
 
         self.output_text = tk.Text(console, height=8, wrap="word", relief="solid", borderwidth=1)
         self.output_text._photocat_console = True
+        self.output_text._photocat_tooltip_key = "Tool output"
         self.output_text.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
         self._text_widgets.append(self.output_text)
         self.apply_text_colors(self.output_text)
@@ -1162,6 +1164,7 @@ class ConfigGui(tk.Tk):
             state="readonly",
             width=22,
         )
+        mode_combo._photocat_tooltip_key = "Contamination weighting model"
         mode_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=4)
         mode_combo.bind("<<ComboboxSelected>>", lambda event: self.update_model_field_state())
 
@@ -2237,7 +2240,9 @@ class ConfigGui(tk.Tk):
         title_widget.grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 4)
         )
-        ttk.Label(parent, text=f"Command: photo-cat {spec['command']}", style="Muted.TLabel").grid(
+        command_widget = ttk.Label(parent, text=f"Command: photo-cat {spec['command']}", style="Muted.TLabel")
+        command_widget._photocat_tooltip_key = spec["title"]
+        command_widget.grid(
             row=1, column=0, columnspan=3, sticky="w"
         )
         description_widget = ttk.Label(parent, text=spec["description"], style="Muted.TLabel", wraplength=880, justify="left")
