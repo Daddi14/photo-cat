@@ -116,6 +116,62 @@ DEFAULT_CONFIG = {
 }
 
 
+def suggested_result_output(
+    result_json: str | Path,
+    role: str,
+    selections: dict[str, str] | None = None,
+    *,
+    avoid_existing: bool = True,
+) -> str:
+    """Return a descriptive, type-aware output beside one result JSON."""
+    result_path = Path(result_json).expanduser()
+    selections = selections or {}
+    selected_format = selections.get("Format", "").strip().lower()
+    selected_kind = selections.get("Kind", "contaminant-counts").strip() or "contaminant-counts"
+    backend = selections.get("Backend", "svg").strip().lower()
+    extension_by_format = {
+        "text": "txt",
+        "json": "json",
+        "csv": "csv",
+        "markdown": "md",
+        "html": "html",
+        "parquet": "parquet",
+        "png": "png",
+        "pdf": "pdf",
+        "svg": "svg",
+    }
+    if (role == "summary"):
+        suffix, extension = "summary", extension_by_format.get(selected_format, "txt")
+    elif (role == "screening"):
+        suffix, extension = "screening", extension_by_format.get(selected_format, "csv")
+    elif (role == "plot"):
+        suffix, extension = selected_kind, "svg" if backend == "svg" else "png"
+    elif (role == "publication_plots"):
+        suffix, extension = "publication_plots", ""
+    elif (role == "report"):
+        suffix, extension = "report", extension_by_format.get(selected_format, "html")
+    elif (role == "export"):
+        suffix, extension = "export", extension_by_format.get(selected_format, "csv")
+    elif (role == "validation_stats"):
+        suffix, extension = "validation", "json"
+    elif (role == "validation_residuals"):
+        suffix, extension = "validation_residuals", "csv"
+    else:
+        raise ValueError(f"Unknown result output role: {role}")
+
+    filename = f"{result_path.stem}_{suffix}"
+    candidate = result_path.with_name(filename if extension == "" else f"{filename}.{extension}")
+    if (not avoid_existing or not candidate.exists()):
+        return str(candidate)
+    for index in range(2, 10_000):
+        numbered = result_path.with_name(
+            f"{filename}_{index}" if extension == "" else f"{filename}_{index}.{extension}"
+        )
+        if (not numbered.exists()):
+            return str(numbered)
+    raise RuntimeError("Could not find an available automatic output name.")
+
+
 def _localize_messageboxes() -> None:
     """Translate every dialog title and message, including existing call sites."""
     for name in ("showerror", "showwarning", "showinfo", "askyesno", "askokcancel"):
@@ -204,7 +260,7 @@ HELP_TEXT = """Basic pipeline usage:
    - Targets CSV to the same file.
    - Output/index folder to an output folder next to the catalog.
    - Query index folder to the same output/index folder.
-3. Click Save + run.
+3. Click Save and run.
 
 Default Gaia-like column names:
 Catalog CSV: source_id, ra, dec, phot_g_mean_mag
@@ -1019,7 +1075,7 @@ class ConfigGui(tk.Tk):
         ttk.Button(buttons, text="Help", command=self.show_help).grid(row=0, column=0, padx=(0, 8))
         ttk.Button(buttons, text="Load example config", command=self.load_example_config).grid(row=0, column=1, padx=(0, 8))
         ttk.Button(buttons, text="Save config.yaml", command=self.save_config).grid(row=0, column=2, padx=(0, 8))
-        ttk.Button(buttons, text="Save + run pipeline", command=self.save_and_run, style="Accent.TButton").grid(row=0, column=3)
+        ttk.Button(buttons, text="Save and run pipeline", command=self.save_and_run, style="Accent.TButton").grid(row=0, column=3)
 
     # ------------------------------------------------------------------
     # Pipeline panels
@@ -1213,7 +1269,7 @@ class ConfigGui(tk.Tk):
         ttk.Checkbutton(checks, text="Include missing target rows in results", variable=self.include_missing_targets_var).grid(row=4, column=0, sticky="w", pady=2)
         ttk.Checkbutton(
             checks,
-            text="Replace running pipeline when Save + run is clicked",
+            text="Replace running pipeline when Save and run is clicked",
             variable=self.replace_running_pipeline_var,
         ).grid(row=5, column=0, sticky="w", pady=(8, 2))
 
@@ -1221,7 +1277,7 @@ class ConfigGui(tk.Tk):
             checks,
             text=(
                 "Enabled: the previous pipeline window opened by this GUI is closed before a new run starts. "
-                "Disabled: each Save + run opens a separate pipeline window."
+                "Disabled: each Save and run opens a separate pipeline window."
             ),
             style="Muted.TLabel",
             wraplength=880,
@@ -1238,7 +1294,7 @@ class ConfigGui(tk.Tk):
                 "1. Select Catalog CSV in Files & columns.\n"
                 "2. Check that Targets CSV and output folders were auto-filled correctly.\n"
                 "3. Leave the Gaia-like column names unchanged unless your CSV uses different headers.\n"
-                "4. Click Save + run pipeline.\n"
+                "4. Click Save and run pipeline.\n"
                 "5. Use the Results and Catalogue panels on the output JSON afterwards."
             ),
             style="Muted.TLabel",
@@ -2261,6 +2317,7 @@ class ConfigGui(tk.Tk):
             state = self.build_tool_field(form, row, field)
             field_states.append(state)
             row += 1
+        self.register_result_autofill(spec, field_states)
 
         run_button = ttk.Button(
             parent,
@@ -2326,11 +2383,50 @@ class ConfigGui(tk.Tk):
             entry._photocat_tooltip_key = label
             entry.grid(row=row, column=1, sticky="w", padx=(10, 8), pady=4)
 
-        if (field.get("autofill") == "result_json"):
-            self._result_json_fields.append({"var": var, "last_auto": ""})
-
         state["var"] = var
         return state
+
+    def register_result_autofill(self, spec: dict, field_states: list[dict]) -> None:
+        """Connect one result input to its type-aware automatic output fields."""
+        result_state = next(
+            (state for state in field_states if state["field"].get("autofill") == "result_json"),
+            None,
+        )
+        if (result_state is None):
+            return
+        output_states = [state for state in field_states if state["field"].get("autofill_output")]
+        entry = {
+            "var": result_state["var"],
+            "last_auto": "",
+            "outputs": [
+                {"var": state["var"], "last_auto": "", "role": state["field"]["autofill_output"]}
+                for state in output_states
+            ],
+            "selections": {
+                state["field"]["label"]: state["var"]
+                for state in field_states
+                if state["field"]["kind"] == "choice"
+            },
+            "command": spec["command"],
+        }
+        self._result_json_fields.append(entry)
+        entry["var"].trace_add("write", lambda *_args, item=entry: self.refresh_result_output_entry(item))
+        for variable in entry["selections"].values():
+            variable.trace_add("write", lambda *_args, item=entry: self.refresh_result_output_entry(item))
+
+    def refresh_result_output_entry(self, entry: dict) -> None:
+        """Refresh outputs that are empty or still owned by automatic naming."""
+        result_json = entry["var"].get().strip()
+        if (result_json == ""):
+            return
+        selections = {label: variable.get() for label, variable in entry["selections"].items()}
+        for output in entry["outputs"]:
+            current = output["var"].get().strip()
+            if (current != "" and current != output["last_auto"]):
+                continue
+            suggestion = suggested_result_output(result_json, output["role"], selections)
+            output["var"].set(suggestion)
+            output["last_auto"] = suggestion
 
     def browse_for_field(self, var: tk.StringVar, field: dict) -> None:
         kind = field["kind"]
@@ -2526,6 +2622,7 @@ class ConfigGui(tk.Tk):
             if (current == "" or current == entry["last_auto"]):
                 entry["var"].set(latest)
                 entry["last_auto"] = latest
+            self.refresh_result_output_entry(entry)
 
     def spec_summarize(self) -> dict:
         return {
@@ -2536,7 +2633,7 @@ class ConfigGui(tk.Tk):
                 {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["text", "json", "csv"], "default": "text"},
-                {"kind": "file_save", "label": "Output summary file (optional; prints to console if blank)", "flag": "--output"},
+                {"kind": "file_save", "label": "Output summary file (optional; prints to console if blank)", "flag": "--output", "autofill_output": "summary"},
             ],
         }
 
@@ -2548,7 +2645,7 @@ class ConfigGui(tk.Tk):
             "fields": [
                 {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
-                {"kind": "file_save", "label": "Output screening file (path)", "flag": "--output", "required": True},
+                {"kind": "file_save", "label": "Output screening file (path)", "flag": "--output", "required": True, "autofill_output": "screening"},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["csv", "json", "markdown"], "default": "csv"},
                 {"kind": "text", "label": "Metric", "flag": "--metric", "default": "flux_fraction_total_weighted"},
                 {"kind": "float", "label": "Accept max percent", "flag": "--accept-max-percent", "default": "5.0"},
@@ -2566,7 +2663,7 @@ class ConfigGui(tk.Tk):
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "choice", "label": "Kind", "flag": "--kind", "options": PLOT_KINDS, "default": "contaminant-counts"},
                 {"kind": "choice", "label": "Backend", "flag": "--backend", "options": ["svg", "matplotlib"], "default": "svg"},
-                {"kind": "file_save", "label": "Output image file (path; auto-named next to the result if blank)", "flag": "--output"},
+                {"kind": "file_save", "label": "Output image file (path; auto-named next to the result if blank)", "flag": "--output", "autofill_output": "plot"},
             ],
         }
 
@@ -2579,7 +2676,7 @@ class ConfigGui(tk.Tk):
                 {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "float", "label": "Aperture, arcsec", "flag": "--aperture-arcsec", "required": True, "default": "47.0"},
-                {"kind": "dir", "label": "Output directory", "flag": "--output-dir", "required": True},
+                {"kind": "dir", "label": "Output directory", "flag": "--output-dir", "required": True, "autofill_output": "publication_plots"},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["png", "pdf", "svg"], "default": "png"},
                 {"kind": "int", "label": "DPI", "flag": "--dpi", "default": "300"},
             ],
@@ -2594,7 +2691,7 @@ class ConfigGui(tk.Tk):
                 {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["html", "markdown"], "default": "html"},
-                {"kind": "file_save", "label": "Output report file (path; auto-named next to the result if blank)", "flag": "--output"},
+                {"kind": "file_save", "label": "Output report file (path; auto-named next to the result if blank)", "flag": "--output", "autofill_output": "report"},
             ],
         }
 
@@ -2606,7 +2703,7 @@ class ConfigGui(tk.Tk):
             "fields": [
                 {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
-                {"kind": "file_save", "label": "Output data file (path)", "flag": "--output", "required": True},
+                {"kind": "file_save", "label": "Output data file (path)", "flag": "--output", "required": True, "autofill_output": "export"},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["csv", "parquet"], "default": "csv"},
             ],
         }
@@ -2621,8 +2718,8 @@ class ConfigGui(tk.Tk):
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "file_open", "label": "Reference CSV", "flag": None, "required": True,
                  "filetypes": [("CSV files", "*.csv"), ("All files", "*.*")]},
-                {"kind": "file_save", "label": "Output (stats JSON)", "flag": "--output", "required": True},
-                {"kind": "file_save", "label": "Matched residuals CSV file (optional)", "flag": "--matched-output"},
+                {"kind": "file_save", "label": "Output (stats JSON)", "flag": "--output", "required": True, "autofill_output": "validation_stats"},
+                {"kind": "file_save", "label": "Matched residuals CSV file (optional)", "flag": "--matched-output", "autofill_output": "validation_residuals"},
                 {"kind": "text", "label": "Metric", "flag": "--metric", "default": "flux_fraction_total_weighted"},
                 {"kind": "text", "label": "Source ID column", "flag": "--source-id-column", "default": "source_id"},
                 {"kind": "text", "label": "Reference column", "flag": "--reference-column", "default": "contamination_percent"},

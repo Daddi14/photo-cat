@@ -15,7 +15,7 @@ After startup
 1. Select the Catalog CSV.
 2. Check that the column names match the CSV header exactly.
 3. Review the generated target and output paths.
-4. Click Save + run.
+4. Click Save and run.
 
 Notes
 - Column names are case-sensitive.

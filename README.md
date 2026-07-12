@@ -46,7 +46,7 @@ PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly 
    - macOS/Linux: open Terminal in the folder and run `sh START_UNIX.sh`
 4. Select your catalogue CSV in the graphical configurator.
 5. Check the detected column names.
-6. Click `Save + run pipeline`.
+6. Click `Save and run pipeline`.
 
 See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 

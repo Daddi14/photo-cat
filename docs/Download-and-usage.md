@@ -17,7 +17,7 @@ PHOTO-CAT is distributed as a project folder with platform launchers. Normal use
 7. Pause over any setting, value, section, or action to read its tooltip; astronomy-specific fields explain the term and its practical effect.
 8. Check the detected column names.
 9. Choose the build/query options you need.
-10. Click `Save + run pipeline`.
+10. Click `Save and run pipeline`.
 
 ## First run
 
@@ -43,7 +43,7 @@ On macOS, running the launcher from Terminal avoids issues caused by downloaded 
 
 ## Running the pipeline
 
-After configuring the run, click `Save + run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
+After configuring the run, click `Save and run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
 
 Determinate percentages always represent measured completed items, rows, chunks, or targets. Operations whose libraries do not expose a reliable total use a moving indeterminate bar with the current activity and elapsed time instead of a fabricated percentage. Environment creation lists its actual phases, and dependency installation identifies the package currently being downloaded or installed.
 

@@ -12,7 +12,7 @@ Normal users should run only the root starter files:
 - `start_windows.ps1`, main Windows launcher logic.
 - `start_linux_macos.sh`, main macOS/Linux launcher logic.
 - `run_pipeline_windows.bat`, opens the pipeline in a separate Windows console.
-- `run_pipeline_unix.sh`, runs the pipeline from macOS/Linux after `Save + run`.
+- `run_pipeline_unix.sh`, runs the pipeline from macOS/Linux after `Save and run`.
 - `fix_console_window.ps1`, adjusts the Windows console size.
 
 ## Compatibility helpers

@@ -543,7 +543,7 @@ try {
 
     Configure-Tool
 
-    # The GUI handles Save + run by opening the pipeline in its own console.
+    # The GUI handles Save and run by opening the pipeline in its own console.
     # When the GUI is closed, this launcher closes too instead of asking another question.
     exit 0
 }

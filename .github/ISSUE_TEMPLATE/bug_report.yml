@@ -33,7 +33,7 @@ body:
       placeholder: |
         1. Run START_WINDOWS.bat
         2. Select catalogue CSV
-        3. Click Save + run
+        3. Click Save and run
     validations:
       required: true
   - type: textarea

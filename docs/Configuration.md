@@ -124,9 +124,9 @@ the index build. `out_of_range: null` excludes uncalibrated values;
 metadata. This is an empirical colour transformation, not passband integration
 over a spectral energy distribution.
 
-## Save + run pipeline
+## Save and run pipeline
 
-`Save + run pipeline` writes the current GUI settings to `config.yaml`, then starts the pipeline in a separate console.
+`Save and run pipeline` writes the current GUI settings to `config.yaml`, then starts the pipeline in a separate console.
 
 The pipeline console shows progress and the final output path.
 

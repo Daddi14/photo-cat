@@ -155,7 +155,7 @@ def test_every_static_gui_label_has_an_italian_catalog_entry() -> None:
 
     set_language("it")
     assert tr("Save config.yaml") == "Salva config.yaml"
-    assert tr("Save + run pipeline") == "Salva e avvia la pipeline"
+    assert tr("Save and run pipeline") == "Salva e avvia la pipeline"
 
 
 @pytest.mark.unit
@@ -163,7 +163,7 @@ def test_primary_actions_use_specific_guidance_instead_of_generic_click_text() -
     """High-value buttons explain effects and prerequisites instead of restating their labels."""
     for language in ("en", "it"):
         set_language(language)
-        for label in ("Save config.yaml", "Save + run pipeline", "Load example config", "Clear", "Run diagnostics"):
+        for label in ("Save config.yaml", "Save and run pipeline", "Load example config", "Clear", "Run diagnostics"):
             guidance = tooltip_for(label, "button")
             assert len(guidance) >= 70
             assert "Click to perform" not in guidance
