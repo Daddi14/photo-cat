@@ -81,7 +81,7 @@ def _svg_circle_radii(svg: str) -> list[float]:
 
 @pytest.mark.unit
 def test_result_summary_preserves_selected_and_all_neighbor_fluxes(tmp_path: Path) -> None:
-    """Summaries must keep the two contamination metrics distinct for paper statistics."""
+    """Summaries must keep the two contamination metrics distinct for downstream statistics."""
     result_path = write_result_json(tmp_path)
     summary = summarize_results(load_result_rows(result_path), source_path=result_path)
 
@@ -239,30 +239,40 @@ def test_new_reviewer_plot_kinds_build_svg(tmp_path: Path) -> None:
     """Reviewer-facing plots should be available without optional dependencies."""
     rows = load_result_rows(write_result_json(tmp_path))
 
-    for kind in ("separations-normalized", "flux-vs-separation", "contamination-vs-magnitude"):
+    for kind in ("separations", "flux-vs-separation", "contamination-vs-magnitude"):
         svg = build_svg_plot(rows, kind)
         assert "<svg" in svg
         assert "font-family" in svg
 
 
 @pytest.mark.unit
-def test_sky_map_encodes_severity_by_marker_size_not_colour_alone(tmp_path: Path) -> None:
-    """Colour-blind readers should distinguish contamination levels by marker size too."""
+def test_sky_map_uses_colourblind_safe_palette_with_legend(tmp_path: Path) -> None:
+    """The sky map must distinguish classes with a colourblind-safe palette and a colour legend."""
     rows = load_result_rows(write_result_json(tmp_path))
 
     svg = build_svg_plot(rows, "sky-map")
 
-    radii = {value for value in _svg_circle_radii(svg)}
-    assert len(radii) >= 2, "targets with different contaminant counts must render different marker sizes"
-    assert "green=0" not in svg
-    assert "#4477AA" in svg
-    assert "#EECC66" in svg
-    assert "#228833" not in svg
+    assert "#0072B2" in svg  # blue: 0 contaminants
+    assert "#E69F00" in svg  # orange: 1-3 contaminants
+    assert "#D55E00" in svg  # vermillion: >3 contaminants
+    assert "0 contaminants" in svg and "&gt;3 contaminants" in svg  # colour legend present (escaped >)
+    assert "RA [deg]" in svg and "Dec [deg]" in svg
+
+
+@pytest.mark.unit
+def test_separation_plot_uses_one_arcsecond_bins(tmp_path: Path) -> None:
+    """Plot 'separations' must bin contaminant separations in 1-arcsecond bins."""
+    rows = load_result_rows(write_result_json(tmp_path))
+
+    svg = build_svg_plot(rows, "separations")
+
+    assert "Separation (arcsec)" in svg
+    assert "Number of contaminants" in svg
 
 
 @pytest.mark.regression
 def test_cli_provenance_captures_catalogue_checksum_and_ranges(tmp_path: Path) -> None:
-    """Catalogue provenance should preserve enough input facts for paper reproduction."""
+    """Catalogue provenance should preserve enough input facts for reproduction."""
     catalog_path = tmp_path / "catalog.csv"
     catalog_path.write_text(
         "source_id,ra,dec,phot_g_mean_mag\n"
@@ -373,7 +383,7 @@ def test_benchmark_runner_records_stage_status_and_memory_keys(
 
 
 @pytest.mark.regression
-def test_benchmark_table_renders_paper_ready_markdown(tmp_path: Path) -> None:
+def test_benchmark_table_renders_markdown(tmp_path: Path) -> None:
     """Benchmark captures should be convertible into the compact table requested by reviewers."""
     benchmark_path = tmp_path / "benchmark.json"
     benchmark_path.write_text(json.dumps({
@@ -445,23 +455,23 @@ def test_cli_merge_bright_stars_writes_catalogue_and_provenance(tmp_path: Path) 
 
 
 @pytest.mark.regression
-def test_reproduce_paper_products_materializes_manifest_and_plots(tmp_path: Path) -> None:
-    """Paper reproduction should bundle checksummed results with summaries and plots."""
+def test_reproduce_products_materializes_manifest_and_plots(tmp_path: Path) -> None:
+    """Reproduction should bundle checksummed results with summaries and plots."""
     result_path = write_result_json(tmp_path)
-    output_dir = tmp_path / "paper"
+    output_dir = tmp_path / "reproduce_out"
 
-    payload = reproducible_products.reproduce_paper_products([], [result_path], output_dir)
+    payload = reproducible_products.reproduce_products([], [result_path], output_dir)
 
     manifest_path = Path(payload["manifest_path"])
     assert manifest_path.is_file()
     assert payload["products"][0]["result_sha256"]
     assert Path(payload["products"][0]["summary_json"]).is_file()
     assert Path(payload["products"][0]["plots"]["flux-vs-separation"]).is_file()
-    assert "paper_reproduction_manifest" in manifest_path.name
+    assert "reproduction_manifest" in manifest_path.name
 
 
 @pytest.mark.regression
-def test_reproduce_paper_products_can_run_config_and_find_latest_result(
+def test_reproduce_products_can_run_config_and_find_latest_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -469,7 +479,7 @@ def test_reproduce_paper_products_can_run_config_and_find_latest_result(
     index_output = tmp_path / "index" / "output"
     index_output.mkdir(parents=True)
     result_path = write_result_json(index_output)
-    config_path = tmp_path / "paper_config.yaml"
+    config_path = tmp_path / "run_config.yaml"
     config_path.write_text(
         "query_contamination_from_index:\n"
         "  io:\n"
@@ -484,17 +494,17 @@ def test_reproduce_paper_products_can_run_config_and_find_latest_result(
     )
     monkeypatch.setattr(reproducible_products, "run_pipeline", lambda path: 0)
 
-    payload = reproducible_products.reproduce_paper_products([config_path], [], tmp_path / "paper_from_config", run_configs=True)
+    payload = reproducible_products.reproduce_products([config_path], [], tmp_path / "reproduce_from_config", run_configs=True)
 
     assert payload["configs"][0]["latest_result_json"] == str(result_path.resolve())
     assert Path(payload["configs"][0]["config_copy"]).is_file()
 
 
 @pytest.mark.unit
-def test_reproduce_paper_products_rejects_empty_inputs(tmp_path: Path) -> None:
+def test_reproduce_products_rejects_empty_inputs(tmp_path: Path) -> None:
     """A reproduction manifest with no configs or results would be misleading."""
     with pytest.raises(ValueError, match="at least one"):
-        reproducible_products.reproduce_paper_products([], [], tmp_path / "paper")
+        reproducible_products.reproduce_products([], [], tmp_path / "reproduce_out")
 
 
 @pytest.mark.unit
@@ -507,14 +517,14 @@ def test_latest_result_json_reports_missing_outputs(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_reproduce_paper_products_reports_failed_config_run(
+def test_reproduce_products_reports_failed_config_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed pre-run should stop before writing misleading products."""
-    config_path = tmp_path / "paper_config.yaml"
+    config_path = tmp_path / "run_config.yaml"
     config_path.write_text("query_contamination_from_index: {}\n", encoding="utf-8")
     monkeypatch.setattr(reproducible_products, "run_pipeline", lambda path: 1)
 
     with pytest.raises(RuntimeError, match="Pipeline failed"):
-        reproducible_products.reproduce_paper_products([config_path], [], tmp_path / "paper", run_configs=True)
+        reproducible_products.reproduce_products([config_path], [], tmp_path / "reproduce_out", run_configs=True)

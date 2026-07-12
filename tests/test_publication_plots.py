@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 
 from photo_cat import cli
-from photo_cat.publication_plots import ACCESSIBLE_SKY_CLASSES, generate_publication_plots
+from photo_cat.publication_plots import SKY_MAP_CLASSES, generate_publication_plots
 
 
-def write_paper_result(tmp_path: Path) -> Path:
+def write_result(tmp_path: Path) -> Path:
     """Create targets spanning every sky-map contamination class."""
     path = tmp_path / "result_47.json"
     path.write_text(
@@ -45,30 +45,27 @@ def write_paper_result(tmp_path: Path) -> Path:
 
 
 @pytest.mark.unit
-def test_sky_map_encoding_is_not_red_green_and_is_redundant() -> None:
-    """The paper map must distinguish classes by colour, shape, and size."""
-    colors = [item["color"] for item in ACCESSIBLE_SKY_CLASSES]
-    markers = [item["marker"] for item in ACCESSIBLE_SKY_CLASSES]
-    sizes = [item["size"] for item in ACCESSIBLE_SKY_CLASSES]
+def test_sky_map_uses_colourblind_safe_palette() -> None:
+    """The sky map must distinguish contamination classes with a colourblind-safe palette."""
+    colors = [item["color"] for item in SKY_MAP_CLASSES]
+    labels = [item["label"] for item in SKY_MAP_CLASSES]
 
-    assert colors == ["#4477AA", "#EECC66", "#AA3377"]
-    assert len(set(colors)) == len(ACCESSIBLE_SKY_CLASSES)
-    assert len(set(markers)) == len(ACCESSIBLE_SKY_CLASSES)
-    assert len(set(sizes)) == len(ACCESSIBLE_SKY_CLASSES)
-    assert not {"green", "orange", "red"}.intersection(item["label"].lower() for item in ACCESSIBLE_SKY_CLASSES)
+    assert colors == ["#0072B2", "#E69F00", "#D55E00"]
+    assert labels == ["0 contaminants", "1–3 contaminants", ">3 contaminants"]
 
 
 @pytest.mark.regression
 def test_generate_publication_plots_uses_one_configured_aperture(tmp_path: Path) -> None:
-    """One result and aperture should produce count, separation, density, and sky-map plots."""
-    result_path = write_paper_result(tmp_path)
+    """One result and aperture should produce count, separation, and sky-map plots."""
+    result_path = write_result(tmp_path)
     payload = generate_publication_plots(result_path, tmp_path / "plots", aperture_arcsec=47.0, output_format="svg", dpi=72)
 
     assert payload["settings"]["aperture_arcsec"] == 47.0
     assert payload["plots"]["contaminant_count_distribution"]["aperture_arcsec"] == 47.0
-    assert payload["plots"]["contaminant_count_distribution"]["x_scale"] == "symlog"
-    assert payload["plots"]["separation_density_area_normalized"]["normalization"] == "annular_area_arcsec2"
-    assert payload["plots"]["contamination_sky_map"]["colour_alone"] is False
+    assert payload["plots"]["contaminant_count_distribution"]["x_scale"] == "linear"
+    assert payload["plots"]["contaminant_count_distribution"]["y_scale"] == "log"
+    assert "separation_density_area_normalized" not in payload["plots"]
+    assert payload["plots"]["contamination_sky_map"]["palette"] == "colourblind_safe"
     assert Path(payload["manifest_path"]).is_file()
     for plot in payload["plots"].values():
         assert Path(plot["path"]).stat().st_size > 0
@@ -77,8 +74,8 @@ def test_generate_publication_plots_uses_one_configured_aperture(tmp_path: Path)
 
 @pytest.mark.regression
 def test_cli_publication_plots_generates_public_products(tmp_path: Path) -> None:
-    """The public CLI should expose the single-aperture manuscript workflow."""
-    result_path = write_paper_result(tmp_path)
+    """The public CLI should expose the single-aperture plotting workflow."""
+    result_path = write_result(tmp_path)
     output_dir = tmp_path / "cli_figures"
 
     assert cli.main([
@@ -96,7 +93,7 @@ def test_cli_publication_plots_generates_public_products(tmp_path: Path) -> None
 @pytest.mark.unit
 def test_publication_plots_reject_invalid_settings(tmp_path: Path) -> None:
     """Publication settings should fail clearly before creating misleading figures."""
-    result_path = write_paper_result(tmp_path)
+    result_path = write_result(tmp_path)
     with pytest.raises(ValueError, match="format"):
         generate_publication_plots(result_path, tmp_path / "bad", aperture_arcsec=47, output_format="jpg")
     with pytest.raises(ValueError, match="aperture_arcsec"):

@@ -257,18 +257,18 @@ def run_benchmark_table(args: argparse.Namespace) -> int:
     return 0
 
 
-def run_reproduce_paper(args: argparse.Namespace) -> int:
-    """Generate reproducible paper summaries, plots, reports, and manifest."""
-    from .reproducible_products import reproduce_paper_products
+def run_reproduce(args: argparse.Namespace) -> int:
+    """Generate reproducible summaries, plots, reports, and a manifest."""
+    from .reproducible_products import reproduce_products
 
-    payload = reproduce_paper_products(
+    payload = reproduce_products(
         args.configs,
         args.result_jsons,
         args.output_dir,
         run_configs=args.run_configs,
         matplotlib=args.backend == "matplotlib",
     )
-    print(f"Paper reproduction manifest saved to: {payload['manifest_path']}")
+    print(f"Reproduction manifest saved to: {payload['manifest_path']}")
     return 0
 
 
@@ -450,7 +450,6 @@ def build_parser() -> argparse.ArgumentParser:
             "contaminant-counts",
             "flux",
             "separations",
-            "separations-normalized",
             "flux-vs-separation",
             "contamination-vs-magnitude",
             "sky-map",
@@ -579,8 +578,8 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_table_parser.set_defaults(func=run_benchmark_table)
 
     reproduce_parser = subparsers.add_parser(
-        "reproduce-paper",
-        help="generate reproducible paper summaries, plots, reports, and a manifest",
+        "reproduce",
+        help="generate reproducible summaries, plots, reports, and a manifest",
         formatter_class=OverrideHelpFormatter,
     )
     reproduce_parser.add_argument(
@@ -588,7 +587,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="configs",
         action="append",
         default=[],
-        help="paper/run configuration file; may be provided multiple times",
+        help="run configuration file; may be provided multiple times",
     )
     reproduce_parser.add_argument(
         "--result-json",
@@ -609,7 +608,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="svg",
         help="plot backend for generated products (default: svg)",
     )
-    reproduce_parser.set_defaults(func=run_reproduce_paper)
+    reproduce_parser.set_defaults(func=run_reproduce)
 
     merge_parser = subparsers.add_parser(
         "merge-bright-stars",

@@ -21,10 +21,16 @@ PLOT_KINDS = (
     "contaminant-counts",
     "flux",
     "separations",
-    "separations-normalized",
     "flux-vs-separation",
     "contamination-vs-magnitude",
     "sky-map",
+)
+# Sky-map contamination classes, ordered by increasing contamination. Colours use
+# the colourblind-safe Okabe-Ito palette (blue -> orange -> vermillion).
+SKY_MAP_CLASSES = (
+    ("0 contaminants", "#0072B2"),
+    ("1–3 contaminants", "#E69F00"),
+    (">3 contaminants", "#D55E00"),
 )
 REPORT_FORMATS = ("html", "markdown")
 EXPORT_FORMATS = ("csv", "parquet")
@@ -285,7 +291,28 @@ def _svg_frame(width: int, height: int, title: str, body: str) -> str:
     )
 
 
-def _bar_chart(counts: Counter[int], title: str, x_label: str, width: int = 760, height: int = 420) -> str:
+def _svg_legend(entries: list[tuple[str, str]], x: float, y: float) -> str:
+    """Render a small colour legend (swatch + label) at the given top-left position."""
+    parts: list[str] = []
+    for index, (label, color) in enumerate(entries):
+        row_y = y + index * 16
+        parts.append(f'<rect x="{x:.1f}" y="{row_y:.1f}" width="11" height="11" fill="{color}"/>')
+        parts.append(
+            f'<text x="{x + 16:.1f}" y="{row_y + 10:.1f}" font-family="sans-serif" font-size="10">{html.escape(label)}</text>'
+        )
+    return "\n".join(parts)
+
+
+def _bar_chart(
+    counts: Counter[int],
+    title: str,
+    x_label: str,
+    y_label: str | None = None,
+    legend: list[tuple[str, str]] | None = None,
+    color: str = "#4477AA",
+    width: int = 760,
+    height: int = 420,
+) -> str:
     plot_left, plot_top, plot_width, plot_height = 70, 48, width - 110, height - 110
     values = sorted(counts)
     if not values:
@@ -298,80 +325,71 @@ def _bar_chart(counts: Counter[int], title: str, x_label: str, width: int = 760,
         f'<line x1="{plot_left}" y1="{plot_top}" x2="{plot_left}" y2="{plot_top + plot_height}" stroke="#333"/>',
         f'<text x="{width / 2:.1f}" y="{height - 18}" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(x_label)}</text>',
     ]
+    if (y_label is not None):
+        body.append(
+            f'<text x="18" y="{plot_top + plot_height / 2:.1f}" transform="rotate(-90 18 {plot_top + plot_height / 2:.1f})" '
+            f'text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(y_label)}</text>'
+        )
     for index, value in enumerate(values):
         bar_height = (counts[value] / max_count) * plot_height
         x = plot_left + index * bar_width
         y = plot_top + plot_height - bar_height
-        body.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{max(bar_width - 2, 1):.2f}" height="{bar_height:.2f}" fill="#4477AA"/>')
+        body.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{max(bar_width - 2, 1):.2f}" height="{bar_height:.2f}" fill="{color}"/>')
         if len(values) <= 20:
             body.append(f'<text x="{x + bar_width / 2:.2f}" y="{plot_top + plot_height + 14}" text-anchor="middle" font-family="sans-serif" font-size="10">{value}</text>')
     body.append(f'<text x="14" y="{plot_top + 12}" font-family="sans-serif" font-size="11">max bin count: {max_count}</text>')
+    if (legend is not None):
+        body.append(_svg_legend(legend, plot_left + plot_width - 130, plot_top + 4))
     return _svg_frame(width, height, title, "\n".join(body))
 
 
-def _histogram(values: list[float], title: str, x_label: str, bins: int = 20) -> str:
+def _histogram(
+    values: list[float],
+    title: str,
+    x_label: str,
+    bins: int = 20,
+    y_label: str | None = None,
+    legend: list[tuple[str, str]] | None = None,
+) -> str:
     if not values:
-        return _bar_chart(Counter(), title, x_label)
+        return _bar_chart(Counter(), title, x_label, y_label=y_label, legend=legend)
     low, high = min(values), max(values)
     if low == high:
-        return _bar_chart(Counter({int(round(low)): len(values)}), title, x_label)
+        return _bar_chart(Counter({int(round(low)): len(values)}), title, x_label, y_label=y_label, legend=legend)
     step = (high - low) / bins
     counts: Counter[int] = Counter()
     for value in values:
         bucket = min(int((value - low) / step), bins - 1)
         counts[bucket] += 1
     labels = {bucket: f"{low + bucket * step:.1f}" for bucket in counts}
-    svg = _bar_chart(counts, title, x_label)
+    svg = _bar_chart(counts, title, x_label, y_label=y_label, legend=legend)
     for bucket, label in labels.items():
         svg = svg.replace(f">{bucket}</text>", f">{html.escape(label)}</text>")
     return svg
 
 
-def _bar_values(labels: list[str], heights: list[float], title: str, x_label: str, y_label: str, width: int = 760, height: int = 420) -> str:
-    plot_left, plot_top, plot_width, plot_height = 80, 48, width - 125, height - 120
-    max_height = max(heights) if heights else 1.0
-    max_height = max_height if max_height > 0 else 1.0
-    bar_width = max(1, plot_width / max(len(heights), 1))
-    body = [
-        f'<line x1="{plot_left}" y1="{plot_top + plot_height}" x2="{plot_left + plot_width}" y2="{plot_top + plot_height}" stroke="#333"/>',
-        f'<line x1="{plot_left}" y1="{plot_top}" x2="{plot_left}" y2="{plot_top + plot_height}" stroke="#333"/>',
-        f'<text x="{width / 2:.1f}" y="{height - 18}" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(x_label)}</text>',
-        f'<text x="18" y="{plot_top + plot_height / 2:.1f}" transform="rotate(-90 18 {plot_top + plot_height / 2:.1f})" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(y_label)}</text>',
-    ]
-    for index, value in enumerate(heights):
-        bar_height = (value / max_height) * plot_height
-        x = plot_left + index * bar_width
-        y = plot_top + plot_height - bar_height
-        body.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{max(bar_width - 2, 1):.2f}" height="{bar_height:.2f}" fill="#4477AA"/>')
-        if len(labels) <= 20:
-            body.append(f'<text x="{x + bar_width / 2:.2f}" y="{plot_top + plot_height + 14}" text-anchor="middle" font-family="sans-serif" font-size="9">{html.escape(labels[index])}</text>')
-    return _svg_frame(width, height, title, "\n".join(body))
+def _separation_histogram(values: list[float], title: str, x_label: str, y_label: str) -> str:
+    """Bin contaminant separations into contiguous 1-arcsecond bins."""
+    finite = [value for value in values if (value is not None and math.isfinite(value) and value >= 0.0)]
+    legend = [("Contaminants", "#4477AA")]
+    if (not finite):
+        return _bar_chart(Counter(), title, x_label, y_label=y_label, legend=legend)
+    maximum_bin = int(max(finite))
+    counts: Counter[int] = Counter({bin_index: 0 for bin_index in range(maximum_bin + 1)})
+    for value in finite:
+        counts[int(value)] += 1
+    return _bar_chart(counts, title, x_label, y_label=y_label, legend=legend)
 
 
-def _area_normalized_separation_histogram(rows: list[dict[str, Any]], bins: int = 20) -> str:
-    values = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
-    if (not values):
-        return _bar_values([], [], "Area-normalized contaminant separations", "separation (arcsec)", "contaminants / arcsec²")
-    high = max(values)
-    if (high <= 0.0):
-        high = 1.0
-    step = high / bins
-    counts = [0] * bins
-    for value in values:
-        bucket = min(int(value / step), bins - 1)
-        counts[bucket] += 1
-    densities: list[float] = []
-    labels: list[str] = []
-    for index, count in enumerate(counts):
-        inner = index * step
-        outer = (index + 1) * step
-        annular_area = math.pi * (outer**2 - inner**2)
-        densities.append(count / annular_area if annular_area > 0 else 0.0)
-        labels.append(f"{inner:.0f}-{outer:.0f}")
-    return _bar_values(labels, densities, "Area-normalized contaminant separations", "separation (arcsec)", "contaminants / arcsec²")
-
-
-def _scatter(points: list[tuple[float, float]], title: str, x_label: str, y_label: str, width: int = 760, height: int = 420) -> str:
+def _scatter(
+    points: list[tuple[float, float]],
+    title: str,
+    x_label: str,
+    y_label: str,
+    legend: list[tuple[str, str]] | None = None,
+    width: int = 760,
+    height: int = 420,
+) -> str:
     plot_left, plot_top, plot_width, plot_height = 80, 48, width - 125, height - 120
     if (not points):
         return _svg_frame(width, height, title, "<text x=\"80\" y=\"80\" font-family=\"sans-serif\" font-size=\"12\">No contaminant points available.</text>")
@@ -394,28 +412,30 @@ def _scatter(points: list[tuple[float, float]], title: str, x_label: str, y_labe
         x = plot_left + ((x_value - xmin) / (xmax - xmin)) * plot_width
         y = plot_top + plot_height - ((y_value - ymin) / (ymax - ymin)) * plot_height
         body.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="2.2" fill="#4477AA" fill-opacity="0.65"/>')
+    if (legend is not None):
+        body.append(_svg_legend(legend, plot_left + plot_width - 150, plot_top + 4))
     return _svg_frame(width, height, title, "\n".join(body))
 
 
 def _severity_style(count: int) -> tuple[str, float, float]:
-    """Map contaminant count to a colourblind-safe colour plus a redundant marker size.
+    """Map a contaminant count to its sky-map colour with a uniform marker size.
 
-    Encoding severity by marker size as well as hue keeps the three levels
-    distinguishable without relying on colour vision (Paul Tol bright palette).
-    Returns (hex_colour, svg_radius, matplotlib_area).
+    Colours use the colourblind-safe Okabe-Ito palette. Returns
+    (hex_colour, svg_radius, matplotlib_area).
     """
     if (count == 0):
-        return "#4477AA", 2.0, 6.0
+        return "#0072B2", 2.4, 8.0
     if (count <= 3):
-        return "#EECC66", 3.2, 16.0
-    return "#AA3377", 4.6, 34.0
+        return "#E69F00", 2.4, 8.0
+    return "#D55E00", 2.4, 8.0
 
 
 def _sky_map(rows: list[dict[str, Any]], width: int = 760, height: int = 420) -> str:
     plot_left, plot_top, plot_width, plot_height = 60, 48, width - 100, height - 100
     body = [
         f'<rect x="{plot_left}" y="{plot_top}" width="{plot_width}" height="{plot_height}" fill="#f7f7f7" stroke="#333"/>',
-        f'<text x="{width / 2:.1f}" y="{height - 18}" text-anchor="middle" font-family="sans-serif" font-size="12">RA/Dec target positions</text>',
+        f'<text x="{plot_left + plot_width / 2:.1f}" y="{height - 18}" text-anchor="middle" font-family="sans-serif" font-size="12">RA [deg]</text>',
+        f'<text x="18" y="{plot_top + plot_height / 2:.1f}" transform="rotate(-90 18 {plot_top + plot_height / 2:.1f})" text-anchor="middle" font-family="sans-serif" font-size="12">Dec [deg]</text>',
     ]
     for row in rows:
         ra = _number(row.get("ra"), None)  # type: ignore[arg-type]
@@ -426,30 +446,34 @@ def _sky_map(rows: list[dict[str, Any]], width: int = 760, height: int = 420) ->
         color, radius, _ = _severity_style(count)
         x = plot_left + ((ra % 360.0) / 360.0) * plot_width
         y = plot_top + ((90.0 - max(min(dec, 90.0), -90.0)) / 180.0) * plot_height
-        body.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{radius:.1f}" fill="{color}" fill-opacity="0.75"/>')
-    body.append(f'<text x="{plot_left}" y="{plot_top - 8}" font-family="sans-serif" font-size="11">marker size &amp; colour: small=0, medium=1–3, large=&gt;3 contaminants</text>')
-    return _svg_frame(width, height, "PHOTO-CAT sky map", "\n".join(body))
+        body.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{radius:.1f}" fill="{color}" fill-opacity="0.85"/>')
+    body.append(_svg_legend(list(SKY_MAP_CLASSES), plot_left + plot_width - 130, plot_top + 6))
+    return _svg_frame(width, height, "Sky map of stellar contamination", "\n".join(body))
 
 
 def build_svg_plot(rows: list[dict[str, Any]], kind: str) -> str:
     """Build a dependency-free SVG plot for one result table."""
     if kind == "contaminant-counts":
         counts = Counter(_int_number(row.get("num_contaminants", 0)) for row in rows)
-        return _bar_chart(counts, "Contaminants per target", "selected contaminants")
+        return _bar_chart(
+            counts,
+            "Distribution of the number of contaminating sources per target",
+            "Number of contaminants",
+            y_label="Number of Stars",
+            legend=[("Targets", "#4477AA")],
+        )
     if kind == "flux":
         values = [_selected_flux(row) for row in rows]
-        return _histogram(values, "Selected flux fraction", "flux fraction (%)")
+        return _histogram(values, "Selected flux fraction", "Flux fraction (%)", y_label="Number of targets", legend=[("Targets", "#4477AA")])
     if kind == "separations":
         values = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
-        return _histogram(values, "Contaminant separations", "separation (arcsec)")
-    if kind == "separations-normalized":
-        return _area_normalized_separation_histogram(rows)
+        return _separation_histogram(values, "Distribution of angular separations", "Separation (arcsec)", "Number of contaminants")
     if kind == "flux-vs-separation":
         points = [(point["separation_arcsec"], point["flux_ratio_percent"]) for point in iter_contaminant_points(rows)]
-        return _scatter(points, "Contaminant flux ratio vs separation", "separation (arcsec)", "contaminant flux / target flux (%)")
+        return _scatter(points, "Contaminant flux ratio vs separation", "Separation (arcsec)", "Contaminant flux / target flux (%)", legend=[("Contaminants", "#4477AA")])
     if kind == "contamination-vs-magnitude":
         points = [(_number(row.get("phot_g_mean_mag")), _selected_flux(row)) for row in rows if row.get("phot_g_mean_mag") is not None]
-        return _scatter(points, "Target contamination vs magnitude", "target magnitude", "selected flux fraction (%)")
+        return _scatter(points, "Target contamination vs magnitude", "Target magnitude", "Selected flux fraction (%)", legend=[("Targets", "#4477AA")])
     if kind == "sky-map":
         return _sky_map(rows)
     raise ValueError(f"Unsupported plot kind: {kind}")
@@ -482,34 +506,31 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
     if kind == "contaminant-counts":
         values = [_int_number(row.get("num_contaminants", 0)) for row in rows]
-        ax.hist(values, bins=min(max(len(set(values)), 1), 40), color="#4477AA")
-        ax.set_xlabel("selected contaminants")
-        ax.set_ylabel("targets")
-        ax.set_title("Contaminants per target")
+        maximum = max(values, default=0)
+        ax.hist(values, bins=range(0, maximum + 2), color="#4477AA", label='targets')
+        if (any(value > 0 for value in values)):
+            ax.set_yscale("log")
+        ax.set_xlabel("Number of contaminants")
+        ax.set_ylabel("Number of Stars")
+        ax.set_title("Distribution of the number of contaminating sources per target")
+        ax.legend()
     elif kind == "flux":
         values = [_selected_flux(row) for row in rows]
-        ax.hist(values, bins=40, color="#66CCEE")
-        ax.set_xlabel("selected flux fraction (%)")
-        ax.set_ylabel("targets")
+        ax.hist(values, bins=40, color="#66CCEE", label="targets")
+        ax.set_xlabel("Selected flux fraction (%)")
+        ax.set_ylabel("Number of targets")
         ax.set_title("Selected flux fraction")
+        ax.legend()
     elif kind == "separations":
-        values = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
-        ax.hist(values, bins=40, color="#228833")
-        ax.set_xlabel("separation (arcsec)")
-        ax.set_ylabel("selected contaminants")
-        ax.set_title("Contaminant separations")
-    elif kind == "separations-normalized":
-        values = [_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)]
-        if values:
-            counts, bins, patches = ax.hist(values, bins=40, color="#4477AA")
-            for count, patch, inner, outer in zip(counts, patches, bins[:-1], bins[1:]):
-                area = math.pi * (outer**2 - inner**2)
-                patch.set_height(count / area if area > 0 else 0.0)
-        else:
-            ax.hist(values, bins=40, color="#4477AA")
-        ax.set_xlabel("separation (arcsec)")
-        ax.set_ylabel("contaminants / arcsec²")
-        ax.set_title("Area-normalized contaminant separations")
+        values = [value for value in (_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)) if value is not None and value >= 0.0]
+        maximum = int(max(values, default=0))
+        ax.hist(values, bins=range(0, maximum + 2), color="#4477AA", label="contaminants")
+        if (values):
+            ax.set_yscale("log")
+        ax.set_xlabel("Separation (arcsec)")
+        ax.set_ylabel("Number of contaminants")
+        ax.set_title("Distribution of angular separations")
+        ax.legend()
     elif kind == "flux-vs-separation":
         points = list(iter_contaminant_points(rows))
         ax.scatter(
@@ -519,36 +540,39 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
             c="#4477AA",
             alpha=0.65,
             linewidths=0,
+            label="contaminants",
         )
-        ax.set_xlabel("separation (arcsec)")
-        ax.set_ylabel("contaminant flux / target flux (%)")
+        ax.set_xlabel("Separation (arcsec)")
+        ax.set_ylabel("Contaminant flux / target flux (%)")
         ax.set_title("Contaminant flux ratio vs separation")
+        ax.legend()
     elif kind == "contamination-vs-magnitude":
         points = [(_number(row.get("phot_g_mean_mag")), _selected_flux(row)) for row in rows if row.get("phot_g_mean_mag") is not None]
-        ax.scatter([point[0] for point in points], [point[1] for point in points], s=8, c="#4477AA", alpha=0.65, linewidths=0)
-        ax.set_xlabel("target magnitude")
-        ax.set_ylabel("selected flux fraction (%)")
+        ax.scatter([point[0] for point in points], [point[1] for point in points], s=8, c="#4477AA", alpha=0.65, linewidths=0, label="targets")
+        ax.set_xlabel("Target magnitude")
+        ax.set_ylabel("Selected flux fraction (%)")
         ax.set_title("Target contamination vs magnitude")
+        ax.legend()
     elif kind == "sky-map":
-        ra_values = []
-        dec_values = []
-        colours = []
-        sizes = []
+        grouped: dict[str, tuple[list[float], list[float]]] = {label: ([], []) for label, _ in SKY_MAP_CLASSES}
+        class_by_index = {0: SKY_MAP_CLASSES[0], 1: SKY_MAP_CLASSES[1], 2: SKY_MAP_CLASSES[2]}
         for row in rows:
             ra = _number(row.get("ra"), None)  # type: ignore[arg-type]
             dec = _number(row.get("dec"), None)  # type: ignore[arg-type]
             if ra is None or dec is None:
                 continue
             count = _int_number(row.get("num_contaminants", 0))
-            colour, _, size = _severity_style(count)
-            ra_values.append(ra)
-            dec_values.append(dec)
-            colours.append(colour)
-            sizes.append(size)
-        ax.scatter(ra_values, dec_values, s=sizes, c=colours, alpha=0.75, linewidths=0)
-        ax.set_xlabel("RA (deg)")
-        ax.set_ylabel("Dec (deg)")
-        ax.set_title("PHOTO-CAT sky map")
+            index = 0 if count == 0 else (1 if count <= 3 else 2)
+            label, _ = class_by_index[index]
+            grouped[label][0].append(ra)
+            grouped[label][1].append(dec)
+        for label, colour in SKY_MAP_CLASSES:
+            ra_values, dec_values = grouped[label]
+            ax.scatter(ra_values, dec_values, s=8, c=colour, alpha=0.85, linewidths=0, label=label)
+        ax.set_xlabel("RA [deg]")
+        ax.set_ylabel("Dec [deg]")
+        ax.set_title("Sky map of stellar contamination")
+        ax.legend(loc="upper right", markerscale=2.0)
     fig.savefig(destination)
     plt.close(fig)
     return str(destination)
@@ -571,7 +595,7 @@ def build_report(rows: list[dict[str, Any]], result_path: str | Path, output_for
 
     plots = "\n".join(
         f"<section>{build_svg_plot(rows, kind)}</section>"
-        for kind in ("contaminant-counts", "flux", "separations-normalized", "flux-vs-separation", "sky-map")
+        for kind in ("contaminant-counts", "flux", "separations", "flux-vs-separation", "sky-map")
     )
     escaped_summary = html.escape(summary_text(summary))
     return (

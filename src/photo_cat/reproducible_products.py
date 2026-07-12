@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
-"""Helpers for reproducible paper/product generation."""
+"""Helpers for reproducible product generation."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def materialize_result_products(
     plot_backend = "matplotlib" if matplotlib else "svg"
     plot_suffix = "png" if matplotlib else "svg"
     plot_paths: dict[str, str] = {}
-    for kind in ("contaminant-counts", "flux", "separations-normalized", "flux-vs-separation", "sky-map"):
+    for kind in ("contaminant-counts", "flux", "separations", "flux-vs-separation", "sky-map"):
         plot_path = destination / f"{result_path.stem}_{kind}.{plot_suffix}"
         if matplotlib:
             write_matplotlib_plot(rows, kind, plot_path)
@@ -88,7 +88,7 @@ def materialize_result_products(
     }
 
 
-def reproduce_paper_products(
+def reproduce_products(
     configs: list[str | Path],
     result_jsons: list[str | Path],
     out_dir: str | Path,
@@ -96,7 +96,7 @@ def reproduce_paper_products(
     run_configs: bool = False,
     matplotlib: bool = False,
 ) -> dict[str, Any]:
-    """Generate a reproducibility manifest and derived products for paper results."""
+    """Generate a reproducibility manifest and derived products from result inputs."""
     if (not configs and not result_jsons):
         raise ValueError("Provide at least one --config or --result-json.")
 
@@ -136,7 +136,7 @@ def reproduce_paper_products(
         "configs": config_records,
         "products": product_records,
     }
-    manifest_path = destination / "paper_reproduction_manifest.json"
+    manifest_path = destination / "reproduction_manifest.json"
     atomic_write_json(manifest_path, payload)
     payload["manifest_path"] = str(manifest_path)
     return payload

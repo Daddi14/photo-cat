@@ -99,7 +99,6 @@ PLOT_KINDS = [
     "contaminant-counts",
     "flux",
     "separations",
-    "separations-normalized",
     "flux-vs-separation",
     "contamination-vs-magnitude",
     "sky-map",
@@ -193,6 +192,7 @@ class ConfigGui(tk.Tk):
         self.current_section = None
         self._canvases = []
         self._text_widgets = []
+        self._result_json_fields = []
         self._recolor_hooks = []
         self.logo_label = None
         self.logo_images = {}
@@ -660,6 +660,8 @@ class ConfigGui(tk.Tk):
 
         frame.grid()
         self.current_section = key
+        # Keep tool 'Result JSON' fields pointed at the latest generated result.
+        self.refresh_result_json_fields()
 
         for section_key, button in self.section_buttons.items():
             style = "SectionActive.TButton" if (section_key == key) else "Section.TButton"
@@ -771,7 +773,7 @@ class ConfigGui(tk.Tk):
         for key, label, spec_builder in (
             ("benchmark", "Benchmark", self.spec_benchmark),
             ("benchmark-table", "Benchmark table", self.spec_benchmark_table),
-            ("reproduce", "Reproduce paper", self.spec_reproduce_paper),
+            ("reproduce", "Reproduce", self.spec_reproduce),
         ):
             content = self.add_section(key, label, section_body, sidebar, row)
             self.build_tool_panel(content, spec_builder())
@@ -2069,6 +2071,9 @@ class ConfigGui(tk.Tk):
             entry = ttk.Entry(form, textvariable=var, width=28)
             entry.grid(row=row, column=1, sticky="w", padx=(10, 8), pady=4)
 
+        if (field.get("autofill") == "result_json"):
+            self._result_json_fields.append({"var": var, "last_auto": ""})
+
         state["var"] = var
         return state
 
@@ -2200,9 +2205,63 @@ class ConfigGui(tk.Tk):
     # ------------------------------------------------------------------
     # Tool specifications
     # ------------------------------------------------------------------
-    def _default_result_json(self) -> str:
-        candidate = PROJECT_DIR / "output" / "results.json"
-        return str(candidate) if candidate.is_file() else ""
+    def _is_result_json(self, path: Path) -> bool:
+        """Return True when a JSON file looks like a target-result list (starts with '[')."""
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                head = file.read(64).lstrip()
+        except OSError:
+            return False
+        return head.startswith("[")
+
+    def latest_result_json(self) -> str:
+        """Return the newest pipeline-generated result JSON found under the output folders."""
+        search_dirs: list[Path] = []
+        for variable in (self.out_dir_var, self.index_dir_var):
+            resolved = self.resolve_user_path(variable.get())
+            if (resolved is not None):
+                search_dirs.append(resolved)
+        search_dirs.append(PROJECT_DIR / "output")
+        search_dirs.append(PROJECT_DIR / "data" / "output")
+
+        newest_path: Path | None = None
+        newest_mtime = -1.0
+        seen: set[Path] = set()
+        for directory in search_dirs:
+            try:
+                resolved_dir = directory.resolve()
+            except OSError:
+                continue
+            if (resolved_dir in seen or not resolved_dir.is_dir()):
+                continue
+            seen.add(resolved_dir)
+            for path in resolved_dir.rglob("*.json"):
+                try:
+                    if (not self._is_result_json(path)):
+                        continue
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if (mtime > newest_mtime):
+                    newest_mtime = mtime
+                    newest_path = path
+
+        return str(newest_path.resolve()) if (newest_path is not None) else ""
+
+    def refresh_result_json_fields(self) -> None:
+        """Point every tool 'Result JSON' field at the last generated result JSON.
+
+        A field is only updated when it is empty or still holds a previously
+        auto-detected value, so a path the user typed or browsed to is preserved.
+        """
+        latest = self.latest_result_json()
+        if (latest == ""):
+            return
+        for entry in self._result_json_fields:
+            current = entry["var"].get().strip()
+            if (current == "" or current == entry["last_auto"]):
+                entry["var"].set(latest)
+                entry["last_auto"] = latest
 
     def spec_summarize(self) -> dict:
         return {
@@ -2210,10 +2269,10 @@ class ConfigGui(tk.Tk):
             "title": "Summarize results",
             "description": "Summarize a PHOTO-CAT query result JSON as text, JSON, or CSV.",
             "fields": [
-                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["text", "json", "csv"], "default": "text"},
-                {"kind": "file_save", "label": "Output (optional)", "flag": "--output"},
+                {"kind": "file_save", "label": "Output summary file (optional; prints to console if blank)", "flag": "--output"},
             ],
         }
 
@@ -2223,9 +2282,9 @@ class ConfigGui(tk.Tk):
             "title": "Screen / rank targets",
             "description": "Rank targets by a contamination metric and assign accept / review / reject decisions.",
             "fields": [
-                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
-                {"kind": "file_save", "label": "Output", "flag": "--output", "required": True},
+                {"kind": "file_save", "label": "Output screening file (path)", "flag": "--output", "required": True},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["csv", "json", "markdown"], "default": "csv"},
                 {"kind": "text", "label": "Metric", "flag": "--metric", "default": "flux_fraction_total_weighted"},
                 {"kind": "float", "label": "Accept max percent", "flag": "--accept-max-percent", "default": "5.0"},
@@ -2239,11 +2298,11 @@ class ConfigGui(tk.Tk):
             "title": "Plot (SVG / matplotlib)",
             "description": "Write a plot from a PHOTO-CAT query result JSON.",
             "fields": [
-                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "choice", "label": "Kind", "flag": "--kind", "options": PLOT_KINDS, "default": "contaminant-counts"},
                 {"kind": "choice", "label": "Backend", "flag": "--backend", "options": ["svg", "matplotlib"], "default": "svg"},
-                {"kind": "file_save", "label": "Output (optional)", "flag": "--output"},
+                {"kind": "file_save", "label": "Output image file (path; auto-named next to the result if blank)", "flag": "--output"},
             ],
         }
 
@@ -2251,9 +2310,9 @@ class ConfigGui(tk.Tk):
         return {
             "command": "publication-plots",
             "title": "Publication plots",
-            "description": "Generate contamination distributions and an accessible sky map for publication.",
+            "description": "Generate contaminant-count and separation distributions, and the RA/Dec contamination sky map.",
             "fields": [
-                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "float", "label": "Aperture, arcsec", "flag": "--aperture-arcsec", "required": True, "default": "47.0"},
                 {"kind": "dir", "label": "Output directory", "flag": "--output-dir", "required": True},
@@ -2268,10 +2327,10 @@ class ConfigGui(tk.Tk):
             "title": "Report",
             "description": "Write an HTML or Markdown report from a PHOTO-CAT query result JSON.",
             "fields": [
-                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["html", "markdown"], "default": "html"},
-                {"kind": "file_save", "label": "Output (optional)", "flag": "--output"},
+                {"kind": "file_save", "label": "Output report file (path; auto-named next to the result if blank)", "flag": "--output"},
             ],
         }
 
@@ -2281,9 +2340,9 @@ class ConfigGui(tk.Tk):
             "title": "Export",
             "description": "Export target-result rows to CSV or Parquet.",
             "fields": [
-                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
-                {"kind": "file_save", "label": "Output", "flag": "--output", "required": True},
+                {"kind": "file_save", "label": "Output data file (path)", "flag": "--output", "required": True},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["csv", "parquet"], "default": "csv"},
             ],
         }
@@ -2294,12 +2353,12 @@ class ConfigGui(tk.Tk):
             "title": "Validate results",
             "description": "Compare PHOTO-CAT predictions with an external reference contamination table.",
             "fields": [
-                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "default": self._default_result_json(),
+                {"kind": "file_open", "label": "Result JSON", "flag": None, "required": True, "autofill": "result_json",
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
                 {"kind": "file_open", "label": "Reference CSV", "flag": None, "required": True,
                  "filetypes": [("CSV files", "*.csv"), ("All files", "*.*")]},
                 {"kind": "file_save", "label": "Output (stats JSON)", "flag": "--output", "required": True},
-                {"kind": "file_save", "label": "Matched output (optional)", "flag": "--matched-output"},
+                {"kind": "file_save", "label": "Matched residuals CSV file (optional)", "flag": "--matched-output"},
                 {"kind": "text", "label": "Metric", "flag": "--metric", "default": "flux_fraction_total_weighted"},
                 {"kind": "text", "label": "Source ID column", "flag": "--source-id-column", "default": "source_id"},
                 {"kind": "text", "label": "Reference column", "flag": "--reference-column", "default": "contamination_percent"},
@@ -2364,16 +2423,16 @@ class ConfigGui(tk.Tk):
             "fields": [
                 {"kind": "multi_file", "label": "Benchmark JSON files", "flag": None, "required": True,
                  "filetypes": [("JSON files", "*.json"), ("All files", "*.*")]},
-                {"kind": "file_save", "label": "Output", "flag": "--output", "required": True},
+                {"kind": "file_save", "label": "Output table file (path)", "flag": "--output", "required": True},
                 {"kind": "choice", "label": "Format", "flag": "--format", "options": ["markdown", "csv"], "default": "markdown"},
             ],
         }
 
-    def spec_reproduce_paper(self) -> dict:
+    def spec_reproduce(self) -> dict:
         return {
-            "command": "reproduce-paper",
-            "title": "Reproduce paper",
-            "description": "Generate reproducible paper summaries, plots, reports, and a manifest from configs and/or result JSONs.",
+            "command": "reproduce",
+            "title": "Reproduce",
+            "description": "Generate reproducible summaries, plots, reports, and a manifest from configs and/or result JSONs.",
             "fields": [
                 {"kind": "multi_file", "label": "Config files", "flag": "--config",
                  "filetypes": [("YAML files", "*.yaml *.yml"), ("All files", "*.*")]},

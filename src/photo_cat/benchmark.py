@@ -204,7 +204,7 @@ def benchmark_table_rows(paths: list[str | Path]) -> list[dict[str, Any]]:
 
 
 def write_benchmark_table(rows: list[dict[str, Any]], output_path: str | Path, output_format: str) -> str:
-    """Write flattened benchmark rows as a paper-ready Markdown or CSV table."""
+    """Write flattened benchmark rows as a Markdown or CSV table."""
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = list(rows[0]) if rows else ["benchmark", "stage", "duration_seconds"]
