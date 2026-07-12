@@ -30,6 +30,31 @@ jobs:
       - name: Ruff check
         run: ruff check src tests
 
+  typecheck:
+    name: mypy (advisory)
+    runs-on: ubuntu-latest
+    # Advisory while the type-annotation pass drives the remaining errors to zero;
+    # flip continue-on-error off once `mypy` reports no errors on the checked set.
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package and mypy
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+          python -m pip install mypy
+
+      - name: mypy
+        run: mypy
+
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
