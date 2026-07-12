@@ -176,9 +176,9 @@ def test_pipeline_applies_profile_and_records_provenance(tmp_path: Path) -> None
 
     assert build_neighbors_index.main(config_path) == 0
     assert query_contamination_from_index.main(config_path) == 0
-    result_path = next((tmp_path / "index" / "output").glob("*.json"))
+    result_path = next((tmp_path / "index" / "results").glob("*.json"))
     result = json.loads(result_path.read_text(encoding="utf-8"))[0]
-    metadata_path = next((tmp_path / "index" / "output" / "metadata").glob("*.json"))
+    metadata_path = next((tmp_path / "index" / "results" / "metadata").glob("*.json"))
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
 
     assert result["flux_fraction_selected_by_band"]["gaia_g"] == pytest.approx(39.81)

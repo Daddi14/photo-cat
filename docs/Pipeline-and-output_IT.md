@@ -89,7 +89,7 @@ Ogni risultato target include:
 - coordinate, magnitudini e separazioni dei contaminanti
 
 Per la riproducibilità, ogni query scrive anche un metadata sidecar JSON in
-`INDEX_DIR/output/metadata/`. Il sidecar registra versione di PHOTO-CAT, valori
+`INDEX_DIR/results/metadata/`. Il sidecar registra versione di PHOTO-CAT, valori
 di configurazione selezionati, numero di target, manifest dell'indice, SHA-256
 del catalogo usato nella build e le note sull'ambito del modello riportate sopra.
 Il sidecar include anche il checksum del profilo di trasformazione opzionale.
@@ -108,22 +108,22 @@ Dopo una query, i risultati possono essere convertiti in prodotti riproducibili
 adatti anche a un articolo:
 
 ```bash
-photo-cat summarize INDEX_DIR/output/result.json --format json --output summary.json
-photo-cat export INDEX_DIR/output/result.json --format csv --output result.csv
-photo-cat plot INDEX_DIR/output/result.json --kind contaminant-counts --output counts.svg
-photo-cat plot INDEX_DIR/output/result.json --kind sky-map --backend matplotlib --output sky-map.png
-photo-cat plot INDEX_DIR/output/result.json --kind separations-normalized --output separations_area_norm.svg
-photo-cat plot INDEX_DIR/output/result.json --kind flux-vs-separation --output flux_vs_separation.svg
-photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
-photo-cat publication-plots INDEX_DIR/output/result.json --aperture-arcsec 47 --output-dir publication_plots
-photo-cat report INDEX_DIR/output/result.json --format html --output report.html
+photo-cat summarize INDEX_DIR/results/result.json --format json --output summary.json
+photo-cat export INDEX_DIR/results/result.json --format csv --output result.csv
+photo-cat plot INDEX_DIR/results/result.json --kind contaminant-counts --output counts.svg
+photo-cat plot INDEX_DIR/results/result.json --kind sky-map --backend matplotlib --output sky-map.png
+photo-cat plot INDEX_DIR/results/result.json --kind separations-normalized --output separations_area_norm.svg
+photo-cat plot INDEX_DIR/results/result.json --kind flux-vs-separation --output flux_vs_separation.svg
+photo-cat plot INDEX_DIR/results/result.json --kind sky-map --output sky-map.svg
+photo-cat publication-plots INDEX_DIR/results/result.json --aperture-arcsec 47 --output-dir publication_plots
+photo-cat report INDEX_DIR/results/result.json --format html --output report.html
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
 photo-cat benchmark-table benchmark.json --output benchmark_table.md
-photo-cat reproduce-paper --result-json INDEX_DIR/output/result.json --output-dir paper_products
+photo-cat reproduce --result-json INDEX_DIR/results/result.json --output-dir reproduction
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
-photo-cat screen INDEX_DIR/output/result.json --output screening.csv
-photo-cat validate-results INDEX_DIR/output/result.json data/reference.csv --output validation.json --matched-output residuals.csv
+photo-cat screen INDEX_DIR/results/result.json --output screening.csv
+photo-cat validate-results INDEX_DIR/results/result.json data/reference.csv --output validation.json --matched-output residuals.csv
 ```
 
 `summarize` produce conteggi aggregati dei target, conteggi dei contaminanti
@@ -138,7 +138,7 @@ registra checksum del catalogo e statistiche di input di base. `benchmark`
 esegue le fasi selezionate e registra tempo di esecuzione più picco di
 allocazioni Python via `tracemalloc`; se `psutil` è installato campiona anche la
 memoria nativa RSS. Una tabella benchmark Markdown o CSV pronta per l'articolo
-può essere generata con `benchmark-table`. `reproduce-paper` raccoglie prodotti e checksum in un
+può essere generata con `benchmark-table`. `reproduce` raccoglie prodotti e checksum in un
 manifest di riproduzione per l'articolo. `merge-bright-stars` crea un catalogo
 de-duplicato da una tabella in stile Gaia più una tabella supplementare di
 stelle brillanti.

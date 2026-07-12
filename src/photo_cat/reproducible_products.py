@@ -24,8 +24,8 @@ from .result_products import (
 
 
 def latest_result_json(index_dir: str | Path) -> Path:
-    """Return the newest query result JSON under an index output directory."""
-    output_dir = Path(index_dir) / "output"
+    """Return the newest query result JSON under an index results directory."""
+    output_dir = Path(index_dir) / "results"
     candidates = sorted(
         (path for path in output_dir.glob("*.json") if path.is_file()),
         key=lambda path: path.stat().st_mtime,

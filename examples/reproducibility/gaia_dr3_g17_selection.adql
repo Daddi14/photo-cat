@@ -1,5 +1,5 @@
--- PHOTO-CAT paper reproducibility template.
--- Replace comments/placeholders with the exact archive query used for a paper
+-- PHOTO-CAT reproducibility template.
+-- Replace comments/placeholders with the exact archive query used for an analysis
 -- or data release. This skeleton selects the columns required by PHOTO-CAT.
 
 SELECT
@@ -18,7 +18,7 @@ WHERE
   AND dec >= -90
   AND dec <= 90
   AND phot_g_mean_mag <= 17
-  -- Paper/data-release runs should state every quality cut explicitly.
+  -- Data-release runs should state every quality cut explicitly.
   -- Examples to evaluate, not defaults:
   -- AND visibility_periods_used >= 8
   -- AND duplicated_source = 'false'

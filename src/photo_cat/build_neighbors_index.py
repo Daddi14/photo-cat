@@ -153,7 +153,7 @@ def exclusive_build_lock(out_dir: str | Path) -> Iterator[None]:
         else:
             import fcntl
 
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]  # POSIX-only
     except OSError as error:
         lock_file.close()
         raise RuntimeError(
@@ -171,7 +171,7 @@ def exclusive_build_lock(out_dir: str | Path) -> Iterator[None]:
         else:
             import fcntl
 
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]  # POSIX-only
         lock_file.close()
 
 
@@ -1139,7 +1139,7 @@ def run_build(config_build: BuildConfig) -> int:
         )
 
         separations_file = None
-        if config_build.calculate_separations:
+        if config_build.calculate_separations and separations_tmp_path is not None:
             separations_file = open(
                 separations_tmp_path,
                 "ab" if checkpoint_index > 0 else "wb"

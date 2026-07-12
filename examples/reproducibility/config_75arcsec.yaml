@@ -1,11 +1,11 @@
-# Template config for reproducing 47 arcsec paper-style products.
+# Template config for reproducing 75 arcsec reproducible products.
 # Replace data/paper_catalog_g17.csv and data/paper_targets_g12.csv with the
 # exact exported catalogue and target files used in the analysis.
 
 build_neighbors_index:
   io:
     input_catalog: ../../data/paper_catalog_g17.csv
-    out_dir: ../../output/paper_47arcsec
+    out_dir: ../../output/run_75arcsec
     columns:
       source_id: source_id
       ra: ra
@@ -14,19 +14,19 @@ build_neighbors_index:
   settings:
     use_dask: true
     calculate_separations: true
-    max_radius_arcsec: 47.0
+    max_radius_arcsec: 75.0
     chunk_size: 50000
     buffer_flush_interval: 200
 
 query_contamination_from_index:
   io:
-    INDEX_DIR: ../../output/paper_47arcsec
+    INDEX_DIR: ../../output/run_75arcsec
     TARGETS_INPUT: ../../data/paper_targets_g12.csv
     targets: []
     target_source_id_column: source_id
   settings:
-    field_of_view_arcsec: 47.0
-    influence_radius_arcsec: 47.0
+    field_of_view_arcsec: 75.0
+    influence_radius_arcsec: 75.0
     delta_mag: 5.0
 
 execution:

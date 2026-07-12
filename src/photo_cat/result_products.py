@@ -505,37 +505,37 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
     destination.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
     if kind == "contaminant-counts":
-        values = [_int_number(row.get("num_contaminants", 0)) for row in rows]
-        maximum = max(values, default=0)
-        ax.hist(values, bins=range(0, maximum + 2), color="#4477AA", label='targets')
-        if (any(value > 0 for value in values)):
+        count_values = [_int_number(row.get("num_contaminants", 0)) for row in rows]
+        maximum = max(count_values, default=0)
+        ax.hist(count_values, bins=range(0, maximum + 2), color="#4477AA", label='targets')
+        if (any(value > 0 for value in count_values)):
             ax.set_yscale("log")
         ax.set_xlabel("Number of contaminants")
         ax.set_ylabel("Number of Stars")
         ax.set_title("Distribution of the number of contaminating sources per target")
         ax.legend()
     elif kind == "flux":
-        values = [_selected_flux(row) for row in rows]
-        ax.hist(values, bins=40, color="#66CCEE", label="targets")
+        flux_values = [_selected_flux(row) for row in rows]
+        ax.hist(flux_values, bins=40, color="#66CCEE", label="targets")
         ax.set_xlabel("Selected flux fraction (%)")
         ax.set_ylabel("Number of targets")
         ax.set_title("Selected flux fraction")
         ax.legend()
     elif kind == "separations":
-        values = [value for value in (_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)) if value is not None and value >= 0.0]
-        maximum = int(max(values, default=0))
-        ax.hist(values, bins=range(0, maximum + 2), color="#4477AA", label="contaminants")
-        if (values):
+        separation_values = [value for value in (_number(contaminant.get("sep_arcsec")) for contaminant in iter_contaminants(rows)) if value is not None and value >= 0.0]
+        maximum = int(max(separation_values, default=0))
+        ax.hist(separation_values, bins=range(0, maximum + 2), color="#4477AA", label="contaminants")
+        if (separation_values):
             ax.set_yscale("log")
         ax.set_xlabel("Separation (arcsec)")
         ax.set_ylabel("Number of contaminants")
         ax.set_title("Distribution of angular separations")
         ax.legend()
     elif kind == "flux-vs-separation":
-        points = list(iter_contaminant_points(rows))
+        flux_points = list(iter_contaminant_points(rows))
         ax.scatter(
-            [point["separation_arcsec"] for point in points],
-            [point["flux_ratio_percent"] for point in points],
+            [point["separation_arcsec"] for point in flux_points],
+            [point["flux_ratio_percent"] for point in flux_points],
             s=8,
             c="#4477AA",
             alpha=0.65,
@@ -547,8 +547,8 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
         ax.set_title("Contaminant flux ratio vs separation")
         ax.legend()
     elif kind == "contamination-vs-magnitude":
-        points = [(_number(row.get("phot_g_mean_mag")), _selected_flux(row)) for row in rows if row.get("phot_g_mean_mag") is not None]
-        ax.scatter([point[0] for point in points], [point[1] for point in points], s=8, c="#4477AA", alpha=0.65, linewidths=0, label="targets")
+        magnitude_points = [(_number(row.get("phot_g_mean_mag")), _selected_flux(row)) for row in rows if row.get("phot_g_mean_mag") is not None]
+        ax.scatter([point[0] for point in magnitude_points], [point[1] for point in magnitude_points], s=8, c="#4477AA", alpha=0.65, linewidths=0, label="targets")
         ax.set_xlabel("Target magnitude")
         ax.set_ylabel("Selected flux fraction (%)")
         ax.set_title("Target contamination vs magnitude")

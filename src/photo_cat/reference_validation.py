@@ -45,7 +45,7 @@ def validate_against_reference(
     matched: list[dict[str, Any]] = []
     for row in result_rows:
         source_id = str(row.get("source_id", ""))
-        predicted_value = row.get(prediction_metric)
+        predicted_value: Any = row.get(prediction_metric)
         if (predicted_value is None and prediction_metric == "flux_fraction_total_weighted"):
             predicted_value = row.get("flux_fraction_all_neighbors", row.get("flux_fraction_selected"))
         try:

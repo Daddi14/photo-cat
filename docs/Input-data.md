@@ -62,10 +62,10 @@ reviewable analyses, keep the catalogue provenance beside the run:
 
 Use `photo-cat --version`, `photo-cat build-index ...`, and `photo-cat query ...`
 in scripts or notebooks so the command sequence can be rerun. Query metadata
-sidecars under `INDEX_DIR/output/metadata/` record the PHOTO-CAT version, query
+sidecars under `INDEX_DIR/results/metadata/` record the PHOTO-CAT version, query
 settings, index manifest, and model scope for each result file.
 
 See `docs/gaia_selection_example.txt` for a plain-text template that can be
-filled with the exact Gaia/Bright Star Catalog selections used by a paper. The
-`examples/paper/` folder also contains ADQL/config templates and a small script
+filled with the exact Gaia/Bright Star Catalog selections used by an analysis. The
+`examples/reproducibility/` folder also contains ADQL/config templates and a small script
 for regenerating summary, SVG plot, and report products from a query result JSON.

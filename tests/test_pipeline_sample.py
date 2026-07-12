@@ -61,11 +61,11 @@ def test_sample_pipeline_builds_index_and_queries_expected_results(
     assert build_neighbors_index.main(config_path) == 0
     assert query_contamination_from_index.main(config_path) == 0
 
-    result_files = sorted((tmp_path / "output" / "output").glob("*.json"))
+    result_files = sorted((tmp_path / "output" / "results").glob("*.json"))
     assert len(result_files) == 1
 
     results = json.loads(result_files[0].read_text(encoding="utf-8"))
-    metadata_files = sorted((tmp_path / "output" / "output" / "metadata").glob("*.json"))
+    metadata_files = sorted((tmp_path / "output" / "results" / "metadata").glob("*.json"))
     assert len(metadata_files) == 1
     metadata = json.loads(metadata_files[0].read_text(encoding="utf-8"))
     assert metadata["photo_cat_version"] == __version__

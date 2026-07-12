@@ -15,4 +15,4 @@ validity:
   base_magnitude_min: 3.0
   base_magnitude_max: 18.0
 out_of_range: null
-reference: Replace with the calibration paper, version, or DOI
+reference: Replace with the calibration reference, version, or DOI

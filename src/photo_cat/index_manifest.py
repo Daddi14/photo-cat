@@ -115,7 +115,7 @@ def atomic_save_npz(path: str | Path, **arrays: np.ndarray) -> None:
     temporary_path = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as file:
-            np.savez_compressed(file, **arrays)
+            np.savez_compressed(file, **arrays)  # type: ignore[arg-type]  # numpy stub misreads **kwargs
             file.flush()
             os.fsync(file.fileno())
         os.replace(temporary_path, destination)

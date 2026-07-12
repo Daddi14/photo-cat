@@ -12,17 +12,17 @@ photo-cat configure
 photo-cat run --config config.yaml
 photo-cat build-index --config config.yaml
 photo-cat query --config config.yaml
-photo-cat summarize output/index/output/result.json
-photo-cat export output/index/output/result.json --format csv --output output/result.csv
-photo-cat plot output/index/output/result.json --kind contaminant-counts
-photo-cat publication-plots output/index/output/result.json --aperture-arcsec 47 --output-dir output/publication_plots
-photo-cat report output/index/output/result.json --format html
-photo-cat screen output/index/output/result.json --output output/screening.csv
-photo-cat validate-results output/index/output/result.json data/reference.csv --output output/validation.json
+photo-cat summarize output/index/results/result.json
+photo-cat export output/index/results/result.json --format csv --output output/result.csv
+photo-cat plot output/index/results/result.json --kind contaminant-counts
+photo-cat publication-plots output/index/results/result.json --aperture-arcsec 47 --output-dir output/publication_plots
+photo-cat report output/index/results/result.json --format html
+photo-cat screen output/index/results/result.json --output output/screening.csv
+photo-cat validate-results output/index/results/result.json data/reference.csv --output output/validation.json
 photo-cat benchmark --config config.yaml --output output/benchmark.json
 photo-cat benchmark-table output/benchmark.json --output output/benchmark_table.md
 photo-cat provenance data/catalog.csv --output output/catalog_provenance.json
-photo-cat reproduce-paper --config examples/paper/paper_config_47arcsec.yaml --output-dir output/paper_products
+photo-cat reproduce --config examples/reproducibility/config_47arcsec.yaml --output-dir output/reproduction
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
 photo-cat doctor
 ```
@@ -114,7 +114,7 @@ minima di comandi è:
 photo-cat --version
 photo-cat build-index --config config.yaml --input-catalog data/my_catalog.csv --out-dir output/my_index --max-radius-arcsec 120
 photo-cat query --config config.yaml --index-dir output/my_index --targets-input data/my_targets.csv --field-of-view-arcsec 47 --delta-mag 5
-photo-cat query --config config.yaml --bandpass-transform-file examples/paper/bandpass_transform_example.yaml
+photo-cat query --config config.yaml --bandpass-transform-file examples/reproducibility/bandpass_transform_example.yaml
 ```
 
 La build scrive `index_manifest.json` con SHA-256 del catalogo e impostazioni
@@ -130,36 +130,36 @@ query di selezione del catalogo o al notebook che ha generato
 Riassumi un risultato di query:
 
 ```bash
-photo-cat summarize output/my_index/output/result.json
-photo-cat summarize output/my_index/output/result.json --format json --output output/summary.json
-photo-cat summarize output/my_index/output/result.json --format csv --output output/summary.csv
+photo-cat summarize output/my_index/results/result.json
+photo-cat summarize output/my_index/results/result.json --format json --output output/summary.json
+photo-cat summarize output/my_index/results/result.json --format csv --output output/summary.csv
 ```
 
 Crea plot SVG senza dipendenze opzionali:
 
 ```bash
-photo-cat plot output/my_index/output/result.json --kind contaminant-counts --output output/counts.svg
-photo-cat plot output/my_index/output/result.json --kind flux --output output/flux.svg
-photo-cat plot output/my_index/output/result.json --kind separations --output output/separations.svg
-photo-cat plot output/my_index/output/result.json --kind separations-normalized --output output/separations_area_norm.svg
-photo-cat plot output/my_index/output/result.json --kind flux-vs-separation --output output/flux_vs_separation.svg
-photo-cat plot output/my_index/output/result.json --kind contamination-vs-magnitude --output output/contamination_vs_magnitude.svg
-photo-cat plot output/my_index/output/result.json --kind sky-map --output output/sky-map.svg
-photo-cat plot output/my_index/output/result.json --kind sky-map --backend matplotlib --output output/sky-map.png
+photo-cat plot output/my_index/results/result.json --kind contaminant-counts --output output/counts.svg
+photo-cat plot output/my_index/results/result.json --kind flux --output output/flux.svg
+photo-cat plot output/my_index/results/result.json --kind separations --output output/separations.svg
+photo-cat plot output/my_index/results/result.json --kind separations-normalized --output output/separations_area_norm.svg
+photo-cat plot output/my_index/results/result.json --kind flux-vs-separation --output output/flux_vs_separation.svg
+photo-cat plot output/my_index/results/result.json --kind contamination-vs-magnitude --output output/contamination_vs_magnitude.svg
+photo-cat plot output/my_index/results/result.json --kind sky-map --output output/sky-map.svg
+photo-cat plot output/my_index/results/result.json --kind sky-map --backend matplotlib --output output/sky-map.png
 ```
 
 Esporta tabelle target piatte:
 
 ```bash
-photo-cat export output/my_index/output/result.json --format csv --output output/result.csv
-photo-cat export output/my_index/output/result.json --format parquet --output output/result.parquet
+photo-cat export output/my_index/results/result.json --format csv --output output/result.csv
+photo-cat export output/my_index/results/result.json --format parquet --output output/result.parquet
 ```
 
 Crea un report compatto:
 
 ```bash
-photo-cat report output/my_index/output/result.json --format html --output output/report.html
-photo-cat report output/my_index/output/result.json --format markdown --output output/report.md
+photo-cat report output/my_index/results/result.json --format html --output output/report.html
+photo-cat report output/my_index/results/result.json --format markdown --output output/report.md
 ```
 
 Registra metadata di benchmark:
@@ -178,7 +178,7 @@ altrimenti i campi RSS sono presenti ma segnati come non disponibili.
 Cattura provenance del catalogo:
 
 ```bash
-photo-cat provenance data/my_catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
+photo-cat provenance data/my_catalog.csv --adql-file examples/reproducibility/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
 ```
 
 Il JSON di provenance include percorso del catalogo, SHA-256, dimensione in byte,
@@ -188,9 +188,9 @@ conteggio dei source ID duplicati e checksum opzionale del file ADQL/query.
 Genera prodotti per articolo/revisione da risultati esistenti o configurazioni riproducibili:
 
 ```bash
-photo-cat reproduce-paper --result-json output/my_index/output/result.json --output-dir output/paper_products
-photo-cat reproduce-paper --config examples/paper/paper_config_47arcsec.yaml --config examples/paper/paper_config_75arcsec.yaml --output-dir output/paper_products
-photo-cat reproduce-paper --config config.yaml --run-configs --output-dir output/paper_products
+photo-cat reproduce --result-json output/my_index/results/result.json --output-dir output/reproduction
+photo-cat reproduce --config examples/reproducibility/config_47arcsec.yaml --config examples/reproducibility/config_75arcsec.yaml --output-dir output/reproduction
+photo-cat reproduce --config config.yaml --run-configs --output-dir output/reproduction
 ```
 
 Il comando copia configurazioni/risultati, scrive riassunti, plot, report HTML e
@@ -230,7 +230,7 @@ photo-cat build-index --config config.yaml --input-catalog data/missing_catalog.
 
 `out_dir` deve essere una cartella e non può coincidere con un file esistente.
 
-Per `photo-cat query`, la cartella indice deve contenere i file dell'indice completato. Il risultato viene creato in `INDEX_DIR/output`; un file chiamato `output` viene segnalato come errore e non viene sovrascritto.
+Per `photo-cat query`, la cartella indice deve contenere i file dell'indice completato. Il risultato viene creato in `INDEX_DIR/results`; un file chiamato `results` viene segnalato come errore e non viene sovrascritto.
 
 ## Pipeline completa con override diretti
 

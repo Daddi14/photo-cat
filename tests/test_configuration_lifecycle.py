@@ -169,4 +169,4 @@ def test_query_runtime_validation_fails_before_creating_an_output_directory(tmp_
     with pytest.raises(FileNotFoundError, match="Query index folder was not found"):
         prepare_query_runtime(query_config)
 
-    assert not (index_dir / "output").exists()
+    assert not (index_dir / "results").exists()

@@ -96,7 +96,7 @@ da bande di catalogo memorizzate:
 ```yaml
 query_contamination_from_index:
   settings:
-    bandpass_transform_file: examples/paper/bandpass_transform_example.yaml
+    bandpass_transform_file: examples/reproducibility/bandpass_transform_example.yaml
 ```
 
 Il profilo definisce `output_band`, `base_band`, due `color_bands`, i

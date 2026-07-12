@@ -53,7 +53,7 @@ Le chiavi documentate in queste sezioni, il comportamento dei percorsi relativi 
 
 - I percorsi relativi memorizzati in `config.yaml`, inclusi catalogo, target, output build e indice query, sono risolti rispetto alla directory che contiene quel file config.
 - Un percorso CLI esplicito `--config` e gli override diretti dei percorsi CLI sono risolti rispetto alla directory di lavoro da cui viene invocato `photo-cat`.
-- I file di risultato della query vengono creati solo sotto `INDEX_DIR/output`; un file che occupa quel percorso è un errore di validazione.
+- I file di risultato della query vengono creati solo sotto `INDEX_DIR/results`; un file che occupa quel percorso è un errore di validazione.
 - La validazione della directory dell’indice avviene prima che l’esecuzione numerica della query apra array dell’indice o memory map.
 - Leggere o validare una configurazione non deve creare directory di output, cambiare la directory di lavoro del chiamante o modificare in modo permanente `PHOTO_CAT_CONFIG`.
 - Gli override CLI diretti vengono derivati solo per un comando e non riscrivono il file `config.yaml` sorgente.
@@ -65,7 +65,7 @@ Una build completata scrive i file documentati dell'indice dei vicini nella dire
 
 ## Risultati della query
 
-La fase query scrive file JSON in `INDEX_DIR/output`.
+La fase query scrive file JSON in `INDEX_DIR/results`.
 
 Ogni risultato per target preserva i campi documentati per:
 
@@ -93,7 +93,7 @@ Ogni risultato per target preserva i campi documentati per:
   a `missing_from_index` o `invalid_target_id`.
 
 Ogni query scrive anche un metadata sidecar per la riproducibilità in
-`INDEX_DIR/output/metadata/`, con schema versione `1`. Il sidecar include
+`INDEX_DIR/results/metadata/`, con schema versione `1`. Il sidecar include
 versione di PHOTO-CAT, configurazione della query, numero di target processati,
 manifest dell'indice, percorso del risultato e note esplicite sull'ambito del
 modello. Il sidecar è additivo e non deve trasformare il JSON dei risultati da

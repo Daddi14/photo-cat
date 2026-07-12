@@ -44,7 +44,7 @@ def build_catalogue_provenance(
 
     numeric_columns = [ra_column, dec_column, mag_column]
     null_counts: dict[str, int] = {}
-    ranges = {column: {"min": None, "max": None} for column in numeric_columns}
+    ranges: dict[str, dict[str, float | None]] = {column: {"min": None, "max": None} for column in numeric_columns}
     duplicate_examples: list[str] = []
     seen_ids: set[str] = set()
     duplicate_ids: set[str] = set()

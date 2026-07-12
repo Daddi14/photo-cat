@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
-"""Generate paper-style summary, plots, and report from a PHOTO-CAT result JSON."""
+"""Generate reproducible summary, plots, and report from a PHOTO-CAT result JSON."""
 
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("result_json", help="PHOTO-CAT query result JSON")
     parser.add_argument(
         "--out-dir",
-        default="paper_products",
-        help="directory for generated products (default: paper_products)",
+        default="reproduction",
+        help="directory for generated products (default: reproduction)",
     )
     return parser
 
@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     write_report(rows, result_path, output_dir / "report.html", "html")
     write_report(rows, result_path, output_dir / "report.md", "markdown")
 
-    print(f"Paper-style products written to: {output_dir.resolve()}")
+    print(f"Reproducible products written to: {output_dir.resolve()}")
     return 0
 
 

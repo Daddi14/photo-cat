@@ -54,7 +54,7 @@ query_contamination_from_index:
 
     assert query_main(config_path) == 0
 
-    result_path = next((index_dir / "output").glob("*.json"))
+    result_path = next((index_dir / "results").glob("*.json"))
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result[0]["num_contaminants"] == 0
     assert result[0]["flux_fraction_extra"] == 0.0
@@ -87,7 +87,7 @@ query_contamination_from_index:
 
     assert query_main(config_path) == 0
 
-    result_path = next((index_dir / "output").glob("*.json"))
+    result_path = next((index_dir / "results").glob("*.json"))
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert [row["source_id"] for row in result] == ["1001", "9999", "not-a-number"]
     assert result[0].get("status", "found") == "found"

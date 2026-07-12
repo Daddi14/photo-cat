@@ -115,9 +115,9 @@ Implementation notes
 Output
 ------
     - One target-result JSON file, saved under:
-          INDEX_DIR / "output" / "<basename>_FoV..._dmag..._YYYYMMDD_HHMMSS_microseconds.json"
+          INDEX_DIR / "results" / "<basename>_FoV..._dmag..._YYYYMMDD_HHMMSS_microseconds.json"
     - One reproducibility metadata sidecar, saved under:
-          INDEX_DIR / "output" / "metadata" / "<result_stem>_metadata.json"
+          INDEX_DIR / "results" / "metadata" / "<result_stem>_metadata.json"
 """
 
 import csv

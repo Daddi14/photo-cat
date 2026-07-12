@@ -1,31 +1,31 @@
-# Reproducing paper-style PHOTO-CAT products
+# Reproducing PHOTO-CAT products
 
-This folder contains templates for making the paper analysis reproducible from
+This folder contains templates for making the analysis reproducible from
 released software artifacts. Replace the placeholder catalogue/target paths with
-the exact files used for the paper or data release.
+the exact files used for the analysis or data release.
 
 Suggested workflow:
 
 ```bash
 photo-cat --version
-photo-cat build-index --config examples/paper/paper_config_47arcsec.yaml
-photo-cat query --config examples/paper/paper_config_47arcsec.yaml
-photo-cat build-index --config examples/paper/paper_config_75arcsec.yaml
-photo-cat query --config examples/paper/paper_config_75arcsec.yaml
+photo-cat build-index --config examples/reproducibility/config_47arcsec.yaml
+photo-cat query --config examples/reproducibility/config_47arcsec.yaml
+photo-cat build-index --config examples/reproducibility/config_75arcsec.yaml
+photo-cat query --config examples/reproducibility/config_75arcsec.yaml
 ```
 
-Then generate paper-style products from each result JSON:
+Then generate reproducible products from each result JSON:
 
 ```bash
-python examples/paper/reproduce_paper_products.py output/paper_47arcsec/output/<result>.json --out-dir output/paper_products/47arcsec
-python examples/paper/reproduce_paper_products.py output/paper_75arcsec/output/<result>.json --out-dir output/paper_products/75arcsec
+python examples/reproducibility/reproduce_products.py output/run_47arcsec/results/<result>.json --out-dir output/reproduction/47arcsec
+python examples/reproducibility/reproduce_products.py output/run_75arcsec/results/<result>.json --out-dir output/reproduction/75arcsec
 ```
 
 Generate publication-ready contamination plots for whichever single
 aperture/result is being presented:
 
 ```bash
-photo-cat publication-plots output/paper_47arcsec/output/<result>.json --aperture-arcsec 47 --output-dir output/publication_plots/47arcsec --format pdf
+photo-cat publication-plots output/run_47arcsec/results/<result>.json --aperture-arcsec 47 --output-dir output/publication_plots/47arcsec --format pdf
 ```
 
 The sky map uses blue/yellow/purple classes plus circle/triangle/X markers and

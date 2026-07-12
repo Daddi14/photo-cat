@@ -142,7 +142,7 @@ def index_paths(index_dir: str | Path) -> IndexPaths:
         numeric_internal_ids_sorted=root / "numeric_internal_ids_sorted.npy",
         manifest=root / INDEX_MANIFEST_FILENAME,
         neighbors_seps=root / "neighbors_seps.bin",
-        output_dir=root / "output",
+        output_dir=root / "results",
     )
 
 

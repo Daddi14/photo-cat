@@ -87,7 +87,7 @@ Each target result includes:
 - contaminant coordinates, magnitudes, and separations
 
 For reproducibility, each query also writes a sidecar metadata JSON file under
-`INDEX_DIR/output/metadata/`. The sidecar records the PHOTO-CAT version, selected
+`INDEX_DIR/results/metadata/`. The sidecar records the PHOTO-CAT version, selected
 configuration values, target count, index manifest, catalogue SHA-256 from the
 index build, optional bandpass-profile checksum, and the model-scope notes
 above. The target-result JSON remains a
@@ -100,26 +100,26 @@ to preserve those requested IDs as JSON rows with `status` set to
 
 ## Derived summaries, plots, reports, and benchmarks
 
-After a query, result files can be converted into reproducible paper-style
+After a query, result files can be converted into reproducible
 products:
 
 ```bash
-photo-cat summarize INDEX_DIR/output/result.json --format json --output summary.json
-photo-cat export INDEX_DIR/output/result.json --format csv --output result.csv
-photo-cat plot INDEX_DIR/output/result.json --kind contaminant-counts --output counts.svg
-photo-cat plot INDEX_DIR/output/result.json --kind sky-map --backend matplotlib --output sky-map.png
-photo-cat plot INDEX_DIR/output/result.json --kind separations-normalized --output separations_area_norm.svg
-photo-cat plot INDEX_DIR/output/result.json --kind flux-vs-separation --output flux_vs_separation.svg
-photo-cat plot INDEX_DIR/output/result.json --kind sky-map --output sky-map.svg
-photo-cat publication-plots INDEX_DIR/output/result.json --aperture-arcsec 47 --output-dir publication_plots
-photo-cat report INDEX_DIR/output/result.json --format html --output report.html
+photo-cat summarize INDEX_DIR/results/result.json --format json --output summary.json
+photo-cat export INDEX_DIR/results/result.json --format csv --output result.csv
+photo-cat plot INDEX_DIR/results/result.json --kind contaminant-counts --output counts.svg
+photo-cat plot INDEX_DIR/results/result.json --kind sky-map --backend matplotlib --output sky-map.png
+photo-cat plot INDEX_DIR/results/result.json --kind separations-normalized --output separations_area_norm.svg
+photo-cat plot INDEX_DIR/results/result.json --kind flux-vs-separation --output flux_vs_separation.svg
+photo-cat plot INDEX_DIR/results/result.json --kind sky-map --output sky-map.svg
+photo-cat publication-plots INDEX_DIR/results/result.json --aperture-arcsec 47 --output-dir publication_plots
+photo-cat report INDEX_DIR/results/result.json --format html --output report.html
 photo-cat provenance data/catalog.csv --output catalog_provenance.json
 photo-cat benchmark --config config.yaml --output benchmark.json
 photo-cat benchmark-table benchmark.json --output benchmark_table.md
-photo-cat reproduce-paper --result-json INDEX_DIR/output/result.json --output-dir paper_products
+photo-cat reproduce --result-json INDEX_DIR/results/result.json --output-dir reproduction
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
-photo-cat screen INDEX_DIR/output/result.json --output screening.csv
-photo-cat validate-results INDEX_DIR/output/result.json data/reference.csv --output validation.json --matched-output residuals.csv
+photo-cat screen INDEX_DIR/results/result.json --output screening.csv
+photo-cat validate-results INDEX_DIR/results/result.json data/reference.csv --output validation.json --matched-output residuals.csv
 ```
 
 `summarize` emits aggregate target counts, selected-contaminant counts,
@@ -132,9 +132,9 @@ tables. `report` writes an HTML or Markdown document that bundles the summary
 and plots. `provenance` records catalogue checksums and basic input statistics.
 `benchmark` runs selected pipeline stages and records wall-clock time plus
 Python `tracemalloc` peak allocations; if `psutil` is installed it also samples
-native RSS memory. A paper-ready Markdown or CSV benchmark table can be
-generated with `benchmark-table`. `reproduce-paper` gathers result products and checksums into
-a paper reproduction manifest. `merge-bright-stars` creates a de-duplicated
+native RSS memory. A shareable Markdown or CSV benchmark table can be
+generated with `benchmark-table`. `reproduce` gathers result products and checksums into
+a reproduction manifest. `merge-bright-stars` creates a de-duplicated
 catalogue from a Gaia-like table plus a supplemental bright-star table.
 `screen` creates a ranked, reasoned accept/review/reject decision table.
 `validate-results` quantifies agreement with an external mission/reference

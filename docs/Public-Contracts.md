@@ -53,7 +53,7 @@ Documented keys inside these sections, relative-path behaviour, and validation r
 
 - Relative paths stored in `config.yaml`, including catalogue, targets, build-output, and query-index paths, resolve relative to the directory containing that config file.
 - An explicit CLI `--config` path and direct CLI path overrides resolve relative to the working directory where `photo-cat` is invoked.
-- Query result files are created only under `INDEX_DIR/output`; a file occupying that path is a validation error.
+- Query result files are created only under `INDEX_DIR/results`; a file occupying that path is a validation error.
 - Index directory validation happens before numerical query execution opens index arrays or memory maps.
 - Reading or validating a configuration must not create output directories, change the caller working directory, or permanently modify `PHOTO_CAT_CONFIG`.
 - Direct CLI overrides are derived for one command only and do not rewrite the source `config.yaml`.
@@ -65,7 +65,7 @@ A successful build writes the documented neighbour-index files inside the config
 
 ## Query results
 
-The query stage writes JSON files under `INDEX_DIR/output`.
+The query stage writes JSON files under `INDEX_DIR/results`.
 
 Each target result preserves the documented fields for:
 
@@ -91,7 +91,7 @@ Each target result preserves the documented fields for:
 - unresolved target rows when explicitly requested, with `status` set to
   `missing_from_index` or `invalid_target_id`.
 
-Each query also writes a reproducibility sidecar under `INDEX_DIR/output/metadata/`
+Each query also writes a reproducibility sidecar under `INDEX_DIR/results/metadata/`
 with schema version `1`. The sidecar includes the PHOTO-CAT version, query
 configuration, processed target count, index manifest, result path, and explicit
 model-scope notes. The sidecar is additive and must not change the target-result

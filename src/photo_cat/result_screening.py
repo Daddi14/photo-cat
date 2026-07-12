@@ -20,7 +20,7 @@ DEFAULT_METRIC = "flux_fraction_total_weighted"
 
 def _metric_value(row: dict[str, Any], metric: str) -> float | None:
     """Read a finite metric while providing compatibility fallbacks."""
-    value = row.get(metric)
+    value: Any = row.get(metric)
     if (value is None and metric == DEFAULT_METRIC):
         value = row.get("flux_fraction_all_neighbors", row.get("flux_fraction_selected"))
     try:

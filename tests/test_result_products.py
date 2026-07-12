@@ -476,7 +476,7 @@ def test_reproduce_products_can_run_config_and_find_latest_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Configs should be runnable and resolved to the latest index output result."""
-    index_output = tmp_path / "index" / "output"
+    index_output = tmp_path / "index" / "results"
     index_output.mkdir(parents=True)
     result_path = write_result_json(index_output)
     config_path = tmp_path / "run_config.yaml"
@@ -510,7 +510,7 @@ def test_reproduce_products_rejects_empty_inputs(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_latest_result_json_reports_missing_outputs(tmp_path: Path) -> None:
     """Missing query outputs should produce a direct reproduction error."""
-    (tmp_path / "index" / "output").mkdir(parents=True)
+    (tmp_path / "index" / "results").mkdir(parents=True)
 
     with pytest.raises(ValueError, match="No query result"):
         reproducible_products.latest_result_json(tmp_path / "index")

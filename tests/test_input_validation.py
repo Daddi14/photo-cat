@@ -72,7 +72,7 @@ def test_query_output_path_rejects_file_named_output(tmp_path: Path) -> None:
     """Query results must fail clearly instead of overwriting a file named output inside an index folder."""
     index_dir = tmp_path / "index"
     index_dir.mkdir()
-    (index_dir / "output").write_text("conflict", encoding="utf-8")
+    (index_dir / "results").write_text("conflict", encoding="utf-8")
 
     with pytest.raises(ValueError, match="Query results output path must be a directory"):
         create_output_json_path(None, str(index_dir), 47.0, 5.0)

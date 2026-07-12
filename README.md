@@ -64,12 +64,12 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
   plus a colourblind-safe sky map with redundant marker encodings.
 - Export target-result tables to CSV or Parquet for notebooks and external tools.
 - Capture catalogue provenance JSON with checksums, row counts, column stats, and optional ADQL checksums.
-- Generate reproducible paper/review product bundles with summaries, plots, reports, and checksums.
+- Generate reproducible product bundles with summaries, plots, reports, and checksums.
 - Merge supplemental bright-star catalogues before building an index.
 - Rank targets into explicit accept/review/reject screening decisions.
 - Validate predicted contamination against user-supplied mission/reference tables.
 - Run benchmark captures for reproducible runtime and memory-allocation notes.
-- Render benchmark captures as paper-ready Markdown or CSV tables.
+- Render benchmark captures as shareable Markdown or CSV tables.
 - Configure runs through a graphical interface.
 - Run the same workflow from a command-line interface for automation and remote systems, with direct overrides for every config value.
 - Use either a targets CSV or a manual list of source IDs.
@@ -125,18 +125,18 @@ The query stage produces a JSON file containing one result entry per processed t
 Result files can be post-processed with:
 
 ```bash
-photo-cat summarize output/index/output/result.json
-photo-cat export output/index/output/result.json --format csv --output output/result.csv
-photo-cat plot output/index/output/result.json --kind contaminant-counts
-photo-cat publication-plots output/index/output/result.json --aperture-arcsec 47 --output-dir output/publication_plots
-photo-cat provenance data/catalog.csv --adql-file examples/paper/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
-photo-cat report output/index/output/result.json --format html
+photo-cat summarize output/index/results/result.json
+photo-cat export output/index/results/result.json --format csv --output output/result.csv
+photo-cat plot output/index/results/result.json --kind contaminant-counts
+photo-cat publication-plots output/index/results/result.json --aperture-arcsec 47 --output-dir output/publication_plots
+photo-cat provenance data/catalog.csv --adql-file examples/reproducibility/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
+photo-cat report output/index/results/result.json --format html
 photo-cat benchmark --config config.yaml --output output/benchmark.json
 photo-cat benchmark-table output/benchmark.json --output output/benchmark_table.md
-photo-cat reproduce-paper --result-json output/index/output/result.json --output-dir output/paper_products
+photo-cat reproduce --result-json output/index/results/result.json --output-dir output/reproduction
 photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
-photo-cat screen output/index/output/result.json --output output/screening.csv
-photo-cat validate-results output/index/output/result.json data/reference.csv --output output/validation.json
+photo-cat screen output/index/results/result.json --output output/screening.csv
+photo-cat validate-results output/index/results/result.json data/reference.csv --output output/validation.json
 ```
 
 See [Pipeline and output](docs/Pipeline-and-output.md) for details.
@@ -200,13 +200,13 @@ Please include the following citation and acknowledgement in any published mater
 
 Citation:
 
-`<paper reference>`
+`<publication reference>`
 
 Acknowledgement:
 
-`This research made use of PHOTO-CAT, a Python package for catalogue-level photometric contamination risk assessment and target screening (<paper reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
+`This research made use of PHOTO-CAT, a Python package for catalogue-level photometric contamination risk assessment and target screening (<publication reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
 
-Replace `<paper reference>` with the final paper reference once available.
+Replace `<publication reference>` with the final publication reference once available.
 
 ## Acknowledgements
 

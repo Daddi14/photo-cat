@@ -29,6 +29,11 @@ SKY_MAP_CLASSES: tuple[dict[str, Any], ...] = (
 PUBLICATION_HISTOGRAM_COLOR = "#4477AA"
 
 
+def _coerce_float(value: Any) -> float:
+    """Convert a loosely-typed mapping value to float, raising for None/invalid input."""
+    return float(value)
+
+
 def _matplotlib_pyplot():
     """Load the non-interactive plotting backend with a direct installation hint."""
     try:
@@ -55,7 +60,7 @@ def _separation_distribution(rows: Iterable[dict[str, Any]], bin_width_arcsec: f
     frequencies: Counter[int] = Counter()
     for contaminant in iter_contaminants(rows):
         try:
-            separation = float(contaminant.get("sep_arcsec"))
+            separation = _coerce_float(contaminant.get("sep_arcsec"))
         except (TypeError, ValueError):
             continue
         if (math.isfinite(separation) and separation >= 0.0):
@@ -128,8 +133,8 @@ def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: i
     grouped: list[tuple[list[float], list[float]]] = [([], []), ([], []), ([], [])]
     for row in rows:
         try:
-            ra = float(row.get("ra")) % 360.0
-            dec = float(row.get("dec"))
+            ra = _coerce_float(row.get("ra")) % 360.0
+            dec = _coerce_float(row.get("dec"))
         except (TypeError, ValueError):
             continue
         if (not math.isfinite(ra) or not math.isfinite(dec) or dec < -90.0 or dec > 90.0):
@@ -205,7 +210,7 @@ def generate_publication_plots(
         "separation_distribution": separation_plot,
         "contamination_sky_map": sky_map,
     }
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": PUBLICATION_PLOT_SCHEMA_VERSION,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "photo_cat_version": __version__,

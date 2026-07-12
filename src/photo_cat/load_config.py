@@ -558,12 +558,12 @@ def load_config_from_document(
     section_config = document.section(section)
 
     if (section == BUILD_SECTION):
-        config = load_build_config(section_config, document.directory)
-        return validate_build_config_runtime(config) if validate_runtime else config
+        build_config = load_build_config(section_config, document.directory)
+        return validate_build_config_runtime(build_config) if validate_runtime else build_config
 
     if (section == QUERY_SECTION):
-        config = load_query_config(section_config, document.directory)
-        return validate_query_config_runtime(config) if validate_runtime else config
+        query_config = load_query_config(section_config, document.directory)
+        return validate_query_config_runtime(query_config) if validate_runtime else query_config
 
     if (section == EXECUTION_SECTION):
         return load_execution_config(section_config)

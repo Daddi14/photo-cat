@@ -2,7 +2,7 @@ PHOTO-CAT catalogue-selection reproducibility template
 ======================================================
 
 This file is an example/template, not a claim about the exact selections used
-in any manuscript figure. For a paper or data release, replace the placeholders
+in any figure. For a data release, replace the placeholders
 with the actual archive service, catalogue release, ADQL/SQL query, cross-match
 inputs, quality cuts, export command, and checksums used for the analysis.
 
@@ -36,7 +36,7 @@ WHERE
   AND ra < 360
   AND dec >= -90
   AND dec <= 90
-  -- Replace these examples with the actual paper cuts.
+  -- Replace these examples with the actual selection cuts.
   -- AND phot_g_mean_mag < 18
   -- AND visibility_periods_used >= 8
   -- AND astrometric_params_solved IN (31, 95)
@@ -54,5 +54,5 @@ After running, archive these files with the analysis:
 - data/<targets>.csv, or the target-selection query/cross-match file
 - config.yaml, or the command log above
 - output/<run_name>/index_manifest.json
-- output/<run_name>/output/<result>.json
+- output/<run_name>/results/<result>.json
 - output/<run_name>/output/metadata/<result>_metadata.json
