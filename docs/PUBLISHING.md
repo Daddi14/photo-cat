@@ -21,7 +21,7 @@ Confirm that:
 3. `.venv/` is created or reused safely
 4. dependencies are checked or installed
 5. the graphical configurator opens
-6. `Save + run` starts the pipeline
+6. `Save + run pipeline` starts the pipeline
 7. example data completes successfully
 8. output paths and summaries are readable
 

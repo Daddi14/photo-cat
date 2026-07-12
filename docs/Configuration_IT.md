@@ -8,6 +8,7 @@ Il modo consigliato per modificare questo file è usare la configurazione grafic
 
 La configurazione controlla:
 
+- lingua dell'interfaccia (`en` o `it`)
 - percorso del catalogo di input
 - percorso del file target o target manuali
 - mapping delle colonne del catalogo
@@ -16,6 +17,17 @@ La configurazione controlla:
 - opzioni della fase di build
 - opzioni della fase di query
 - modalità di esecuzione
+
+## Lingua dell'interfaccia
+
+Il valore `interface.language` seleziona la lingua mostrata all'utente:
+
+```yaml
+interface:
+  language: it  # en oppure it
+```
+
+Si applica a GUI, tooltip, guida CLI, messaggi della console, avvisi ed errori previsti. Il selettore della lingua nella GUI aggiorna subito l'interfaccia e salva la scelta nella configurazione. Le etichette scientifiche dei grafici restano intenzionalmente in inglese, per mantenere le figure coerenti fra esecuzioni e adatte alla pubblicazione internazionale.
 
 ## Gestione percorsi del catalogo
 
@@ -115,9 +127,9 @@ durante la build. `out_of_range: null` esclude valori non calibrati;
 query. Si tratta di una trasformazione empirica di colore, non di integrazione
 della banda su una distribuzione spettrale di energia.
 
-## Save + run
+## Salva e avvia la pipeline
 
-`Save + run` scrive le impostazioni correnti della GUI in `config.yaml`, poi avvia la pipeline in una console separata.
+`Salva e avvia la pipeline` scrive le impostazioni correnti della GUI in `config.yaml`, poi avvia la pipeline in una console separata.
 
 La console della pipeline mostra il progresso e il percorso finale dell’output.
 

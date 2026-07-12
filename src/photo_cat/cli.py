@@ -15,11 +15,55 @@ from pathlib import Path
 from typing import Iterator
 
 from .cli_overrides import RuntimeConfigOverride, collect_overrides
+from .i18n import SUPPORTED_LANGUAGES, initialize_language, tr
 from .path_policy import resolve_user_path
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = PROJECT_DIR / "config.yaml"
+
+
+class LocalizedArgumentParser(argparse.ArgumentParser):
+    """Translate argparse-owned validation errors while preserving option names."""
+
+    def format_usage(self) -> str:
+        rendered = super().format_usage()
+        return rendered.replace("usage:", tr("usage:"), 1)
+
+    def format_help(self) -> str:
+        rendered = super().format_help()
+        return rendered.replace("usage:", tr("usage:"), 1)
+
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: {tr('ERROR')}: {tr(message)}\n")
+
+
+def _option_value(argv: list[str], option: str) -> str | None:
+    """Read a global value before argparse builds localized help."""
+    for index, argument in enumerate(argv):
+        if (argument == option and index + 1 < len(argv)):
+            return argv[index + 1]
+        if (argument.startswith(f"{option}=")):
+            return argument.split("=", 1)[1]
+    return None
+
+
+def localize_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Translate argparse descriptions, group titles, and help recursively."""
+    if (parser.description):
+        parser.description = tr(parser.description)
+    for group in parser._action_groups:
+        group.title = tr(group.title)
+        if (group.description):
+            group.description = tr(group.description)
+    for action in parser._actions:
+        if (action.help and action.help is not argparse.SUPPRESS):
+            action.help = tr(action.help)
+        if (isinstance(action, argparse._SubParsersAction)):
+            for child in dict.fromkeys(action.choices.values()):
+                localize_parser(child)
+    return parser
 
 
 class OverrideHelpFormatter(argparse.HelpFormatter):
@@ -115,7 +159,7 @@ def run_summarize(args: argparse.Namespace) -> int:
     if (args.output is None):
         print(rendered)
     else:
-        print(f"Summary saved to: {rendered}")
+        print(tr("Summary saved to: {path}", path=rendered))
     return 0
 
 
@@ -130,7 +174,7 @@ def run_plot(args: argparse.Namespace) -> int:
         saved_path = write_matplotlib_plot(rows, args.kind, output_path)
     else:
         saved_path = write_plot(rows, args.kind, output_path)
-    print(f"Plot saved to: {saved_path}")
+    print(tr("Plot saved to: {path}", path=saved_path))
     return 0
 
 
@@ -145,8 +189,8 @@ def run_publication_plots(args: argparse.Namespace) -> int:
         output_format=args.format,
         dpi=args.dpi,
     )
-    print(f"Publication plots saved under: {args.output_dir}")
-    print(f"Publication plot manifest saved to: {payload['manifest_path']}")
+    print(tr("Publication plots saved under: {path}", path=args.output_dir))
+    print(tr("Publication plot manifest saved to: {path}", path=payload["manifest_path"]))
     return 0
 
 
@@ -159,7 +203,7 @@ def run_report(args: argparse.Namespace) -> int:
     output_path = Path(args.output) if args.output else result_path.with_name(f"{result_path.stem}_report.{suffix}")
     rows = load_result_rows(result_path)
     saved_path = write_report(rows, result_path, output_path, args.format)
-    print(f"Report saved to: {saved_path}")
+    print(tr("Report saved to: {path}", path=saved_path))
     return 0
 
 
@@ -169,7 +213,7 @@ def run_export(args: argparse.Namespace) -> int:
 
     rows = load_result_rows(args.result_json)
     saved_path = write_export(rows, args.output, args.format)
-    print(f"Export saved to: {saved_path}")
+    print(tr("Export saved to: {path}", path=saved_path))
     return 0
 
 
@@ -187,7 +231,7 @@ def run_screen(args: argparse.Namespace) -> int:
         source_path=args.result_json,
     )
     saved_path = write_screening(payload, args.output, args.format)
-    print(f"Screening decisions saved to: {saved_path}")
+    print(tr("Screening decisions saved to: {path}", path=saved_path))
     return 0
 
 
@@ -206,9 +250,9 @@ def run_validate_results(args: argparse.Namespace) -> int:
         threshold_percent=args.threshold_percent,
     )
     saved_path, matched_path = write_validation(payload, args.output, matched, args.matched_output)
-    print(f"Validation statistics saved to: {saved_path}")
+    print(tr("Validation statistics saved to: {path}", path=saved_path))
     if (matched_path is not None):
-        print(f"Matched validation rows saved to: {matched_path}")
+        print(tr("Matched validation rows saved to: {path}", path=matched_path))
     return 0
 
 
@@ -225,7 +269,7 @@ def run_provenance(args: argparse.Namespace) -> int:
         mag_column=args.mag_column,
     )
     saved_path = write_catalogue_provenance(payload, args.output)
-    print(f"Provenance saved to: {saved_path}")
+    print(tr("Provenance saved to: {path}", path=saved_path))
     return 0
 
 
@@ -243,7 +287,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
             run_query=args.benchmark_run_query,
         )
     saved_path = write_benchmark(payload, args.output)
-    print(f"Benchmark saved to: {saved_path}")
+    print(tr("Benchmark saved to: {path}", path=saved_path))
     return 0 if payload["ok"] else 1
 
 
@@ -253,7 +297,7 @@ def run_benchmark_table(args: argparse.Namespace) -> int:
 
     rows = benchmark_table_rows(args.benchmark_jsons)
     saved_path = write_benchmark_table(rows, args.output, args.format)
-    print(f"Benchmark table saved to: {saved_path}")
+    print(tr("Benchmark table saved to: {path}", path=saved_path))
     return 0
 
 
@@ -268,7 +312,7 @@ def run_reproduce(args: argparse.Namespace) -> int:
         run_configs=args.run_configs,
         matplotlib=args.backend == "matplotlib",
     )
-    print(f"Reproduction manifest saved to: {payload['manifest_path']}")
+    print(tr("Reproduction manifest saved to: {path}", path=payload["manifest_path"]))
     return 0
 
 
@@ -284,9 +328,9 @@ def run_merge_bright_stars(args: argparse.Namespace) -> int:
         prefer=args.prefer,
         provenance_output=args.provenance_output,
     )
-    print(f"Merged catalogue saved to: {payload['output_catalog']}")
+    print(tr("Merged catalogue saved to: {path}", path=payload["output_catalog"]))
     if (args.provenance_output):
-        print(f"Merge provenance saved to: {args.provenance_output}")
+        print(tr("Merge provenance saved to: {path}", path=args.provenance_output))
     return 0
 
 
@@ -373,10 +417,15 @@ def add_all_overrides(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the public PHOTO-CAT command parser."""
-    parser = argparse.ArgumentParser(
+    parser = LocalizedArgumentParser(
         prog="photo-cat",
         description="PHOTO-CAT catalogue-level contamination risk-assessment and target-screening tools.",
         formatter_class=OverrideHelpFormatter,
+    )
+    parser.add_argument(
+        "--language",
+        choices=list(SUPPORTED_LANGUAGES),
+        help="language used for help, messages, errors, and console output",
     )
     parser.add_argument(
         "--version",
@@ -651,13 +700,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor_parser.set_defaults(func=run_doctor)
 
-    return parser
+    return localize_parser(parser)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run one CLI command and return a stable process status for expected user errors."""
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    explicit_language = _option_value(effective_argv, "--language")
+    config_value = _option_value(effective_argv, "--config")
+    initialize_language(resolve_cli_config(config_value), explicit_language)
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
 
     if (args.version):
         from . import __version__
@@ -674,7 +727,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         raise
     except Exception as error:
-        print(f"ERROR: {error}", file=sys.stderr)
+        print(f"{tr('ERROR')}: {tr(error)}", file=sys.stderr)
         return 1
 
 

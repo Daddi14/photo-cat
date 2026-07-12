@@ -13,9 +13,11 @@ PHOTO-CAT è distribuito come cartella di progetto con launcher per piattaforma.
    - macOS/Linux: apri il Terminale nella cartella ed esegui `sh START_UNIX.sh`
 4. Attendi che PHOTO-CAT prepari l’ambiente locale.
 5. Seleziona il catalogo CSV nella configurazione grafica.
-6. Controlla i nomi delle colonne rilevati.
-7. Scegli le opzioni di build/query necessarie.
-8. Clicca `Save + run`.
+6. Scegli inglese o italiano dal selettore della lingua.
+7. Fermati con il puntatore su qualsiasi impostazione, valore, sezione o azione per leggerne il tooltip; i campi astronomici spiegano il termine e il suo effetto pratico.
+8. Controlla i nomi delle colonne rilevati.
+9. Scegli le opzioni di build/query necessarie.
+10. Clicca `Salva e avvia la pipeline`.
 
 ## Primo avvio
 
@@ -41,7 +43,7 @@ Su macOS, avviare il launcher dal Terminale evita problemi causati da file coman
 
 ## Esecuzione della pipeline
 
-Dopo aver configurato l’esecuzione, clicca `Save + run` dalla GUI. PHOTO-CAT apre una console della pipeline e mostra le fasi correnti, gli indicatori di progresso e il percorso di output.
+Dopo aver configurato l’esecuzione, clicca `Salva e avvia la pipeline` nella GUI. PHOTO-CAT apre una console della pipeline e mostra le fasi correnti, gli indicatori di progresso e il percorso di output.
 
 ## Interfaccia a riga di comando
 

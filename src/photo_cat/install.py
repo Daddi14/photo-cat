@@ -19,6 +19,8 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from .i18n import initialize_language, tr
+
 
 MINIMUM_PYTHON_VERSION = (3, 10)
 PROJECT_DIR = Path(__file__).resolve().parents[2]
@@ -92,16 +94,16 @@ def write_title_rule(style: str = Style.CYAN) -> None:
 
 
 def write_info_line(label: str, value: object) -> None:
-    print(f"  {label:<{INFO_LABEL_WIDTH}}: {value}")
+    print(f"  {tr(label):<{INFO_LABEL_WIDTH}}: {value}")
 
 
 def write_note(message: str) -> None:
-    print(color(f"  {message}", Style.DIM))
+    print(color(f"  {tr(message)}", Style.DIM))
 
 
 def write_header(title: str) -> None:
     write_title_rule(Style.CYAN)
-    print(color(title, Style.BOLD + Style.CYAN))
+    print(color(tr(title), Style.BOLD + Style.CYAN))
     write_title_rule(Style.CYAN)
     print()
     write_info_line("Version", PROGRAM_VERSION)
@@ -113,20 +115,20 @@ def write_header(title: str) -> None:
 
 def write_step(index: int, total: int, message: str) -> None:
     print()
-    print(color(f"Step {index} of {total} - {message}", Style.CYAN))
+    print(color(f"{tr('Step')} {index} {tr('of')} {total} - {tr(message)}", Style.CYAN))
     write_rule(Style.GRAY)
 
 
 def write_ok(message: str) -> None:
-    print(color(f"[ OK ] {message}", Style.GREEN))
+    print(color(f"[ OK ] {tr(message)}", Style.GREEN))
 
 
 def write_warn(message: str) -> None:
-    print(color(f"[WARN] {message}", Style.YELLOW))
+    print(color(f"[{tr('WARN')}] {tr(message)}", Style.YELLOW))
 
 
 def write_error(message: str) -> None:
-    print(color(f"[ERROR] {message}", Style.RED))
+    print(color(f"[{tr('ERROR')}] {tr(message)}", Style.RED))
 
 
 def write_progress_suffix(suffix: str) -> None:
@@ -374,7 +376,7 @@ def virtual_environment_rebuild_reason() -> str:
 
 def rebuild_virtual_environment(reason: str) -> bool:
     write_warn("The existing .venv needs to be rebuilt.")
-    print(f"  Reason: {reason}")
+    print(f"  {tr('Reason:')} {tr(reason)}")
     write_note("PHOTO-CAT will recreate .venv now. Dependencies may be downloaded again.")
     append_log(f"Rebuilding virtual environment: {reason}")
 
@@ -382,7 +384,7 @@ def rebuild_virtual_environment(reason: str) -> bool:
         shutil.rmtree(VENV_DIR)
     except Exception as exc:
         write_error("Could not remove the old .venv folder.")
-        print(f"Details: {exc}")
+        print(f"{tr('Details:')} {tr(exc)}")
         append_log(f"ERROR: could not remove old .venv: {exc}")
         return False
 
@@ -491,12 +493,12 @@ def run_logged_with_progress(
 
 def print_failure_details() -> None:
     write_error("Dependency installation failed.")
-    print(f"Detailed log: {INSTALL_LOG_FILE}")
+    print(f"{tr('Detailed log:')} {INSTALL_LOG_FILE}")
 
     log_tail = tail_log()
     if (log_tail):
         print()
-        print(color("Last log lines:", Style.YELLOW))
+        print(color(tr("Last log lines:"), Style.YELLOW))
         print("-" * 64)
         for line in log_tail:
             print(line)
@@ -808,6 +810,7 @@ def install_project_package(python_exe: Path, package_index: int, total: int) ->
 
 
 def main() -> int:
+    initialize_language(PROJECT_DIR / "config.yaml")
     enable_windows_ansi()
     reset_log_file()
 
@@ -815,7 +818,7 @@ def main() -> int:
         current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         required_version = f"{MINIMUM_PYTHON_VERSION[0]}.{MINIMUM_PYTHON_VERSION[1]}"
         write_error(f"Python {required_version} or newer is required. You are using Python {current_version}.")
-        print("Install Python from https://www.python.org/downloads/ and run this again.")
+        print(tr("Install Python from https://www.python.org/downloads/ and run this again."))
         return 1
 
     if (not PYPROJECT_FILE.is_file()):
@@ -840,8 +843,8 @@ def main() -> int:
             venv.create(VENV_DIR, with_pip=True)
         except Exception as exc:
             write_error("Could not create the virtual environment.")
-            print("On Linux, you may need to install the python3-venv package first.")
-            print(f"Details: {exc}")
+            print(tr("On Linux, you may need to install the python3-venv package first."))
+            print(f"{tr('Details:')} {tr(exc)}")
             append_log(f"ERROR: could not create virtual environment: {exc}")
             return 1
 
@@ -854,7 +857,7 @@ def main() -> int:
     python_exe = venv_python_path()
     if (not python_exe.is_file()):
         write_error(f"Could not find the virtual environment Python here: {python_exe}")
-        print("Delete the .venv folder and run the installer again.")
+        print(tr("Delete the .venv folder and run the installer again."))
         return 1
 
     try:
@@ -895,7 +898,7 @@ def main() -> int:
         project_dependencies = read_project_dependencies()
     except Exception as exc:
         write_error("Could not read dependencies from pyproject.toml.")
-        print(f"Details: {exc}")
+        print(f"{tr('Details:')} {tr(exc)}")
         append_log(f"ERROR: could not read project dependencies: {exc}")
         return 1
 
@@ -921,8 +924,8 @@ def main() -> int:
 
     print()
     write_title_rule(Style.GREEN)
-    print(color("PHOTO-CAT setup is complete.", Style.BOLD + Style.GREEN))
-    print(color("The local environment is ready to use.", Style.GREEN))
+    print(color(tr("PHOTO-CAT setup is complete."), Style.BOLD + Style.GREEN))
+    print(color(tr("The local environment is ready to use."), Style.GREEN))
     write_title_rule(Style.GREEN)
     print()
     write_info_line("Detailed install log", INSTALL_LOG_FILE)

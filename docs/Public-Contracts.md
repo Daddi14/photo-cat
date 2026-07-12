@@ -35,17 +35,22 @@ photo-cat --version
 
 Documented command-line options, including direct runtime overrides, should retain their meaning. New options are allowed when they do not silently change existing command behaviour.
 
-Expected user input failures should return status `1` and print a concise `ERROR:` message to standard error. Normal successful commands return status `0`.
+Expected user input failures should return status `1` and print a concise `ERROR:` message to standard error in English, or `ERRORE:` when Italian is selected. Argument-parser failures retain status `2`. Normal successful commands return status `0`.
+
+`--language {en,it}` is a global option. It changes user-facing help, console messages, warnings, and expected errors, but not command/option names, machine-readable schema keys, decision enums, or scientific plot labels.
 
 ## Configuration
 
 The top-level sections in `config.yaml` are public:
 
 ```text
+interface
 build_neighbors_index
 query_contamination_from_index
 execution
 ```
+
+`interface.language` accepts `en` or `it`. An explicit CLI language takes precedence over `PHOTO_CAT_LANGUAGE`, which takes precedence over the selected configuration and the English default.
 
 Documented keys inside these sections, relative-path behaviour, and validation rules are part of the supported configuration model. Additive settings are preferred over renaming or silently reinterpreting existing settings.
 

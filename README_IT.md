@@ -46,7 +46,7 @@ PHOTO-CAT è pensato per un utilizzo locale e riproducibile. Include launcher se
    - macOS/Linux: apri il Terminale nella cartella ed esegui `sh START_UNIX.sh`
 4. Seleziona il CSV del catalogo nella configurazione grafica.
 5. Controlla i nomi delle colonne rilevati.
-6. Clicca `Save + run`.
+6. Clicca `Salva e avvia la pipeline`.
 
 Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più completa.
 
@@ -71,6 +71,9 @@ Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più com
 - Esegue benchmark riproducibili con tempi e allocazioni Python di picco.
 - Converte i benchmark in tabelle Markdown o CSV pronte per l'articolo.
 - Configura le esecuzioni tramite interfaccia grafica.
+- Passa tra inglese e italiano per GUI, guida dei comandi, messaggi della console, avvisi ed errori previsti.
+- Consulta tooltip introduttivi su ogni impostazione, valore, sezione e azione della GUI, con spiegazioni pratiche dei termini astronomici.
+- Mantiene in inglese le etichette scientifiche dei grafici con entrambe le lingue dell'interfaccia, per produrre figure coerenti e pronte per la pubblicazione.
 - Esegui lo stesso workflow da una CLI per automazione e sistemi remoti, con override diretti per ogni valore di configurazione.
 - Usa un CSV di target oppure una lista manuale di source ID.
 - Valida file di input, nomi delle colonne, cartelle di output e percorsi dell’indice.

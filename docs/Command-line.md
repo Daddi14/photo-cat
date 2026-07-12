@@ -4,6 +4,18 @@ PHOTO-CAT can be run from the command line with a YAML configuration file and op
 
 The GUI remains the recommended entry point for normal desktop use. The CLI is intended for scripted runs, remote systems, clusters, repeatable pipelines, and batch workflows.
 
+## Language
+
+Use the global `--language` option before the command to select English or Italian help and messages:
+
+```bash
+photo-cat --language it --help
+photo-cat --language it doctor
+photo-cat --language it run --config config.yaml
+```
+
+The explicit option takes precedence. Otherwise PHOTO-CAT uses `PHOTO_CAT_LANGUAGE`, then `interface.language` from the selected configuration, and finally English. Command names, option names, machine-readable schema keys, and scientific plot labels remain stable and in English.
+
 ## Basic commands
 
 ```bash

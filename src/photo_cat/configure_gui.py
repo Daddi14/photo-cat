@@ -26,6 +26,16 @@ from tkinter import filedialog, messagebox, ttk
 
 import yaml
 
+from .i18n import (
+    LANGUAGE_ENVIRONMENT,
+    SUPPORTED_LANGUAGES,
+    get_language,
+    initialize_language,
+    set_language,
+    tooltip_for,
+    tr,
+)
+
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 SRC_DIR = PACKAGE_DIR.parent
@@ -40,11 +50,15 @@ if (FROZEN):
 else:
     ASSETS_DIR = PROJECT_DIR / "assets"
 CONFIG_PATH = Path(os.environ.get("PHOTO_CAT_CONFIG", str(PROJECT_DIR / "config.yaml"))).resolve()
+initialize_language(CONFIG_PATH)
 PROJECT_DISPLAY_NAME = "PHOTO-CAT - Photometric Contamination Analyzer Tool"
 PROJECT_SHORT_NAME = "PHOTO-CAT"
 
 
 DEFAULT_CONFIG = {
+    "interface": {
+        "language": "en",
+    },
     "build_neighbors_index": {
         "io": {
             "input_catalog": "data/example_catalog.csv",
@@ -102,6 +116,76 @@ DEFAULT_CONFIG = {
 }
 
 
+def _localize_messageboxes() -> None:
+    """Translate every dialog title and message, including existing call sites."""
+    for name in ("showerror", "showwarning", "showinfo", "askyesno", "askokcancel"):
+        original_name = f"_photocat_original_{name}"
+        if (not hasattr(messagebox, original_name)):
+            setattr(messagebox, original_name, getattr(messagebox, name))
+        original = getattr(messagebox, original_name)
+
+        def localized(title, message=None, *args, _original=original, **kwargs):
+            return _original(tr(title), tr(message) if message is not None else message, *args, **kwargs)
+
+        setattr(messagebox, name, localized)
+
+
+_localize_messageboxes()
+
+
+class ToolTip:
+    """Accessible delayed tooltip shared by all GUI controls and sections."""
+
+    def __init__(self, widget, text: str):
+        self.widget = widget
+        self.text = text
+        self.window = None
+        self.after_id = None
+        widget.bind("<Enter>", self.schedule, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+        widget.bind("<ButtonPress>", self.hide, add="+")
+
+    def schedule(self, event=None) -> None:
+        self.cancel()
+        self.after_id = self.widget.after(450, self.show)
+
+    def cancel(self) -> None:
+        if (self.after_id is not None):
+            self.widget.after_cancel(self.after_id)
+            self.after_id = None
+
+    def show(self) -> None:
+        if (self.window is not None or not self.text):
+            return
+        try:
+            x = self.widget.winfo_rootx() + 18
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        except tk.TclError:
+            return
+        self.window = tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)
+        self.window.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            self.window,
+            text=self.text,
+            justify="left",
+            wraplength=420,
+            padx=9,
+            pady=7,
+            background="#fff8d6",
+            foreground="#111827",
+            relief="solid",
+            borderwidth=1,
+        )
+        label.pack()
+
+    def hide(self, event=None) -> None:
+        self.cancel()
+        if (self.window is not None):
+            self.window.destroy()
+            self.window = None
+
+
 CONTAMINATION_MODES = ["top_hat", "radial_weight", "gaussian_psf", "gaussian_aperture"]
 PLOT_KINDS = [
     "contaminant-counts",
@@ -142,12 +226,44 @@ Tip for beginners:
 Use the default example files first. They are already configured and should run immediately.
 """
 
+HELP_TEXT_IT = """Uso di base della pipeline:
+
+1. Seleziona il CSV del catalogo.
+2. La GUI imposta automaticamente:
+   - il CSV dei target uguale al catalogo;
+   - la cartella output/indice accanto al catalogo;
+   - la stessa cartella come indice della query.
+3. Premi Salva e avvia la pipeline.
+
+Colonne predefinite in stile Gaia:
+CSV catalogo: source_id, ra, dec, phot_g_mean_mag
+CSV target: source_id
+
+Se il catalogo usa nomi diversi, modifica i campi delle colonne affinché
+corrispondano esattamente alle intestazioni CSV. Maiuscole e minuscole sono
+distinte: ra è diverso da RA.
+
+Target:
+- modalità semplice: lascia il CSV dei target uguale al catalogo;
+- modalità CSV: scegli un file diverso contenente la colonna source_id;
+- modalità manuale: svuota il campo CSV target e inserisci gli ID nell'elenco.
+
+Gli strumenti nelle sezioni Risultati, Catalogo, Benchmark e Diagnostica
+corrispondono ai comandi photo-cat. Compila i campi e premi Esegui. L'output
+appare nella console in basso.
+
+Suggerimento per chi inizia:
+usa prima i file di esempio predefiniti. Sono già configurati e dovrebbero
+funzionare immediatamente. Passa il mouse su qualsiasi controllo per una
+spiegazione del suo significato.
+"""
+
 
 class ConfigGui(tk.Tk):
     def __init__(self):
         super().__init__()
 
-        self.title(f"{PROJECT_DISPLAY_NAME} - Configurator")
+        self.title(f"{PROJECT_DISPLAY_NAME} - {tr('Configurator')}")
         self.resizable(True, True)
         self.minsize(1040, 660)
         self.dark_mode = self.detect_dark_mode()
@@ -185,6 +301,7 @@ class ConfigGui(tk.Tk):
         self.run_build_var = tk.BooleanVar()
         self.run_query_var = tk.BooleanVar()
         self.replace_running_pipeline_var = tk.BooleanVar(value=True)
+        self.language_var = tk.StringVar(value=SUPPORTED_LANGUAGES[get_language()])
 
         self.pipeline_processes = []
         self.pipeline_sessions = []
@@ -207,12 +324,15 @@ class ConfigGui(tk.Tk):
         self.theme_button = None
         self.output_text = None
         self.model_dependent_entries = {}
+        self._tooltips: list[ToolTip] = []
 
         self.create_widgets()
         self.load_values_into_fields()
         self.install_catalog_path_auto_update()
         self.set_advanced_widgets_state()
         self.update_model_field_state()
+        self.localize_widget_tree(self)
+        self.install_tooltips(self)
         self.protocol("WM_DELETE_WINDOW", self.on_window_close)
         self.center_window()
 
@@ -501,7 +621,7 @@ class ConfigGui(tk.Tk):
 
         self.update_logo_image()
         if (self.theme_button is not None):
-            self.theme_button.configure(text=self.theme_button_label())
+            self.theme_button.configure(text=tr(self.theme_button_label()))
 
         if (self.current_section is not None):
             self.show_section(self.current_section)
@@ -511,6 +631,59 @@ class ConfigGui(tk.Tk):
 
     def theme_button_label(self) -> str:
         return "Switch to light mode" if self.dark_mode else "Switch to dark mode"
+
+    def localize_widget_tree(self, widget) -> None:
+        """Translate every existing widget while retaining its English source key."""
+        try:
+            current_text = widget.cget("text")
+        except (tk.TclError, AttributeError):
+            current_text = None
+        if (current_text not in (None, "")):
+            source_text = getattr(widget, "_photocat_source_text", None)
+            if (source_text is None):
+                source_text = str(current_text)
+                widget._photocat_source_text = source_text
+            try:
+                widget.configure(text=tr(source_text))
+            except tk.TclError:
+                pass
+        for child in widget.winfo_children():
+            self.localize_widget_tree(child)
+
+    def install_tooltips(self, widget) -> None:
+        """Attach guidance to every visible label, section, and interactive control."""
+        for child in widget.winfo_children():
+            class_name = child.winfo_class().lower()
+            key = getattr(child, "_photocat_tooltip_key", None)
+            if (key is None):
+                key = getattr(child, "_photocat_source_text", None)
+            if (key is not None or class_name in {"tentry", "text", "tcombobox", "tcheckbutton", "tbutton", "tlabelframe"}):
+                if (key is None):
+                    key = "Control"
+                if ("button" in class_name):
+                    kind = "button"
+                elif ("labelframe" in class_name or class_name == "tlabel"):
+                    kind = "section"
+                else:
+                    kind = "control"
+                tooltip = ToolTip(child, tooltip_for(str(key), kind))
+                tooltip.source_key = str(key)
+                tooltip.widget_kind = kind
+                self._tooltips.append(tooltip)
+            self.install_tooltips(child)
+
+    def change_language(self, event=None) -> None:
+        """Apply the chosen language immediately and persist it on the next save."""
+        selected_name = self.language_var.get()
+        language = next((code for code, name in SUPPORTED_LANGUAGES.items() if name == selected_name), "en")
+        set_language(language)
+        self.config_data.setdefault("interface", {})["language"] = language
+        self.title(f"{PROJECT_DISPLAY_NAME} - {tr('Configurator')}")
+        self.localize_widget_tree(self)
+        for tooltip in self._tooltips:
+            tooltip.text = tooltip_for(tooltip.source_key, tooltip.widget_kind)
+        if (self.theme_button is not None):
+            self.theme_button.configure(text=tr(self.theme_button_label()))
 
     def apply_text_colors(self, text_widget: tk.Text) -> None:
         is_console = getattr(text_widget, "_photocat_console", False)
@@ -734,8 +907,22 @@ class ConfigGui(tk.Tk):
         )
         subtitle.grid(row=1, column=1, sticky="nw")
 
+        language_label = ttk.Label(header, text="Language", style="Subtitle.TLabel")
+        language_label.grid(row=0, column=2, sticky="e", padx=(8, 5))
+        language_label._photocat_tooltip_key = "Language"
+        language_combo = ttk.Combobox(
+            header,
+            textvariable=self.language_var,
+            values=list(SUPPORTED_LANGUAGES.values()),
+            state="readonly",
+            width=10,
+        )
+        language_combo.grid(row=0, column=3, sticky="e", padx=(0, 8))
+        language_combo._photocat_tooltip_key = "Language"
+        language_combo.bind("<<ComboboxSelected>>", self.change_language)
+
         self.theme_button = ttk.Button(header, text=self.theme_button_label(), command=self.toggle_theme)
-        self.theme_button.grid(row=0, column=2, rowspan=2, sticky="e")
+        self.theme_button.grid(row=0, column=4, rowspan=2, sticky="e")
 
     def build_sidebar_and_sections(self, sidebar, section_body) -> None:
         row = 0
@@ -882,6 +1069,7 @@ class ConfigGui(tk.Tk):
         ).grid(row=0, column=0, sticky="w", pady=(0, 5))
 
         self.magnitude_columns_text = self.make_text_widget(magnitude_bands, height=3)
+        self.magnitude_columns_text._photocat_tooltip_key = "Magnitude bands (optional extra bands)"
         self.magnitude_columns_text.grid(row=1, column=0, sticky="ew")
 
         self.add_file_row(files_tab, 4, "Targets CSV", self.targets_input_var, self.browse_targets)
@@ -922,6 +1110,7 @@ class ConfigGui(tk.Tk):
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 5))
 
         self.targets_text = self.make_text_widget(manual_targets, height=3)
+        self.targets_text._photocat_tooltip_key = "Manual targets"
         self.targets_text.grid(row=1, column=0, sticky="ew", padx=(0, 8))
 
         ttk.Button(manual_targets, text="Use manual list", command=self.use_manual_targets).grid(row=1, column=1, sticky="n")
@@ -1064,20 +1253,34 @@ class ConfigGui(tk.Tk):
         return text_widget
 
     def add_file_row(self, parent, row: int, label: str, variable: tk.StringVar, command):
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        label_widget = ttk.Label(parent, text=label)
+        label_widget._photocat_tooltip_key = label
+        label_widget.grid(row=row, column=0, sticky="w", pady=4)
         entry = ttk.Entry(parent, textvariable=variable, width=70)
+        entry._photocat_tooltip_key = label
         entry.grid(row=row, column=1, sticky="ew", padx=(10, 8), pady=4)
-        ttk.Button(parent, text="Browse...", command=command).grid(row=row, column=2, pady=4)
+        button = ttk.Button(parent, text="Browse...", command=command)
+        button._photocat_tooltip_key = label
+        button.grid(row=row, column=2, pady=4)
         return entry
 
     def add_folder_row(self, parent, row: int, label: str, variable: tk.StringVar, command) -> None:
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=variable, width=70).grid(row=row, column=1, sticky="ew", padx=(10, 8), pady=4)
-        ttk.Button(parent, text="Browse...", command=command).grid(row=row, column=2, pady=4)
+        label_widget = ttk.Label(parent, text=label)
+        label_widget._photocat_tooltip_key = label
+        label_widget.grid(row=row, column=0, sticky="w", pady=4)
+        entry = ttk.Entry(parent, textvariable=variable, width=70)
+        entry._photocat_tooltip_key = label
+        entry.grid(row=row, column=1, sticky="ew", padx=(10, 8), pady=4)
+        button = ttk.Button(parent, text="Browse...", command=command)
+        button._photocat_tooltip_key = label
+        button.grid(row=row, column=2, pady=4)
 
     def add_entry_row(self, parent, row: int, label: str, variable: tk.StringVar, column_offset: int = 0):
-        ttk.Label(parent, text=label).grid(row=row, column=column_offset, sticky="w", pady=4)
+        label_widget = ttk.Label(parent, text=label)
+        label_widget._photocat_tooltip_key = label
+        label_widget.grid(row=row, column=column_offset, sticky="w", pady=4)
         entry = ttk.Entry(parent, textvariable=variable, width=22)
+        entry._photocat_tooltip_key = label
         entry.grid(row=row, column=column_offset + 1, sticky="w", padx=(10, 18), pady=4)
         return entry
 
@@ -1423,45 +1626,45 @@ class ConfigGui(tk.Tk):
 
     def browse_catalog(self) -> None:
         selected = filedialog.askopenfilename(
-            title="Select catalog CSV",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            title=tr("Select catalog CSV"),
+            filetypes=[(tr("CSV files"), "*.csv"), (tr("All files"), "*.*")]
         )
         if (selected):
             self.apply_catalog_defaults(selected)
 
     def browse_targets(self) -> None:
         selected = filedialog.askopenfilename(
-            title="Select targets CSV",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            title=tr("Select targets CSV"),
+            filetypes=[(tr("CSV files"), "*.csv"), (tr("All files"), "*.*")]
         )
         if (selected):
             self.targets_input_var.set(self.make_project_relative_path(selected))
 
     def browse_bandpass_file(self) -> None:
         selected = filedialog.askopenfilename(
-            title="Select bandpass profile YAML",
-            filetypes=[("YAML files", "*.yaml *.yml"), ("All files", "*.*")]
+            title=tr("Select bandpass profile YAML"),
+            filetypes=[(tr("YAML files"), "*.yaml *.yml"), (tr("All files"), "*.*")]
         )
         if (selected):
             self.bandpass_transform_file_var.set(self.make_project_relative_path(selected))
 
     def browse_radial_weight_file(self) -> None:
         selected = filedialog.askopenfilename(
-            title="Select radial weight CSV",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            title=tr("Select radial weight CSV"),
+            filetypes=[(tr("CSV files"), "*.csv"), (tr("All files"), "*.*")]
         )
         if (selected):
             self.radial_weight_file_var.set(self.make_project_relative_path(selected))
 
     def browse_out_dir(self) -> None:
-        selected = filedialog.askdirectory(title="Select output/index folder")
+        selected = filedialog.askdirectory(title=tr("Select output/index folder"))
         if (selected):
             value = self.make_project_relative_path(selected)
             self.out_dir_var.set(value)
             self.index_dir_var.set(value)
 
     def browse_index_dir(self) -> None:
-        selected = filedialog.askdirectory(title="Select existing index folder")
+        selected = filedialog.askdirectory(title=tr("Select existing index folder"))
         if (selected):
             self.index_dir_var.set(self.make_project_relative_path(selected))
 
@@ -1722,6 +1925,9 @@ class ConfigGui(tk.Tk):
             radial_weight = self.make_project_relative_path(radial_weight)
 
         return {
+            "interface": {
+                "language": get_language(),
+            },
             "build_neighbors_index": {
                 "io": {
                     "input_catalog": self.make_project_relative_path(self.input_catalog_var.get()),
@@ -1783,11 +1989,12 @@ class ConfigGui(tk.Tk):
         config = self.build_config_from_fields()
         try:
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                f.write(f"# {PROJECT_DISPLAY_NAME} configuration\n")
-                f.write("# You can edit this file manually, or run the starter for your operating system and use the GUI.\n")
-                f.write("# Selecting Catalog CSV in the GUI auto-fills Targets CSV and the output/index folders.\n")
-                f.write("# To use manual source_id targets, set TARGETS_INPUT to null and list IDs under targets.\n")
-                f.write("# Default column names are Gaia-like. Column names are case-sensitive: ra != RA.\n# Change them in the GUI only if your CSV headers differ.\n\n")
+                f.write(f"# {tr('PHOTO-CAT configuration')}\n")
+                f.write(f"# {tr('You can edit this file manually, or run the starter for your operating system and use the GUI.')}\n")
+                f.write(f"# {tr('Selecting Catalog CSV in the GUI auto-fills Targets CSV and the output/index folders.')}\n")
+                f.write(f"# {tr('To use manual source_id targets, set TARGETS_INPUT to null and list IDs under targets.')}\n")
+                f.write(f"# {tr('Default column names are Gaia-like. Column names are case-sensitive: ra != RA.')}\n")
+                f.write(f"# {tr('Change them in the GUI only if your CSV headers differ.')}\n\n")
                 yaml.safe_dump(config, f, sort_keys=False, allow_unicode=True)
         except Exception as exc:
             messagebox.showerror("Save failed", f"Could not save config.yaml.\n\n{exc}")
@@ -1834,6 +2041,7 @@ class ConfigGui(tk.Tk):
         env = os.environ.copy()
         env["PHOTO_CAT_PROJECT_DIR"] = str(PROJECT_DIR)
         env["PHOTO_CAT_CONFIG"] = str(CONFIG_PATH)
+        env[LANGUAGE_ENVIRONMENT] = get_language()
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(SRC_DIR) if (not existing_pythonpath) else str(SRC_DIR) + os.pathsep + existing_pythonpath
         return env
@@ -2024,13 +2232,17 @@ class ConfigGui(tk.Tk):
     # Tool panels (photo-cat subcommands)
     # ------------------------------------------------------------------
     def build_tool_panel(self, parent, spec: dict) -> None:
-        ttk.Label(parent, text=spec["title"], style="PanelTitle.TLabel").grid(
+        title_widget = ttk.Label(parent, text=spec["title"], style="PanelTitle.TLabel")
+        title_widget._photocat_tooltip_key = spec["title"]
+        title_widget.grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 4)
         )
         ttk.Label(parent, text=f"Command: photo-cat {spec['command']}", style="Muted.TLabel").grid(
             row=1, column=0, columnspan=3, sticky="w"
         )
-        ttk.Label(parent, text=spec["description"], style="Muted.TLabel", wraplength=880, justify="left").grid(
+        description_widget = ttk.Label(parent, text=spec["description"], style="Muted.TLabel", wraplength=880, justify="left")
+        description_widget._photocat_tooltip_key = spec["title"]
+        description_widget.grid(
             row=2, column=0, columnspan=3, sticky="w", pady=(2, 10)
         )
 
@@ -2051,6 +2263,7 @@ class ConfigGui(tk.Tk):
             style="Accent.TButton",
             command=lambda: self.run_tool(spec, field_states),
         )
+        run_button._photocat_tooltip_key = spec["title"]
         run_button.grid(row=4, column=0, sticky="w", pady=(12, 0))
 
     def build_tool_field(self, form, row: int, field: dict) -> dict:
@@ -2060,38 +2273,52 @@ class ConfigGui(tk.Tk):
 
         if (kind == "bool"):
             var = tk.BooleanVar(value=bool(field.get("default", False)))
-            ttk.Checkbutton(form, text=label, variable=var).grid(row=row, column=0, columnspan=3, sticky="w", pady=4)
+            check = ttk.Checkbutton(form, text=label, variable=var)
+            check._photocat_tooltip_key = label
+            check.grid(row=row, column=0, columnspan=3, sticky="w", pady=4)
             state["var"] = var
             return state
 
         if (kind == "multi_file"):
-            ttk.Label(form, text=label).grid(row=row, column=0, sticky="nw", pady=4)
+            label_widget = ttk.Label(form, text=label)
+            label_widget._photocat_tooltip_key = label
+            label_widget.grid(row=row, column=0, sticky="nw", pady=4)
             text_widget = self.make_text_widget(form, height=3)
+            text_widget._photocat_tooltip_key = label
             text_widget.grid(row=row, column=1, sticky="ew", padx=(10, 8), pady=4)
-            ttk.Button(
+            add_button = ttk.Button(
                 form,
                 text="Add file...",
                 command=lambda widget=text_widget, f=field: self.append_path_to_text(widget, f),
-            ).grid(row=row, column=2, sticky="n", pady=4)
+            )
+            add_button._photocat_tooltip_key = label
+            add_button.grid(row=row, column=2, sticky="n", pady=4)
             state["text"] = text_widget
             return state
 
         var = tk.StringVar(value=str(field.get("default", "")))
-        ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        label_widget = ttk.Label(form, text=label)
+        label_widget._photocat_tooltip_key = label
+        label_widget.grid(row=row, column=0, sticky="w", pady=4)
 
         if (kind == "choice"):
             combo = ttk.Combobox(form, textvariable=var, values=field["options"], state="readonly", width=24)
+            combo._photocat_tooltip_key = label
             combo.grid(row=row, column=1, sticky="w", padx=(10, 8), pady=4)
         elif (kind in {"file_open", "file_save", "dir"}):
             entry = ttk.Entry(form, textvariable=var, width=60)
+            entry._photocat_tooltip_key = label
             entry.grid(row=row, column=1, sticky="ew", padx=(10, 8), pady=4)
-            ttk.Button(
+            browse_button = ttk.Button(
                 form,
                 text="Browse...",
                 command=lambda v=var, f=field: self.browse_for_field(v, f),
-            ).grid(row=row, column=2, pady=4)
+            )
+            browse_button._photocat_tooltip_key = label
+            browse_button.grid(row=row, column=2, pady=4)
         else:
             entry = ttk.Entry(form, textvariable=var, width=28)
+            entry._photocat_tooltip_key = label
             entry.grid(row=row, column=1, sticky="w", padx=(10, 8), pady=4)
 
         if (field.get("autofill") == "result_json"):
@@ -2102,20 +2329,20 @@ class ConfigGui(tk.Tk):
 
     def browse_for_field(self, var: tk.StringVar, field: dict) -> None:
         kind = field["kind"]
-        filetypes = field.get("filetypes", [("All files", "*.*")])
+        filetypes = [(tr(label), pattern) for label, pattern in field.get("filetypes", [("All files", "*.*")])]
         if (kind == "dir"):
-            selected = filedialog.askdirectory(title=field["label"])
+            selected = filedialog.askdirectory(title=tr(field["label"]))
         elif (kind == "file_save"):
-            selected = filedialog.asksaveasfilename(title=field["label"], filetypes=filetypes)
+            selected = filedialog.asksaveasfilename(title=tr(field["label"]), filetypes=filetypes)
         else:
-            selected = filedialog.askopenfilename(title=field["label"], filetypes=filetypes)
+            selected = filedialog.askopenfilename(title=tr(field["label"]), filetypes=filetypes)
 
         if (selected):
             var.set(selected)
 
     def append_path_to_text(self, text_widget: tk.Text, field: dict) -> None:
-        filetypes = field.get("filetypes", [("All files", "*.*")])
-        selected = filedialog.askopenfilename(title=field["label"], filetypes=filetypes)
+        filetypes = [(tr(label), pattern) for label, pattern in field.get("filetypes", [("All files", "*.*")])]
+        selected = filedialog.askopenfilename(title=tr(field["label"]), filetypes=filetypes)
         if (not selected):
             return
 
@@ -2211,9 +2438,9 @@ class ConfigGui(tk.Tk):
                 for line in process.stdout:
                     self.after(0, self.append_output, line)
                 process.wait()
-                self.after(0, self.append_output, f"[finished with exit code {process.returncode}]\n\n")
+                self.after(0, self.append_output, tr("[finished with exit code {code}]", code=process.returncode) + "\n\n")
             except Exception as exc:
-                self.after(0, self.append_output, f"[error] {exc}\n\n")
+                self.after(0, self.append_output, tr("[error] {error}", error=exc) + "\n\n")
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2498,7 +2725,7 @@ class ConfigGui(tk.Tk):
         self.load_values_into_fields()
 
     def show_help(self) -> None:
-        messagebox.showinfo("Help", HELP_TEXT)
+        messagebox.showinfo("Help", HELP_TEXT_IT if get_language() == "it" else HELP_TEXT)
 
     def center_window(self) -> None:
         self.update_idletasks()

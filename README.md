@@ -46,7 +46,7 @@ PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly 
    - macOS/Linux: open Terminal in the folder and run `sh START_UNIX.sh`
 4. Select your catalogue CSV in the graphical configurator.
 5. Check the detected column names.
-6. Click `Save + run`.
+6. Click `Save + run pipeline`.
 
 See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 
@@ -71,6 +71,9 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Run benchmark captures for reproducible runtime and memory-allocation notes.
 - Render benchmark captures as shareable Markdown or CSV tables.
 - Configure runs through a graphical interface.
+- Switch the GUI, command help, console messages, warnings, and expected errors between English and Italian.
+- Read beginner-oriented tooltips on every GUI setting, value, section, and action; astronomy terms include practical explanations.
+- Keep scientific plot labels in English in either interface language so exported figures remain publication-ready and consistent.
 - Run the same workflow from a command-line interface for automation and remote systems, with direct overrides for every config value.
 - Use either a targets CSV or a manual list of source IDs.
 - Validate input files, column names, output folders, and index paths.

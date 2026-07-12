@@ -5,6 +5,10 @@
 # Default column names are Gaia-like. Column names are case-sensitive: ra != RA.
 # Change them in the GUI only if your CSV headers differ.
 
+interface:
+  # User-facing GUI, CLI, console, warning, and error language: en or it.
+  language: en
+
 build_neighbors_index:
   io:
     input_catalog: data/example_catalog.csv

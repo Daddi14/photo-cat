@@ -8,6 +8,7 @@ The recommended way to edit this file is through the graphical configurator open
 
 The configuration controls:
 
+- interface language (`en` or `it`)
 - catalogue input path
 - target input path or manual targets
 - catalogue column mapping
@@ -16,6 +17,17 @@ The configuration controls:
 - build stage options
 - query stage options
 - execution mode
+
+## Interface language
+
+The `interface.language` value selects the user-facing language:
+
+```yaml
+interface:
+  language: en  # en or it
+```
+
+It applies to the GUI, tooltips, CLI help, console messages, warnings, and expected errors. The GUI language selector updates the interface immediately and saves the choice with the configuration. Scientific plot labels deliberately remain in English so exported figures are consistent across runs and suitable for international publication.
 
 ## Catalogue path handling
 
@@ -112,9 +124,9 @@ the index build. `out_of_range: null` excludes uncalibrated values;
 metadata. This is an empirical colour transformation, not passband integration
 over a spectral energy distribution.
 
-## Save + run
+## Save + run pipeline
 
-`Save + run` writes the current GUI settings to `config.yaml`, then starts the pipeline in a separate console.
+`Save + run pipeline` writes the current GUI settings to `config.yaml`, then starts the pipeline in a separate console.
 
 The pipeline console shows progress and the final output path.
 

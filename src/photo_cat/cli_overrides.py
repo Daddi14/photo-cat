@@ -18,6 +18,9 @@ from .path_policy import resolve_user_path
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
+    "interface": {
+        "language": "en",
+    },
     "build_neighbors_index": {
         "io": {
             "input_catalog": "data/example_catalog.csv",

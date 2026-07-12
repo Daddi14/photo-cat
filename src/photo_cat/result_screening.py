@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .index_manifest import atomic_write_json
+from .i18n import tr
 
 
 SCREENING_SCHEMA_VERSION = 1
@@ -117,16 +118,16 @@ def write_screening(payload: dict[str, Any], output_path: str | Path, output_for
         raise ValueError("Screening format must be one of: json, csv, markdown.")
 
     lines = [
-        "# PHOTO-CAT target screening",
+        f"# {tr('PHOTO-CAT target screening')}",
         "",
-        f"Metric: `{payload['metric']}`",
+        f"{tr('Metric')}: `{payload['metric']}`",
         "",
-        "| Rank | Source ID | Decision | Risk (%) | Reasons |",
+        f"| {tr('Rank')} | {tr('Source ID')} | {tr('Decision')} | {tr('Risk (%)')} | {tr('Reasons')} |",
         "|---:|---|---|---:|---|",
     ]
     for rank, item in enumerate(payload["decisions"], start=1):
         score = "" if item["risk_score_percent"] is None else f"{item['risk_score_percent']:.6g}"
-        reasons = "; ".join(item["decision_reasons"]).replace("|", "\\|")
-        lines.append(f"| {rank} | {item['source_id']} | {item['decision']} | {score} | {reasons} |")
+        reasons = "; ".join(tr(reason) for reason in item["decision_reasons"]).replace("|", "\\|")
+        lines.append(f"| {rank} | {item['source_id']} | {tr(item['decision'])} | {score} | {reasons} |")
     destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return str(destination)

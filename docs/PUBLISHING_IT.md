@@ -21,7 +21,7 @@ Conferma che:
 3. `.venv/` venga creato o riutilizzato in sicurezza
 4. le dipendenze vengano controllate o installate
 5. la configurazione grafica si apra
-6. `Save + run` avvii la pipeline
+6. `Salva e avvia la pipeline` avvia la pipeline
 7. i dati di esempio completino correttamente
 8. percorsi di output e riepiloghi siano leggibili
 

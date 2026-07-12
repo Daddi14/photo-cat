@@ -13,9 +13,11 @@ PHOTO-CAT is distributed as a project folder with platform launchers. Normal use
    - macOS/Linux: open Terminal in the folder and run `sh START_UNIX.sh`
 4. Wait for PHOTO-CAT to prepare its local environment.
 5. Select your catalogue CSV in the graphical configurator.
-6. Check the detected column names.
-7. Choose the build/query options you need.
-8. Click `Save + run`.
+6. Choose English or Italian from the language selector.
+7. Pause over any setting, value, section, or action to read its tooltip; astronomy-specific fields explain the term and its practical effect.
+8. Check the detected column names.
+9. Choose the build/query options you need.
+10. Click `Save + run pipeline`.
 
 ## First run
 
@@ -41,7 +43,7 @@ On macOS, running the launcher from Terminal avoids issues caused by downloaded 
 
 ## Running the pipeline
 
-After configuring the run, click `Save + run` from the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
+After configuring the run, click `Save + run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
 
 ## Command-line interface
 

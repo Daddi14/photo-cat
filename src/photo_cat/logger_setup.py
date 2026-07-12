@@ -7,6 +7,8 @@ import logging
 import os
 import sys
 
+from .i18n import tr
+
 
 def _enable_windows_ansi() -> bool:
     if (os.name != "nt"):
@@ -87,8 +89,10 @@ class _ColorFormatter(logging.Formatter):
         elif (message == "ERROR:"):
             message = ""
 
-        if (message.startswith("Results saved to: ") and USE_COLOR):
-            save_prefix = "Results saved to: "
+        message = tr(message)
+
+        save_prefix = tr("Results saved to:") + " "
+        if (message.startswith(save_prefix) and USE_COLOR):
             save_path = message[len(save_prefix):]
             message = f"{save_prefix}{self.YELLOW}{save_path}{self.RESET}"
 
@@ -96,10 +100,10 @@ class _ColorFormatter(logging.Formatter):
         style = ""
 
         if (record.levelno >= logging.ERROR):
-            output = f"[ERROR] {message}"
+            output = f"[{tr('ERROR')}] {message}"
             style = self.RED
         elif (record.levelno >= logging.WARNING):
-            output = f"[WARN]  {message}"
+            output = f"[{tr('WARN')}]  {message}"
             style = self.YELLOW
         elif (record.levelno == logging.DEBUG):
             output = f"[DEBUG] {message}"

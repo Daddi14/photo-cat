@@ -35,17 +35,22 @@ photo-cat --version
 
 Le opzioni documentate della riga di comando, inclusi gli override diretti di runtime, devono mantenere il loro significato. Sono consentite nuove opzioni quando non modificano silenziosamente il comportamento dei comandi esistenti.
 
-Gli errori di input utente previsti devono restituire stato `1` e stampare un messaggio conciso `ERROR:` sullo standard error. I comandi completati correttamente restituiscono stato `0`.
+Gli errori di input utente previsti devono restituire stato `1` e stampare sullo standard error un messaggio conciso `ERROR:` in inglese oppure `ERRORE:` quando è selezionato l'italiano. Gli errori del parser degli argomenti mantengono lo stato `2`. I comandi completati correttamente restituiscono stato `0`.
+
+`--language {en,it}` è un'opzione globale. Cambia guida, messaggi della console, avvisi ed errori previsti mostrati all'utente, ma non nomi di comandi/opzioni, chiavi degli schemi leggibili da macchina, enum delle decisioni o etichette scientifiche dei grafici.
 
 ## Configurazione
 
 Le sezioni di primo livello in `config.yaml` sono pubbliche:
 
 ```text
+interface
 build_neighbors_index
 query_contamination_from_index
 execution
 ```
+
+`interface.language` accetta `en` o `it`. Una lingua CLI esplicita ha precedenza su `PHOTO_CAT_LANGUAGE`, che ha precedenza sulla configurazione selezionata e sul valore predefinito inglese.
 
 Le chiavi documentate in queste sezioni, il comportamento dei percorsi relativi e le regole di validazione fanno parte del modello di configurazione supportato. È preferibile aggiungere impostazioni piuttosto che rinominare o reinterpretare silenziosamente quelle esistenti.
 

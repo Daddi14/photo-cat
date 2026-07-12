@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .index_manifest import atomic_write_json
+from .i18n import get_language, tr
 
 
 SUMMARY_SCHEMA_VERSION = 1
@@ -196,23 +197,25 @@ def summary_text(summary: dict[str, Any]) -> str:
     transformed = summary["transformed_total_weighted_flux_fraction_percent"]
     counts = summary["contaminants_per_target"]
     lines = [
-            "PHOTO-CAT result summary",
-            f"Targets: {summary['target_count']}",
-            f"With selected contaminants: {summary['targets_with_contaminants']}",
-            f"Without selected contaminants: {summary['targets_without_contaminants']}",
-            f"Selected contaminants: {summary['total_selected_contaminants']}",
-            f"Neighbours in radius: {summary['total_neighbors_in_radius']}",
-            f"Neighbours outside aperture: {summary['total_neighbors_outside_aperture']}",
-            f"Selected flux % mean/median/max: {selected['mean']}/{selected['median']}/{selected['max']}",
-            f"All-neighbour flux % mean/median/max: {all_neighbors['mean']}/{all_neighbors['median']}/{all_neighbors['max']}",
-            f"Outside-aperture flux % mean/median/max: {outside['mean']}/{outside['median']}/{outside['max']}",
-            f"Total weighted flux % mean/median/max: {total_weighted['mean']}/{total_weighted['median']}/{total_weighted['max']}",
-            f"Contaminants per target mean/median/max: {counts['mean']}/{counts['median']}/{counts['max']}",
+            tr("PHOTO-CAT result summary"),
+            tr("Targets: {value}", value=summary["target_count"]),
+            tr("With selected contaminants: {value}", value=summary["targets_with_contaminants"]),
+            tr("Without selected contaminants: {value}", value=summary["targets_without_contaminants"]),
+            tr("Selected contaminants: {value}", value=summary["total_selected_contaminants"]),
+            tr("Neighbours in radius: {value}", value=summary["total_neighbors_in_radius"]),
+            tr("Neighbours outside aperture: {value}", value=summary["total_neighbors_outside_aperture"]),
+            tr("Selected flux % mean/median/max: {value}", value=f"{selected['mean']}/{selected['median']}/{selected['max']}"),
+            tr("All-neighbour flux % mean/median/max: {value}", value=f"{all_neighbors['mean']}/{all_neighbors['median']}/{all_neighbors['max']}"),
+            tr("Outside-aperture flux % mean/median/max: {value}", value=f"{outside['mean']}/{outside['median']}/{outside['max']}"),
+            tr("Total weighted flux % mean/median/max: {value}", value=f"{total_weighted['mean']}/{total_weighted['median']}/{total_weighted['max']}"),
+            tr("Contaminants per target mean/median/max: {value}", value=f"{counts['mean']}/{counts['median']}/{counts['max']}"),
         ]
     if (transformed["count"] > 0):
         lines.append(
-            "Transformed total weighted flux % mean/median/max: "
-            f"{transformed['mean']}/{transformed['median']}/{transformed['max']}"
+            tr(
+                "Transformed total weighted flux % mean/median/max: {value}",
+                value=f"{transformed['mean']}/{transformed['median']}/{transformed['max']}",
+            )
         )
     return "\n".join(lines)
 
@@ -583,8 +586,8 @@ def build_report(rows: list[dict[str, Any]], result_path: str | Path, output_for
     summary = summarize_results(rows, source_path=result_path)
     if output_format == "markdown":
         return (
-            "# PHOTO-CAT report\n\n"
-            f"Source result: `{Path(result_path).resolve()}`\n\n"
+            f"# {tr('PHOTO-CAT report')}\n\n"
+            f"{tr('Source result')}: `{Path(result_path).resolve()}`\n\n"
             "```text\n"
             f"{summary_text(summary)}\n"
             "```\n"
@@ -600,11 +603,11 @@ def build_report(rows: list[dict[str, Any]], result_path: str | Path, output_for
     escaped_summary = html.escape(summary_text(summary))
     return (
         "<!doctype html>\n"
-        "<html lang=\"en\"><meta charset=\"utf-8\"><title>PHOTO-CAT report</title>"
+        f"<html lang=\"{get_language()}\"><meta charset=\"utf-8\"><title>{tr('PHOTO-CAT report')}</title>"
         "<style>body{font-family:sans-serif;max-width:980px;margin:2rem auto;padding:0 1rem;}"
         "pre{background:#f6f8fa;padding:1rem;overflow:auto;}section{margin:1.5rem 0;}</style>"
-        "<h1>PHOTO-CAT report</h1>"
-        f"<p>Source result: <code>{html.escape(str(Path(result_path).resolve()))}</code></p>"
+        f"<h1>{tr('PHOTO-CAT report')}</h1>"
+        f"<p>{tr('Source result')}: <code>{html.escape(str(Path(result_path).resolve()))}</code></p>"
         f"<pre>{escaped_summary}</pre>"
         f"{plots}</html>\n"
     )

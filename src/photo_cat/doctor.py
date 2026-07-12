@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
+from .i18n import initialize_language, tr
+
 
 PACKAGE_NAME = "photo-cat"
 DOCTOR_SCHEMA_VERSION = 1
@@ -76,7 +78,10 @@ class DoctorReporter:
         return {
             "schema_version": DOCTOR_SCHEMA_VERSION,
             "ok": summary["failed"] == 0,
-            "checks": [asdict(check) for check in self.checks],
+            "checks": [
+                {**asdict(check), "message": tr(check.message), "detail": tr(check.detail)}
+                for check in self.checks
+            ],
             "summary": summary,
         }
 
@@ -92,9 +97,9 @@ def render_text_check(check: DiagnosticCheck) -> None:
     prefix = prefixes[check.status]
 
     if (check.detail):
-        print(f"{prefix} {check.message}: {check.detail}")
+        print(f"{prefix} {tr(check.message)}: {tr(check.detail)}")
     else:
-        print(f"{prefix} {check.message}")
+        print(f"{prefix} {tr(check.message)}")
 
 
 def status_line(ok: bool, label: str, detail: str = "") -> None:
@@ -418,6 +423,7 @@ def emit_json_report(reporter: DoctorReporter) -> None:
 
 def main(config_path: str | Path | None = None, output_format: str = "text") -> int:
     """Run diagnostics in text or JSON mode without mutating process configuration state."""
+    initialize_language(config_path)
     if (output_format not in {"text", "json"}):
         raise ValueError(f"Unsupported doctor output format: {output_format}")
 
@@ -425,7 +431,7 @@ def main(config_path: str | Path | None = None, output_format: str = "text") -> 
     project_dir = find_project_dir()
 
     if (output_format == "text"):
-        print("PHOTO-CAT environment check")
+        print(tr("PHOTO-CAT environment check"))
         print("=" * 72)
 
     checks = [
@@ -444,11 +450,11 @@ def main(config_path: str | Path | None = None, output_format: str = "text") -> 
     print("=" * 72)
 
     if (ok):
-        print("PHOTO-CAT environment looks ready.")
+        print(tr("PHOTO-CAT environment looks ready."))
         return 0
 
-    print("PHOTO-CAT environment check found issues.")
-    print("Review the failed checks above. If running from a release folder, run START_WINDOWS.bat or START_UNIX.sh again to repair the local environment.")
+    print(tr("PHOTO-CAT environment check found issues."))
+    print(tr("Review the failed checks above. If running from a release folder, run START_WINDOWS.bat or START_UNIX.sh again to repair the local environment."))
     return 1
 
 

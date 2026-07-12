@@ -9,6 +9,8 @@ import shutil
 import sys
 import threading
 
+from .i18n import tr
+
 
 class Style:
     RESET = "\033[0m"
@@ -63,6 +65,7 @@ def color(text: str, style: str) -> str:
 
 
 def write_progress_suffix(suffix: str) -> None:
+    suffix = tr(suffix)
     if (not suffix):
         return
 
@@ -176,7 +179,7 @@ class ActivityBar:
 
 def tqdm_options(desc: str, total_width: int = 88) -> dict:
     return {
-        "desc": desc,
+        "desc": tr(desc),
         "ncols": None,
         "bar_format": "{desc}: {percentage:3.0f}%|{bar:24}| {n_fmt}/{total_fmt}",
         "dynamic_ncols": True,
