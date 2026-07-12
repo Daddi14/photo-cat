@@ -50,6 +50,18 @@ PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly 
 
 See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 
+## Reproduce the paper results
+
+PHOTO-CAT includes a beginner-oriented workflow for recreating the coordinated paper-result products from Gaia DR3 data:
+
+1. download the G=17 Gaia catalogue used to search for neighbouring contaminants;
+2. download a separate G=12 Gaia target sample;
+3. configure and run the build/query pipeline;
+4. generate the contaminant-count, separation, and sky-map products from **Publication plots**;
+5. preserve the queries, configuration, metadata, manifests, and checksums needed for reproducibility.
+
+Follow the complete step-by-step guide: **[Reproduce the paper results](docs/REPRODUCE_PAPER_RESULT.md)**.
+
 ## Features
 
 - Build a neighbour index from a photometric catalogue.
