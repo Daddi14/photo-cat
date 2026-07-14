@@ -275,6 +275,9 @@ ITALIAN: dict[str, str] = {
         "Il raggio esterno di influenza è maggiore del raggio di costruzione.",
     "The query cannot use neighbours that were not included in the built index.":
         "La query non può usare vicini non inclusi nell'indice costruito.",
+    "For the queried targets, PHOTO-CAT will recompute neighbours directly from the catalog out to the influence radius (only those targets, not the whole catalog), which is slower per target than reading the pre-built index.":
+        "Per i target richiesti, PHOTO-CAT ricalcola i vicini direttamente dal catalogo fino al raggio di influenza (solo quei target, non l'intero catalogo), operazione più lenta per target rispetto alla lettura dell'indice pre-costruito.",
+    "Continue?": "Continuare?",
     "Save anyway?": "Salvare comunque?",
     "These contamination bands are not defined in Files & columns > Magnitude bands:":
         "Queste bande di contaminazione non sono definite in File e colonne > Bande di magnitudine:",

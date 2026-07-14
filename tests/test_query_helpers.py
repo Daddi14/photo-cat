@@ -189,3 +189,20 @@ def test_psf_aperture_metrics_only_apply_to_gaussian_psf_models() -> None:
     assert empty is not None
     assert empty["contamination_ratio"] == 0.0
     assert empty["target_purity"] == 1.0
+
+
+@pytest.mark.unit
+def test_influence_neighbor_provider_recomputes_per_target_from_the_catalogue() -> None:
+    """The provider finds neighbours out to the influence radius directly from RA/Dec."""
+    from photo_cat.query_contamination_from_index import make_influence_neighbor_provider
+
+    # Target at (0, 0); one neighbour ~36" east (0.01 deg), one ~360" east (0.1 deg).
+    ra = np.array([0.0, 0.01, 0.1])
+    dec = np.array([0.0, 0.0, 0.0])
+
+    near_only = make_influence_neighbor_provider(ra, dec, influence_radius_arcsec=60.0)
+    # internal ids are catalogue index + 1; self (index 0) is excluded.
+    assert near_only(1).tolist() == [2]
+
+    both = make_influence_neighbor_provider(ra, dec, influence_radius_arcsec=400.0)
+    assert sorted(both(1).tolist()) == [2, 3]

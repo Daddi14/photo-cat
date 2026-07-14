@@ -1879,8 +1879,10 @@ class ConfigGui(tk.Tk):
             proceed = messagebox.askyesno(
                 "Influence radius is larger than build radius",
                 "The outer influence radius is larger than the build radius.\n\n"
-                "The query cannot use neighbours that were not included in the built index.\n\n"
-                "Save anyway?"
+                "For the queried targets, PHOTO-CAT will recompute neighbours directly from "
+                "the catalog out to the influence radius (only those targets, not the whole "
+                "catalog), which is slower per target than reading the pre-built index.\n\n"
+                "Continue?"
             )
             if (not proceed):
                 return False

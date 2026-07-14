@@ -148,7 +148,8 @@ Open **Search settings** and verify:
 
 - **Max build radius** is equal to or greater than the intended aperture;
 - **Query aperture radius** is the aperture represented by the desired result;
-- **Outer influence radius** does not exceed the build radius;
+- **Outer influence radius** may exceed the build radius: the query recomputes
+  neighbours from the catalog out to that radius for the requested targets only;
 - **Delta magnitude** matches the analysis configuration;
 - **Contamination weighting model** matches the analysis configuration.
 

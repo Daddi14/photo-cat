@@ -126,7 +126,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Callable, Optional, Dict
 
 import numpy as np
 import pandas as pd
@@ -239,10 +239,12 @@ def prepare_query_runtime(config: QueryConfig) -> QueryRuntimePlan:
     validate_index_structure(paths, manifest)
     influence_radius = config.effective_influence_radius_arcsec
     if (influence_radius > manifest.max_radius_arcsec):
-        raise ValueError(
-            f"Query influence radius ({influence_radius}) exceeds the index build "
-            f"radius ({manifest.max_radius_arcsec}). Rebuild with a larger max_radius_arcsec "
-            "or reduce influence_radius_arcsec."
+        logger.info(
+            "Query influence radius (%.3f arcsec) exceeds the index build radius "
+            "(%.3f arcsec); neighbours will be recomputed from the catalogue for the "
+            "requested targets only.",
+            influence_radius,
+            manifest.max_radius_arcsec,
         )
     output_json = query_output_json_path(
         paths,
@@ -1015,6 +1017,31 @@ def build_contaminant_records(
     return contaminants
 
 
+def make_influence_neighbor_provider(
+    ra: np.ndarray,
+    dec: np.ndarray,
+    influence_radius_arcsec: float,
+) -> Callable[[int], np.ndarray]:
+    """Return a per-target neighbour search out to a query-time influence radius.
+
+    Neighbours are recomputed directly against the full catalogue positions for each
+    requested target, so a query ``influence_radius_arcsec`` may exceed the index
+    build radius without rebuilding the index. Only the queried targets pay this cost;
+    the rest of the catalogue is never re-indexed.
+    """
+    ra_all = np.asarray(ra, dtype=np.float64)
+    dec_all = np.asarray(dec, dtype=np.float64)
+
+    def provider(internal_target: int) -> np.ndarray:
+        target_index = internal_target - 1
+        separations = separation_arcsec(float(ra_all[target_index]), float(dec_all[target_index]), ra_all, dec_all)
+        within = np.flatnonzero(separations <= influence_radius_arcsec)
+        within = within[within != target_index]
+        return (within + 1).astype(np.int64)
+
+    return provider
+
+
 def process_target(
     internal_target: int,
     offsets: np.ndarray,
@@ -1034,8 +1061,14 @@ def process_target(
     bandpass_status_codes: np.ndarray | None = None,
     bandpass_output_band: str | None = None,
     bandpass_profile_name: str | None = None,
+    neighbor_provider: Callable[[int], np.ndarray] | None = None,
 ) -> dict | None:
-    """Evaluate one target while keeping numerical work separate from loop orchestration."""
+    """Evaluate one target while keeping numerical work separate from loop orchestration.
+
+    When ``neighbor_provider`` is supplied, the target's neighbours are recomputed
+    from the catalogue out to the influence radius instead of being read from the
+    pre-built index, so the query is not capped at the index build radius.
+    """
     contamination_model = contamination_model or ContaminationModelConfig()
     magnitude_arrays = magnitude_arrays or {}
     influence_radius_arcsec = field_of_view_arcsec if influence_radius_arcsec is None else influence_radius_arcsec
@@ -1059,9 +1092,19 @@ def process_target(
     target_magnitude = float(gmag[target_index]) if (gmag is not None) else np.nan
     source_id = source_id_from_internal_id(internal_target, real_ids_int, internal_to_special_name)
 
-    start = int(offsets[target_index])
-    end = int(offsets[target_index + 1])
-    if (start == end):
+    if (neighbor_provider is not None):
+        neighbor_internal_ids = np.asarray(neighbor_provider(internal_target), dtype=np.int64)
+        stored_separations: np.ndarray | None = None
+    else:
+        start = int(offsets[target_index])
+        end = int(offsets[target_index + 1])
+        neighbor_internal_ids = np.asarray(neighbors_mm[start:end], dtype=np.int64)
+        stored_separations = (
+            None if (neighbor_separations_mm is None)
+            else np.asarray(neighbor_separations_mm[start:end], dtype=np.float64)
+        )
+
+    if (neighbor_internal_ids.size == 0):
         return empty_target_result(
             source_id,
             target_ra,
@@ -1076,7 +1119,6 @@ def process_target(
             aperture_radius_arcsec=field_of_view_arcsec,
         )
 
-    neighbor_internal_ids = np.asarray(neighbors_mm[start:end], dtype=np.int64)
     candidate_indices = neighbor_internal_ids - 1
     valid_mask = (candidate_indices >= 0) & (candidate_indices < number_of_sources)
     contaminant_indices = candidate_indices[valid_mask]
@@ -1102,7 +1144,7 @@ def process_target(
     else:
         contaminant_magnitudes = np.asarray(gmag[contaminant_indices], dtype=np.float64)
 
-    if (neighbor_separations_mm is None):
+    if (stored_separations is None):
         contaminant_separations = separation_arcsec(
             target_ra,
             target_dec,
@@ -1110,10 +1152,7 @@ def process_target(
             contaminant_dec,
         )
     else:
-        contaminant_separations = np.asarray(
-            neighbor_separations_mm[start:end],
-            dtype=np.float64,
-        )[valid_mask]
+        contaminant_separations = stored_separations[valid_mask]
     inside_field_of_view = contaminant_separations <= field_of_view_arcsec
     inside_influence_radius = contaminant_separations <= influence_radius_arcsec
     outside_aperture = inside_influence_radius & ~inside_field_of_view
@@ -1276,6 +1315,7 @@ def loop_over_targets(
     bandpass_status_codes: np.ndarray | None = None,
     bandpass_output_band: str | None = None,
     bandpass_profile_name: str | None = None,
+    neighbor_provider: Callable[[int], np.ndarray] | None = None,
 ) -> list[dict]:
     """Evaluate configured targets while leaving one-target logic independently testable."""
     total_targets = len(targets_internal)
@@ -1304,6 +1344,7 @@ def loop_over_targets(
             bandpass_status_codes,
             bandpass_output_band,
             bandpass_profile_name,
+            neighbor_provider,
         )
         if (result is not None):
             results.append(result)
@@ -1508,6 +1549,22 @@ def main(config_path: str | Path | None = None) -> int:
         magnitude_arrays[bandpass_profile.output_band] = transformed.magnitudes
         bandpass_status_codes = transformed.status_codes
     
+    # For targets whose influence radius exceeds the index build radius, recompute
+    # their neighbours directly from the catalogue so the query is not capped by the
+    # build radius. Only the requested targets are recomputed.
+    neighbor_provider = None
+    if (config_query.effective_influence_radius_arcsec > runtime_plan.manifest.max_radius_arcsec):
+        logger.info(
+            "Recomputing neighbours out to the influence radius (%.3f arcsec) for %d target(s)...",
+            config_query.effective_influence_radius_arcsec,
+            len(targets_internal),
+        )
+        neighbor_provider = make_influence_neighbor_provider(
+            ra,
+            dec,
+            config_query.effective_influence_radius_arcsec,
+        )
+
     # ---------------- RUN CONTAMINATION LOOP -------
     results = loop_over_targets(
         offsets=offsets,
@@ -1528,6 +1585,7 @@ def main(config_path: str | Path | None = None) -> int:
         bandpass_status_codes=bandpass_status_codes,
         bandpass_output_band=None if bandpass_profile is None else bandpass_profile.output_band,
         bandpass_profile_name=None if bandpass_profile is None else bandpass_profile.name,
+        neighbor_provider=neighbor_provider,
     )
     if (config_query.include_missing_targets):
         results = merge_unresolved_target_results(results, target_requests)

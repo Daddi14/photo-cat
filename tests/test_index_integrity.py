@@ -97,10 +97,10 @@ query_contamination_from_index:
 
 
 @pytest.mark.unit
-def test_query_rejects_a_field_of_view_larger_than_the_built_radius(
+def test_query_allows_an_influence_radius_larger_than_the_built_radius(
     write_minimal_index: Callable[[], Path],
 ) -> None:
-    """Queries must not silently omit neighbours outside the radius represented by the index."""
+    """An influence radius beyond the index build radius is allowed and recomputed per target."""
     index_dir = write_minimal_index()
     config = QueryConfig(
         INDEX_DIR=str(index_dir),
@@ -111,8 +111,11 @@ def test_query_rejects_a_field_of_view_larger_than_the_built_radius(
         target_source_id_column="source_id",
     )
 
-    with pytest.raises(ValueError, match="exceeds the index build radius"):
-        prepare_query_runtime(config)
+    plan = prepare_query_runtime(config)
+
+    # No longer rejected: the query recomputes neighbours out to the influence radius
+    # for the requested targets instead of being capped by the build radius.
+    assert config.effective_influence_radius_arcsec > plan.manifest.max_radius_arcsec
 
 
 @pytest.mark.unit
