@@ -12,7 +12,7 @@ import sys
 from contextlib import contextmanager
 from importlib import import_module
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, NoReturn
 
 from .cli_overrides import RuntimeConfigOverride, collect_overrides
 from .i18n import SUPPORTED_LANGUAGES, initialize_language, tr
@@ -34,7 +34,7 @@ class LocalizedArgumentParser(argparse.ArgumentParser):
         rendered = super().format_help()
         return rendered.replace("usage:", tr("usage:"), 1)
 
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         self.print_usage(sys.stderr)
         self.exit(2, f"{self.prog}: {tr('ERROR')}: {tr(message)}\n")
 

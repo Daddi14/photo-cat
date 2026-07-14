@@ -591,6 +591,7 @@ def empty_target_result(
     bandpass_profile_name: str | None = None,
     bandpass_status: str | None = None,
     target_magnitudes_by_band: dict[str, float | None] | None = None,
+    aperture_radius_arcsec: float | None = None,
 ) -> dict:
     """Create the stable no-contaminant result shape used by query output."""
     contamination_model = contamination_model or ContaminationModelConfig()
@@ -628,6 +629,14 @@ def empty_target_result(
     result["flux_fraction_all_neighbors_transformed"] = 0.0 if bandpass_output_band is not None else None
     result["flux_fraction_outside_aperture_transformed"] = 0.0 if bandpass_output_band is not None else None
     result["flux_fraction_total_weighted_transformed"] = 0.0 if bandpass_output_band is not None else None
+    result["psf_metrics"] = psf_aperture_metrics(
+        magnitude,
+        np.empty(0, dtype=np.float64),
+        np.empty(0, dtype=bool),
+        np.empty(0, dtype=np.float64),
+        contamination_model,
+        aperture_radius_arcsec,
+    )
     return result
 
 
@@ -713,6 +722,74 @@ GAUSSIAN_FWHM_TO_SIGMA = 2.3548200450309493
 def _gaussian_sigma_arcsec(fwhm_arcsec: float) -> float:
     """Convert a Gaussian FWHM in arcseconds to its standard deviation."""
     return float(fwhm_arcsec) / GAUSSIAN_FWHM_TO_SIGMA
+
+
+PSF_MODEL_MODES = ("gaussian_psf", "gaussian_aperture")
+
+
+def psf_aperture_metrics(
+    target_magnitude: float,
+    contaminant_magnitudes: np.ndarray,
+    selected_mask: np.ndarray,
+    contaminant_separations: np.ndarray,
+    model: ContaminationModelConfig,
+    aperture_radius_arcsec: float | None,
+) -> dict[str, float] | None:
+    """Return integrated circular-Gaussian-PSF contamination metrics for one target.
+
+    Only produced for a Gaussian PSF model (``gaussian_psf``/``gaussian_aperture``),
+    which is defined solely by the FWHM. All fluxes are expressed in units of the
+    target's total flux. With sigma = FWHM / (2*sqrt(2*ln 2)) and a circular aperture
+    of radius R centred on the target:
+
+    - ``effective_target_flux``  F_target = fraction of the target's own flux that
+      falls inside the aperture = 1 - exp(-R^2 / (2*sigma^2)).
+    - ``effective_contaminating_flux``  F_cont = sum over the selected contaminants of
+      captured_i * flux_ratio_i, where captured_i is the fraction of contaminant i's
+      flux captured by the (offset) aperture and flux_ratio_i = 10^(-0.4*(m_i - m_t))
+      is its total flux relative to the target.
+    - ``contamination_ratio``  C = F_cont / F_target.
+    - ``target_purity``  P = F_target / (F_target + F_cont).
+    - ``contaminating_fraction``  1 - P.
+    """
+    if (model.mode not in PSF_MODEL_MODES or model.gaussian_fwhm_arcsec is None):
+        return None
+    if (not np.isfinite(target_magnitude) or aperture_radius_arcsec is None or aperture_radius_arcsec <= 0.0):
+        return None
+
+    sigma = _gaussian_sigma_arcsec(model.gaussian_fwhm_arcsec)
+    radius_squared = (float(aperture_radius_arcsec) / sigma) ** 2
+    effective_target_flux = float(ncx2.cdf(radius_squared, df=2, nc=0.0))
+    if (not np.isfinite(effective_target_flux) or effective_target_flux <= 0.0):
+        return None
+
+    effective_contaminating_flux = 0.0
+    selected = np.asarray(selected_mask, dtype=bool)
+    if (np.any(selected)):
+        selected_magnitudes = np.asarray(contaminant_magnitudes, dtype=np.float64)[selected]
+        selected_separations = np.asarray(contaminant_separations, dtype=np.float64)[selected]
+        valid = np.isfinite(selected_magnitudes) & np.isfinite(selected_separations)
+        selected_magnitudes = selected_magnitudes[valid]
+        selected_separations = selected_separations[valid]
+        if (selected_magnitudes.size):
+            flux_ratios = 10.0 ** (-0.4 * (selected_magnitudes - target_magnitude))
+            captured = ncx2.cdf(radius_squared, df=2, nc=(selected_separations / sigma) ** 2)
+            contributions = np.asarray(captured, dtype=np.float64) * flux_ratios
+            effective_contaminating_flux = float(contributions[np.isfinite(contributions)].sum())
+
+    total_flux = effective_target_flux + effective_contaminating_flux
+    contamination_ratio = effective_contaminating_flux / effective_target_flux
+    target_purity = (effective_target_flux / total_flux) if (total_flux > 0.0) else 1.0
+
+    return {
+        "fwhm_arcsec": round(float(model.gaussian_fwhm_arcsec), 6),
+        "aperture_radius_arcsec": round(float(aperture_radius_arcsec), 6),
+        "effective_target_flux": round(effective_target_flux, 6),
+        "effective_contaminating_flux": round(effective_contaminating_flux, 6),
+        "contamination_ratio": round(contamination_ratio, 6),
+        "target_purity": round(target_purity, 6),
+        "contaminating_fraction": round(1.0 - target_purity, 6),
+    }
 
 
 def _top_hat_weights(
@@ -996,6 +1073,7 @@ def process_target(
             bandpass_profile_name,
             bandpass_status,
             target_magnitudes_by_band,
+            aperture_radius_arcsec=field_of_view_arcsec,
         )
 
     neighbor_internal_ids = np.asarray(neighbors_mm[start:end], dtype=np.int64)
@@ -1014,6 +1092,7 @@ def process_target(
             bandpass_profile_name,
             bandpass_status,
             target_magnitudes_by_band,
+            aperture_radius_arcsec=field_of_view_arcsec,
         )
 
     contaminant_ra = ra[contaminant_indices]
@@ -1045,6 +1124,14 @@ def process_target(
         contaminant_separations,
         contamination_model,
         radial_weight_table,
+        field_of_view_arcsec,
+    )
+    psf_metrics = psf_aperture_metrics(
+        target_magnitude,
+        contaminant_magnitudes,
+        selected_mask,
+        contaminant_separations,
+        contamination_model,
         field_of_view_arcsec,
     )
     flux_fraction_selected = calculate_flux_fraction_extra(
@@ -1153,6 +1240,7 @@ def process_target(
     result["bandpass_transformed_band"] = bandpass_output_band
     result["bandpass_transform_profile"] = bandpass_profile_name
     result["bandpass_transform_status"] = bandpass_status
+    result["psf_metrics"] = psf_metrics
     result["target_magnitudes_by_band"] = target_magnitudes_by_band
     result["flux_fraction_selected_transformed"] = (
         None if bandpass_output_band is None else selected_by_band.get(bandpass_output_band)

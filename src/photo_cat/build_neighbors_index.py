@@ -334,6 +334,7 @@ def load_star_dataframe(
         star_dataframe[band_column] = star_dataframe[source_column]
 
     logger.info(f"Loaded {len(star_dataframe)} rows.")
+    logger.info("Validating and cleaning catalog rows (this can take a while for very large catalogs)...")
 
     if (len(star_dataframe) == 0):
         raise ValueError(
@@ -415,18 +416,19 @@ def load_star_dataframe(
             f"Duplicate examples: {examples}"
         )
 
-    canonical_ids: list[tuple[str, object]] = []
-    for source_id in final_star_dataframe["source_id"]:
-        try:
-            numeric_id = int(source_id)
-        except (TypeError, ValueError):
-            canonical_ids.append(("text", source_id))
-        else:
-            if (0 <= numeric_id <= np.iinfo(np.int64).max):
-                canonical_ids.append(("numeric", numeric_id))
-            else:
+    with ActivityBar("[validating source IDs]"):
+        canonical_ids: list[tuple[str, object]] = []
+        for source_id in final_star_dataframe["source_id"]:
+            try:
+                numeric_id = int(source_id)
+            except (TypeError, ValueError):
                 canonical_ids.append(("text", source_id))
-    canonical_duplicates = pd.Series(canonical_ids).duplicated(keep=False)
+            else:
+                if (0 <= numeric_id <= np.iinfo(np.int64).max):
+                    canonical_ids.append(("numeric", numeric_id))
+                else:
+                    canonical_ids.append(("text", source_id))
+        canonical_duplicates = pd.Series(canonical_ids).duplicated(keep=False)
     if (canonical_duplicates.any()):
         examples = ", ".join(final_star_dataframe.loc[canonical_duplicates, "source_id"].unique()[:8])
         raise ValueError(
@@ -490,19 +492,20 @@ def convert_ra_dec_to_unit_vectors(
     """
     logger.info("Converting RA/Dec to 3D unit vectors...")
 
-    ra_rad = np.deg2rad(final_star_dataframe['ra'].values.astype(np.float64))
-    dec_rad = np.deg2rad(final_star_dataframe['dec'].values.astype(np.float64))
+    with ActivityBar("[converting coordinates]"):
+        ra_rad = np.deg2rad(final_star_dataframe['ra'].values.astype(np.float64))
+        dec_rad = np.deg2rad(final_star_dataframe['dec'].values.astype(np.float64))
 
-    x = np.cos(dec_rad) * np.cos(ra_rad)
-    y = np.cos(dec_rad) * np.sin(ra_rad)
-    z = np.sin(dec_rad)
+        x = np.cos(dec_rad) * np.cos(ra_rad)
+        y = np.cos(dec_rad) * np.sin(ra_rad)
+        z = np.sin(dec_rad)
 
-    # Stack into an (N, 3) array.
-    coords = np.hstack([
-        x[:, None],
-        y[:, None],
-        z[:, None]
-    ]).astype(np.float64)
+        # Stack into an (N, 3) array.
+        coords = np.hstack([
+            x[:, None],
+            y[:, None],
+            z[:, None]
+        ]).astype(np.float64)
 
     logger.info(f"Converted {len(coords)} coordinates to 3D unit vectors.\n")
     return coords

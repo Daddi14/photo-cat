@@ -11,6 +11,7 @@ from photo_cat.query_contamination_from_index import (
     CONTAMINATION_WEIGHTERS,
     calculate_flux_fraction_extra,
     contamination_weights,
+    psf_aperture_metrics,
     source_id_from_internal_id,
     valid_neighbor_indices,
 )
@@ -140,3 +141,51 @@ def test_weighter_registry_covers_exactly_the_supported_modes() -> None:
         "gaussian_aperture",
         "radial_weight",
     }
+
+
+@pytest.mark.unit
+def test_psf_aperture_metrics_reports_ratio_purity_and_fraction() -> None:
+    """An equal-magnitude contaminant on the target gives C=1, P=0.5, and 1-P=0.5."""
+    model = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=5.0)
+    metrics = psf_aperture_metrics(
+        10.0,
+        np.array([10.0]),
+        np.array([True]),
+        np.array([0.0]),
+        model,
+        aperture_radius_arcsec=10.0,
+    )
+
+    assert metrics is not None
+    assert metrics["contamination_ratio"] == pytest.approx(1.0)
+    assert metrics["target_purity"] == pytest.approx(0.5)
+    assert metrics["contaminating_fraction"] == pytest.approx(0.5)
+
+
+@pytest.mark.unit
+def test_psf_aperture_metrics_scale_with_brightness_and_separation() -> None:
+    """A five-magnitude-fainter contaminant contributes ~1%; a distant one ~0%."""
+    model = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=5.0)
+
+    faint = psf_aperture_metrics(10.0, np.array([15.0]), np.array([True]), np.array([0.0]), model, 10.0)
+    assert faint is not None
+    assert faint["contamination_ratio"] == pytest.approx(0.01, abs=1e-6)
+    assert faint["target_purity"] == pytest.approx(1.0 / 1.01, abs=1e-6)
+
+    distant = psf_aperture_metrics(10.0, np.array([10.0]), np.array([True]), np.array([30.0]), model, 10.0)
+    assert distant is not None
+    assert distant["contamination_ratio"] == pytest.approx(0.0, abs=1e-4)
+    assert distant["target_purity"] == pytest.approx(1.0, abs=1e-4)
+
+
+@pytest.mark.unit
+def test_psf_aperture_metrics_only_apply_to_gaussian_psf_models() -> None:
+    """Non-PSF models (or no contaminants) return the expected values."""
+    top_hat = ContaminationModelConfig(mode="top_hat")
+    assert psf_aperture_metrics(10.0, np.array([10.0]), np.array([True]), np.array([0.0]), top_hat, 10.0) is None
+
+    model = ContaminationModelConfig(mode="gaussian_aperture", gaussian_fwhm_arcsec=5.0)
+    empty = psf_aperture_metrics(10.0, np.empty(0), np.empty(0, dtype=bool), np.empty(0), model, 10.0)
+    assert empty is not None
+    assert empty["contamination_ratio"] == 0.0
+    assert empty["target_purity"] == 1.0
