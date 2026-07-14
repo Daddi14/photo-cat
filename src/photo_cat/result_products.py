@@ -558,8 +558,10 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
         ax.set_title("Target contamination vs magnitude")
         ax.legend()
     elif kind == "sky-map":
-        grouped: dict[str, tuple[list[float], list[float]]] = {label: ([], []) for label, _ in SKY_MAP_CLASSES}
-        class_by_index = {0: SKY_MAP_CLASSES[0], 1: SKY_MAP_CLASSES[1], 2: SKY_MAP_CLASSES[2]}
+        # Single pass in catalogue order so no class is drawn on top of the others.
+        ra_values = []
+        dec_values = []
+        point_colours = []
         for row in rows:
             ra = _number(row.get("ra"), None)  # type: ignore[arg-type]
             dec = _number(row.get("dec"), None)  # type: ignore[arg-type]
@@ -567,16 +569,18 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
                 continue
             count = _int_number(row.get("num_contaminants", 0))
             index = 0 if count == 0 else (1 if count <= 3 else 2)
-            label, _ = class_by_index[index]
-            grouped[label][0].append(ra)
-            grouped[label][1].append(dec)
-        for label, colour in SKY_MAP_CLASSES:
-            ra_values, dec_values = grouped[label]
-            ax.scatter(ra_values, dec_values, s=8, c=colour, alpha=0.85, linewidths=0, label=label)
+            ra_values.append(ra)
+            dec_values.append(dec)
+            point_colours.append(SKY_MAP_CLASSES[index][1])
+        ax.scatter(ra_values, dec_values, s=2, c=point_colours, linewidths=0)
         ax.set_xlabel("RA [deg]")
         ax.set_ylabel("Dec [deg]")
         ax.set_title("Sky map of stellar contamination")
-        ax.legend(loc="upper right", markerscale=2.0)
+        legend_handles = [
+            plt.Line2D([], [], marker="o", linestyle="", color=colour, markersize=6, label=label)
+            for label, colour in SKY_MAP_CLASSES
+        ]
+        ax.legend(handles=legend_handles, loc="upper right")
     fig.savefig(destination)
     plt.close(fig)
     return str(destination)

@@ -18,13 +18,14 @@ from .result_products import iter_contaminants, load_result_rows
 
 
 PUBLICATION_PLOT_SCHEMA_VERSION = 1
-# Sky-map contamination classes drawn as uniform points, with crowded targets
-# drawn last (on top). Colours use the colourblind-safe Okabe-Ito palette
-# (blue -> orange -> vermillion), ordered by increasing contamination.
+# Sky-map contamination classes drawn as small opaque points (matching the crisp
+# reference all-sky map), with crowded targets drawn last (on top). Colours use the
+# colourblind-safe Okabe-Ito palette (blue -> orange -> vermillion), ordered by
+# increasing contamination.
 SKY_MAP_CLASSES: tuple[dict[str, Any], ...] = (
-    {"key": "none", "label": "0 contaminants", "color": "#0072B2", "marker": "o", "size": 4.0},
-    {"key": "moderate", "label": "1–3 contaminants", "color": "#E69F00", "marker": "o", "size": 4.0},
-    {"key": "crowded", "label": ">3 contaminants", "color": "#D55E00", "marker": "o", "size": 4.0},
+    {"key": "none", "label": "0 contaminants", "color": "#0072B2", "marker": "o", "size": 2.0},
+    {"key": "moderate", "label": "1–3 contaminants", "color": "#E69F00", "marker": "o", "size": 2.0},
+    {"key": "crowded", "label": ">3 contaminants", "color": "#D55E00", "marker": "o", "size": 2.0},
 )
 PUBLICATION_HISTOGRAM_COLOR = "#4477AA"
 
@@ -130,7 +131,9 @@ def _sky_class(count: int) -> int:
 def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: int) -> str:
     """Generate the RA/Dec contamination sky map."""
     plt = _matplotlib_pyplot()
-    grouped: list[tuple[list[float], list[float]]] = [([], []), ([], []), ([], [])]
+    ra_values: list[float] = []
+    dec_values: list[float] = []
+    point_colors: list[str] = []
     for row in rows:
         try:
             ra = _coerce_float(row.get("ra")) % 360.0
@@ -140,29 +143,36 @@ def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: i
         if (not math.isfinite(ra) or not math.isfinite(dec) or dec < -90.0 or dec > 90.0):
             continue
         index = _sky_class(max(int(row.get("num_contaminants") or 0), 0))
-        grouped[index][0].append(ra)
-        grouped[index][1].append(dec)
+        ra_values.append(ra)
+        dec_values.append(dec)
+        point_colors.append(str(SKY_MAP_CLASSES[index]["color"]))
 
     fig, ax = plt.subplots(figsize=(12, 6), constrained_layout=True)
-    for (ra_values, dec_values), style in zip(grouped, SKY_MAP_CLASSES):
-        ax.scatter(
-            ra_values,
-            dec_values,
-            s=style["size"],
-            c=style["color"],
-            marker=style["marker"],
-            label=style["label"],
-            alpha=0.72,
-            linewidths=0,
-            rasterized=True,
-        )
+    # Draw every target in a single pass in catalogue order, so no contamination
+    # class is painted on top of the others (which would inflate the ">3" regions
+    # into a solid blob). Density alone then shapes the map, as in the reference.
+    ax.scatter(
+        ra_values,
+        dec_values,
+        s=SKY_MAP_CLASSES[0]["size"],
+        c=point_colors,
+        marker="o",
+        linewidths=0,
+        rasterized=True,
+    )
     ax.set_xlim(0.0, 360.0)
     ax.set_ylim(-90.0, 90.0)
     ax.set_xlabel("RA [deg]")
     ax.set_ylabel("Dec [deg]")
     ax.tick_params(axis="both", which="both", labelsize=11)
     ax.grid(alpha=0.15)
-    ax.legend(loc="upper right", fontsize=10, markerscale=2.0)
+    # A single-pass scatter has no per-class labels, so build the colour legend
+    # from proxy handles.
+    legend_handles = [
+        plt.Line2D([], [], marker="o", linestyle="", color=str(style["color"]), markersize=6, label=str(style["label"]))
+        for style in SKY_MAP_CLASSES
+    ]
+    ax.legend(handles=legend_handles, loc="upper right", fontsize=10)
     saved = _save_figure(fig, destination, dpi)
     plt.close(fig)
     return saved
