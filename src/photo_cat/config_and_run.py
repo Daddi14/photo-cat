@@ -60,7 +60,7 @@ class Style:
 
 def enable_windows_ansi() -> None:
     """Enable ANSI console formatting on supported Windows terminals."""
-    if (os.name != "nt"):
+    if (sys.platform != "win32"):
         return
 
     try:
@@ -153,7 +153,7 @@ def compact_environment(config_path: Path | None = None) -> dict[str, str]:
     if (config_path is not None):
         env["PHOTO_CAT_CONFIG"] = str(config_path)
 
-    if (os.name == "nt"):
+    if (sys.platform == "win32"):
         env.setdefault("PHOTO_CAT_FORCE_COLOR", "1")
 
     return env

@@ -31,7 +31,7 @@ PLOT_KINDS = (
 # the colourblind-safe Okabe-Ito palette (blue -> orange -> vermillion).
 SKY_MAP_CLASSES = (
     ("0 contaminants", "#0072B2"),
-    ("1–3 contaminants", "#E69F00"),
+    ("1-3 contaminants", "#E69F00"),
     (">3 contaminants", "#D55E00"),
 )
 REPORT_FORMATS = ("html", "markdown", "pdf")

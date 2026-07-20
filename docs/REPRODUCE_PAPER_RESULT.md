@@ -30,7 +30,7 @@ The all-sky `0 <= phot_g_mean_mag <= 17` selection can be very large. Use an asy
 
 Do not open and resave the downloaded catalogue with spreadsheet software unless you can guarantee that 64-bit `source_id` values remain exact. Scientific notation or rounding can prevent target matching.
 
-## Part 1 — Download Gaia DR3 data
+## Part 1 -- Download Gaia DR3 data
 
 ### 1. Open the Gaia Archive
 
@@ -113,7 +113,7 @@ source_id,ra,dec,phot_g_mean_mag,parallax,parallax_error
 
 Do not rename the four columns required by PHOTO-CAT unless you also change their mappings in the GUI.
 
-## Part 2 — Configure PHOTO-CAT
+## Part 2 -- Configure PHOTO-CAT
 
 ### 6. Start the graphical interface
 
@@ -187,7 +187,7 @@ Its associated metadata is written under:
 <index folder>/results/metadata/
 ```
 
-## Part 3 — Create the paper-result plots
+## Part 3 -- Create the paper-result plots
 
 ### 12. Open Publication plots
 
@@ -228,7 +228,7 @@ Plot meaning:
 
 Scientific plot labels remain in English regardless of the GUI language.
 
-## Part 4 — Verify and archive the reproduction
+## Part 4 -- Verify and archive the reproduction
 
 Before sharing the result, keep:
 

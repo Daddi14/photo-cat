@@ -28,7 +28,7 @@ dist\photo-cat\photo-cat.exe
 Built with PyInstaller 6.21 on Windows 10, Python 3.13:
 
 - **Builds cleanly** into a one-folder bundle of **~277 MB**.
-- `photo-cat.exe doctor` reports **all checks passing** — tkinter, NumPy, pandas,
+- `photo-cat.exe doctor` reports **all checks passing** -- tkinter, NumPy, pandas,
   SciPy, tqdm, PyYAML, **PyArrow**, and **Dask** are all bundled and importable.
 - CLI commands run, including the matplotlib backend
   (`photo-cat.exe plot <result>.json --backend matplotlib`).
@@ -41,11 +41,11 @@ Built with PyInstaller 6.21 on Windows 10, Python 3.13:
 
 ## How it fits together
 
-- `entry_photo_cat.py` — frozen entry point; dispatches to `photo_cat.cli.main`.
-- `photo-cat.spec` — bundles the app metadata (`importlib.metadata` support),
+- `entry_photo_cat.py` -- frozen entry point; dispatches to `photo_cat.cli.main`.
+- `photo-cat.spec` -- bundles the app metadata (`importlib.metadata` support),
   fully collects `dask` and `pyarrow` (matplotlib/scipy/numpy/pandas use
   PyInstaller's built-in hooks), and ships the logo assets.
-- `src/photo_cat/configure_gui.py` — when frozen, resolves assets from
+- `src/photo_cat/configure_gui.py` -- when frozen, resolves assets from
   `sys._MEIPASS`, anchors `config.yaml`/outputs next to the executable, and builds
   subcommand invocations against the executable itself.
 

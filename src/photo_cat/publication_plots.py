@@ -24,7 +24,7 @@ PUBLICATION_PLOT_SCHEMA_VERSION = 1
 # increasing contamination.
 SKY_MAP_CLASSES: tuple[dict[str, Any], ...] = (
     {"key": "none", "label": "0 contaminants", "color": "#0072B2", "marker": "o", "size": 2.0},
-    {"key": "moderate", "label": "1–3 contaminants", "color": "#E69F00", "marker": "o", "size": 2.0},
+    {"key": "moderate", "label": "1-3 contaminants", "color": "#E69F00", "marker": "o", "size": 2.0},
     {"key": "crowded", "label": ">3 contaminants", "color": "#D55E00", "marker": "o", "size": 2.0},
 )
 PUBLICATION_HISTOGRAM_COLOR = "#4477AA"

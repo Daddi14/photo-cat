@@ -30,7 +30,7 @@ La selezione all-sky `0 <= phot_g_mean_mag <= 17` può essere molto grande. Usa 
 
 Non aprire e risalvare il catalogo con un foglio di calcolo, salvo poter garantire che i `source_id` a 64 bit restino esatti. Notazione scientifica o arrotondamenti possono impedire l'abbinamento dei target.
 
-## Parte 1 — Scaricare i dati Gaia DR3
+## Parte 1 -- Scaricare i dati Gaia DR3
 
 ### 1. Aprire il Gaia Archive
 
@@ -113,7 +113,7 @@ source_id,ra,dec,phot_g_mean_mag,parallax,parallax_error
 
 Non rinominare le quattro colonne richieste da PHOTO-CAT, salvo modificare anche il mapping nella GUI.
 
-## Parte 2 — Configurare PHOTO-CAT
+## Parte 2 -- Configurare PHOTO-CAT
 
 ### 6. Avviare l'interfaccia grafica
 
@@ -186,7 +186,7 @@ I metadata associati vengono scritti in:
 <cartella indice>/results/metadata/
 ```
 
-## Parte 3 — Creare i grafici dei risultati del paper
+## Parte 3 -- Creare i grafici dei risultati del paper
 
 ### 12. Aprire Grafici da pubblicazione
 
@@ -227,7 +227,7 @@ Significato:
 
 Le etichette scientifiche dei grafici restano in inglese indipendentemente dalla lingua della GUI.
 
-## Parte 4 — Verificare e archiviare la riproduzione
+## Parte 4 -- Verificare e archiviare la riproduzione
 
 Prima di condividere conserva:
 

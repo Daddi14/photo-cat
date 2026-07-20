@@ -11,7 +11,7 @@ from .i18n import tr
 
 
 def _enable_windows_ansi() -> bool:
-    if (os.name != "nt"):
+    if (sys.platform != "win32"):
         return True
 
     try:
@@ -34,7 +34,7 @@ def _supports_color() -> bool:
     if (not sys.stdout.isatty()):
         return False
 
-    if (os.name == "nt"):
+    if (sys.platform == "win32"):
         return _enable_windows_ansi()
 
     return True

@@ -57,7 +57,7 @@ def test_sky_map_uses_colourblind_safe_palette() -> None:
     labels = [item["label"] for item in SKY_MAP_CLASSES]
 
     assert colors == ["#0072B2", "#E69F00", "#D55E00"]
-    assert labels == ["0 contaminants", "1–3 contaminants", ">3 contaminants"]
+    assert labels == ["0 contaminants", "1-3 contaminants", ">3 contaminants"]
 
 
 @pytest.mark.regression

@@ -335,7 +335,7 @@ ITALIAN: dict[str, str] = {
     "Target contamination vs magnitude": "Contaminazione del target rispetto alla magnitudine",
     "Sky map of stellar contamination": "Mappa celeste della contaminazione stellare",
     "0 contaminants": "0 contaminanti",
-    "1–3 contaminants": "1–3 contaminanti",
+    "1-3 contaminants": "1-3 contaminanti",
     ">3 contaminants": ">3 contaminanti",
     "RA [deg]": "AR [gradi]",
     "Dec [deg]": "Dec [gradi]",

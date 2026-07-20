@@ -105,6 +105,7 @@ All files listed above are created under out_dir.
 import csv
 import re
 import os
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO, Iterator
@@ -146,14 +147,14 @@ def exclusive_build_lock(out_dir: str | Path) -> Iterator[None]:
     lock_file.seek(0)
 
     try:
-        if (os.name == "nt"):
+        if (sys.platform == "win32"):
             import msvcrt
 
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
         else:
             import fcntl
 
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]  # POSIX-only
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as error:
         lock_file.close()
         raise RuntimeError(
@@ -164,14 +165,14 @@ def exclusive_build_lock(out_dir: str | Path) -> Iterator[None]:
         yield
     finally:
         lock_file.seek(0)
-        if (os.name == "nt"):
+        if (sys.platform == "win32"):
             import msvcrt
 
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
         else:
             import fcntl
 
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]  # POSIX-only
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
         lock_file.close()
 
 

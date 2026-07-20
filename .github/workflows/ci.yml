@@ -121,8 +121,11 @@ jobs:
       - name: Check version consistency
         run: python scripts/check_version_consistency.py
 
+      # compileall takes a directory, so it behaves the same on every runner.
+      # py_compile relied on the shell expanding a glob, which PowerShell does not
+      # do for native commands, so this step failed on the Windows matrix entry.
       - name: Compile source files
-        run: python -m py_compile src/photo_cat/*.py
+        run: python -m compileall -q src/photo_cat
 
       - name: Check shell launcher syntax
         if: runner.os != 'Windows'

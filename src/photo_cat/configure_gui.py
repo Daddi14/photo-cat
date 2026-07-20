@@ -189,7 +189,7 @@ def tool_progress_text(frame: int, label: str, elapsed_seconds: float, status: s
     hours, remainder = divmod(elapsed, 3600)
     minutes, seconds = divmod(remainder, 60)
     elapsed_text = f"{hours:d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
-    return f"[{bar}] {tr(status)} {elapsed_text} — {label}"
+    return f"[{bar}] {tr(status)} {elapsed_text} -- {label}"
 
 
 def _localize_messageboxes() -> None:

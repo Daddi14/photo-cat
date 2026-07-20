@@ -84,11 +84,17 @@ select = ["E4", "E7", "E9", "F"]
 files = ["src/photo_cat"]
 # Third-party scientific packages ship partial or no type stubs.
 ignore_missing_imports = true
-# The Tk GUI and the installer are excluded for now, matching the coverage omit list;
-# they are the least type-critical modules and are typed opportunistically later.
-exclude = "(configure_gui|install)\\.py$"
 warn_unused_ignores = true
 warn_redundant_casts = true
+
+# The Tk GUI and the installer are exempt for now, matching the coverage omit list;
+# they are the least type-critical modules and are typed opportunistically later.
+# This must be an override rather than `exclude`: exclude only skips recursive file
+# discovery, and cli.py imports configure_gui, which pulled it back in and made the
+# CI job fail on errors the configuration claimed to have waived.
+[[tool.mypy.overrides]]
+module = ["photo_cat.configure_gui", "photo_cat.install"]
+ignore_errors = true
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]
