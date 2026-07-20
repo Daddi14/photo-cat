@@ -37,18 +37,18 @@ tool unless mission-specific modelling is added downstream.
   it is not automatically a detector field of view, PSF width, extraction
   aperture, or pixel scale; use the value that matches the screening aperture
   you want to test.
-- `influence_radius_arcsec` is an optional larger neighbour-search radius used
-  by weighted models to estimate flux leaking in from outside the aperture. It
-  defaults to the aperture radius and must remain within the built index radius.
+- The outer neighbour-search radius is derived, not configured: under
+  `gaussian_psf` it is `sigma * influence_sigma`, where
+  `sigma = gaussian_fwhm_arcsec / 2.3548`. `top_hat` searches the aperture only.
 - `delta_mag` is the maximum allowed catalogue magnitude difference,
   `mag_neighbour - mag_target`, for a neighbour to be selected.
 - A `contaminant` in the JSON output means a neighbour that passes both the
   configured circular-radius cut and the `delta_mag` cut.
 - `contamination_model` records the query weighting mode. `top_hat` is the
   historical unweighted circular-aperture estimate. `gaussian_psf` applies a
-  Gaussian radial point-response weight from the configured FWHM,
-  `gaussian_aperture` integrates a circular Gaussian over the offset circular
-  aperture, and `radial_weight` applies a user-supplied `sep_arcsec,weight` table.
+  2D circular Gaussian PSF from the configured FWHM, so each source's flux
+  decays as `exp(-r^2 / 2*sigma^2)` with angular distance from the aperture
+  centre, and additionally reports aperture-integrated flux metrics.
 - `flux_fraction_selected` is computed from the same selected contaminants as
   `num_contaminants`, using catalogue magnitude ratios
   `10 ** (-0.4 * (mag_neighbour - mag_target))`, and is reported as a

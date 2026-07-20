@@ -16,6 +16,7 @@ from typing import Iterator, NoReturn
 
 from .cli_overrides import RuntimeConfigOverride, collect_overrides
 from .i18n import SUPPORTED_LANGUAGES, initialize_language, tr
+from .load_config import CONTAMINATION_MODES
 from .path_policy import resolve_user_path
 
 
@@ -376,11 +377,6 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
         type=float,
         help="circular extraction/screening aperture radius in arcseconds",
     )
-    query_group.add_argument(
-        "--influence-radius-arcsec",
-        type=float,
-        help="outer radius searched for weighted leakage; must cover the aperture",
-    )
     query_group.add_argument("--delta-mag", type=float, help="maximum contaminant-target magnitude difference")
     query_group.add_argument(
         "--contamination-bands",
@@ -392,11 +388,15 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
     )
     query_group.add_argument(
         "--contamination-model-mode",
-        choices=["top_hat", "radial_weight", "gaussian_psf", "gaussian_aperture"],
+        choices=list(CONTAMINATION_MODES),
         help="aperture weighting model for flux metrics",
     )
     query_group.add_argument("--gaussian-fwhm-arcsec", type=float, help="Gaussian PSF FWHM when using gaussian_psf mode")
-    query_group.add_argument("--radial-weight-file", help="CSV file with sep_arcsec,weight columns for radial_weight mode")
+    query_group.add_argument(
+        "--influence-sigma",
+        type=float,
+        help="how many PSF standard deviations of leakage to count; sets the outer search radius",
+    )
     query_group.add_argument(
         "--include-missing-targets",
         dest="include_missing_targets",

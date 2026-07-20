@@ -35,6 +35,7 @@ from .i18n import (
     tooltip_for,
     tr,
 )
+from .load_config import CONTAMINATION_MODES, GAUSSIAN_FWHM_TO_SIGMA
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -96,7 +97,6 @@ DEFAULT_CONFIG = {
         },
         "settings": {
             "field_of_view_arcsec": 47.0,
-            "influence_radius_arcsec": 47.0,
             "delta_mag": 5,
             "include_missing_targets": False,
             "contamination_bands": ["gaia_g"],
@@ -104,7 +104,7 @@ DEFAULT_CONFIG = {
             "contamination_model": {
                 "mode": "top_hat",
                 "gaussian_fwhm_arcsec": None,
-                "radial_weight_file": None,
+                "influence_sigma": None,
             },
         },
     },
@@ -262,7 +262,6 @@ class ToolTip:
             self.window = None
 
 
-CONTAMINATION_MODES = ["top_hat", "radial_weight", "gaussian_psf", "gaussian_aperture"]
 PLOT_KINDS = [
     "contaminant-counts",
     "flux",
@@ -360,13 +359,12 @@ class ConfigGui(tk.Tk):
         self.index_dir_var = tk.StringVar()
         self.max_radius_var = tk.StringVar()
         self.field_of_view_var = tk.StringVar()
-        self.influence_radius_var = tk.StringVar()
         self.bandpass_transform_file_var = tk.StringVar()
         self.delta_mag_var = tk.StringVar()
         self.contamination_bands_var = tk.StringVar()
         self.contamination_mode_var = tk.StringVar(value="top_hat")
         self.gaussian_fwhm_var = tk.StringVar()
-        self.radial_weight_file_var = tk.StringVar()
+        self.influence_sigma_var = tk.StringVar()
         self.include_missing_targets_var = tk.BooleanVar()
         self.chunk_size_var = tk.StringVar()
         self.buffer_flush_var = tk.StringVar()
@@ -1202,17 +1200,16 @@ class ConfigGui(tk.Tk):
 
         self.add_entry_row(settings_tab, 1, "Max build radius, arcsec", self.max_radius_var)
         self.add_entry_row(settings_tab, 2, "Query aperture radius, arcsec", self.field_of_view_var)
-        self.add_entry_row(settings_tab, 3, "Outer influence radius, arcsec", self.influence_radius_var)
-        self.add_entry_row(settings_tab, 4, "Delta magnitude", self.delta_mag_var)
-        self.add_entry_row(settings_tab, 5, "Contamination bands (comma-separated, or all)", self.contamination_bands_var)
-        self.add_file_row(settings_tab, 6, "Bandpass profile YAML (optional)", self.bandpass_transform_file_var, self.browse_bandpass_file)
+        self.add_entry_row(settings_tab, 3, "Delta magnitude", self.delta_mag_var)
+        self.add_entry_row(settings_tab, 4, "Contamination bands (comma-separated, or all)", self.contamination_bands_var)
+        self.add_file_row(settings_tab, 5, "Bandpass profile YAML (optional)", self.bandpass_transform_file_var, self.browse_bandpass_file)
 
         ttk.Label(
             settings_tab,
             text=(
-                "The aperture radius defines the extraction/screening circle. The influence radius can be larger "
-                "when a weighted PSF model should include leakage from nearby sources outside that aperture. "
-                "Both must be equal to or smaller than the max build radius."
+                "The aperture radius defines the extraction/screening circle and must be equal to or smaller "
+                "than the max build radius. With a Gaussian PSF the outer influence radius is not set here: it "
+                "is derived below from the PSF width and the number of sigmas you choose to keep."
             ),
             style="Muted.TLabel",
             wraplength=880,
@@ -1226,8 +1223,9 @@ class ConfigGui(tk.Tk):
         ttk.Label(
             model,
             text=(
-                "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf and gaussian_aperture "
-                "need a Gaussian FWHM. radial_weight needs a CSV of sep_arcsec,weight."
+                "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf models a 2D circular "
+                "Gaussian PSF, where each source's flux decays with angular distance from the aperture centre. "
+                "It needs the PSF FWHM and the number of sigmas of leakage to keep."
             ),
             style="Muted.TLabel",
             wraplength=880,
@@ -1238,7 +1236,7 @@ class ConfigGui(tk.Tk):
         mode_combo = ttk.Combobox(
             model,
             textvariable=self.contamination_mode_var,
-            values=CONTAMINATION_MODES,
+            values=list(CONTAMINATION_MODES),
             state="readonly",
             width=22,
         )
@@ -1247,8 +1245,14 @@ class ConfigGui(tk.Tk):
         mode_combo.bind("<<ComboboxSelected>>", lambda event: self.update_model_field_state())
 
         fwhm_entry = self.add_entry_row(model, 2, "Gaussian FWHM, arcsec", self.gaussian_fwhm_var)
-        radial_entry = self.add_file_row(model, 3, "Radial weight CSV", self.radial_weight_file_var, self.browse_radial_weight_file)
-        self.model_dependent_entries = {"gaussian_fwhm": fwhm_entry, "radial_weight": radial_entry}
+        sigma_entry = self.add_entry_row(model, 3, "Influence radius, number of sigmas", self.influence_sigma_var)
+        self.model_dependent_entries = {"gaussian_fwhm": fwhm_entry, "influence_sigma": sigma_entry}
+
+        # Live readout so the user can see the arcsec radius their sigma choice implies.
+        self.derived_influence_label = ttk.Label(model, text="", style="Muted.TLabel", wraplength=880, justify="left")
+        self.derived_influence_label.grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        for variable in (self.gaussian_fwhm_var, self.influence_sigma_var):
+            variable.trace_add("write", lambda *_: self.update_derived_influence_radius())
 
         advanced = ttk.LabelFrame(settings_tab, text="Advanced performance settings", padding=8)
         advanced.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 0))
@@ -1388,13 +1392,12 @@ class ConfigGui(tk.Tk):
         self.index_dir_var.set(str(query_io.get("INDEX_DIR", "data/output")))
         self.max_radius_var.set(str(build_settings.get("max_radius_arcsec", 120.0)))
         self.field_of_view_var.set(str(query_settings.get("field_of_view_arcsec", 47.0)))
-        self.influence_radius_var.set(str(query_settings.get("influence_radius_arcsec", query_settings.get("field_of_view_arcsec", 47.0))))
         self.bandpass_transform_file_var.set(str(query_settings.get("bandpass_transform_file") or ""))
         self.delta_mag_var.set(str(query_settings.get("delta_mag", 5)))
         self.contamination_bands_var.set(", ".join(query_settings.get("contamination_bands") or ["gaia_g"]))
         self.contamination_mode_var.set(str(model.get("mode") or "top_hat"))
         self.gaussian_fwhm_var.set("" if (model.get("gaussian_fwhm_arcsec") is None) else str(model.get("gaussian_fwhm_arcsec")))
-        self.radial_weight_file_var.set(str(model.get("radial_weight_file") or ""))
+        self.influence_sigma_var.set("" if (model.get("influence_sigma") is None) else str(model.get("influence_sigma")))
         self.include_missing_targets_var.set(bool(query_settings.get("include_missing_targets", False)))
         self.chunk_size_var.set(str(build_settings.get("chunk_size", 10000)))
         self.buffer_flush_var.set(str(build_settings.get("buffer_flush_interval", 200)))
@@ -1454,10 +1457,39 @@ class ConfigGui(tk.Tk):
             return
 
         mode = self.contamination_mode_var.get().strip()
-        fwhm_state = "normal" if (mode in {"gaussian_psf", "gaussian_aperture"}) else "disabled"
-        radial_state = "normal" if (mode == "radial_weight") else "disabled"
-        self.model_dependent_entries["gaussian_fwhm"].configure(state=fwhm_state)
-        self.model_dependent_entries["radial_weight"].configure(state=radial_state)
+        state = "normal" if (mode == "gaussian_psf") else "disabled"
+        self.model_dependent_entries["gaussian_fwhm"].configure(state=state)
+        self.model_dependent_entries["influence_sigma"].configure(state=state)
+        self.update_derived_influence_radius()
+
+    def update_derived_influence_radius(self) -> None:
+        """Show the outer influence radius implied by the current FWHM and sigma count."""
+        label = getattr(self, "derived_influence_label", None)
+        if (label is None):
+            return
+
+        message = self.derived_influence_message()
+        label.configure(text=message)
+
+    def derived_influence_message(self) -> str:
+        """Return the translated status line describing the derived influence radius."""
+        if (self.contamination_mode_var.get().strip() != "gaussian_psf"):
+            return tr("top_hat searches the aperture radius only; no PSF leakage is modelled.")
+
+        try:
+            fwhm = float(self.gaussian_fwhm_var.get().strip())
+            sigmas = float(self.influence_sigma_var.get().strip())
+        except ValueError:
+            return tr("Enter a FWHM and a number of sigmas to derive the outer influence radius.")
+
+        if (fwhm <= 0.0 or sigmas <= 0.0):
+            return tr("FWHM and number of sigmas must both be greater than zero.")
+
+        sigma = fwhm / GAUSSIAN_FWHM_TO_SIGMA
+        return (
+            f"sigma = {sigma:.3f}\" (FWHM / 2.355)  ->  "
+            f"{tr('outer influence radius')} = {sigmas:g} x {sigma:.3f}\" = {sigma * sigmas:.3f}\""
+        )
 
     def toggle_advanced_settings(self) -> None:
         if (self.advanced_settings_var.get()):
@@ -1729,14 +1761,6 @@ class ConfigGui(tk.Tk):
         if (selected):
             self.bandpass_transform_file_var.set(self.make_project_relative_path(selected))
 
-    def browse_radial_weight_file(self) -> None:
-        selected = filedialog.askopenfilename(
-            title=tr("Select radial weight CSV"),
-            filetypes=[(tr("CSV files"), "*.csv"), (tr("All files"), "*.*")]
-        )
-        if (selected):
-            self.radial_weight_file_var.set(self.make_project_relative_path(selected))
-
     def browse_out_dir(self) -> None:
         selected = filedialog.askdirectory(title=tr("Select output/index folder"))
         if (selected):
@@ -1858,7 +1882,6 @@ class ConfigGui(tk.Tk):
         # before the engine parser reports the same fields with dotted config paths.
         try:
             max_radius = float(self.max_radius_var.get().strip())
-            influence_radius = float(self.influence_radius_var.get().strip())
             float(self.field_of_view_var.get().strip())
             float(self.delta_mag_var.get().strip())
             int(self.chunk_size_var.get().strip())
@@ -1868,24 +1891,34 @@ class ConfigGui(tk.Tk):
             return False
 
         fwhm_text = self.gaussian_fwhm_var.get().strip()
-        if (fwhm_text != ""):
+        sigma_text = self.influence_sigma_var.get().strip()
+        for field_label, text in (("Gaussian FWHM", fwhm_text), ("Number of sigmas", sigma_text)):
+            if (text == ""):
+                continue
             try:
-                float(fwhm_text)
+                float(text)
             except ValueError:
-                messagebox.showerror("Invalid Gaussian FWHM", "Gaussian FWHM must be a number.")
+                messagebox.showerror(f"Invalid {field_label}", f"{field_label} must be a number.")
                 return False
 
-        if (influence_radius > max_radius):
-            proceed = messagebox.askyesno(
-                "Influence radius is larger than build radius",
-                "The outer influence radius is larger than the build radius.\n\n"
-                "For the queried targets, PHOTO-CAT will recompute neighbours directly from "
-                "the catalog out to the influence radius (only those targets, not the whole "
-                "catalog), which is slower per target than reading the pre-built index.\n\n"
-                "Continue?"
-            )
-            if (not proceed):
-                return False
+        # The influence radius is derived from the PSF, so it can only be checked
+        # against the build radius once both inputs are present.
+        if (fwhm_text != "" and sigma_text != ""):
+            influence_radius = (float(fwhm_text) / GAUSSIAN_FWHM_TO_SIGMA) * float(sigma_text)
+            if (influence_radius > max_radius):
+                proceed = messagebox.askyesno(
+                    "Influence radius is larger than build radius",
+                    "The derived outer influence radius is larger than the build radius.\n\n"
+                    f"FWHM {float(fwhm_text):g}\" gives sigma {float(fwhm_text) / GAUSSIAN_FWHM_TO_SIGMA:.3f}\", "
+                    f"and {float(sigma_text):g} sigmas gives {influence_radius:.3f}\" "
+                    f"against a build radius of {max_radius:g}\".\n\n"
+                    "For the queried targets, PHOTO-CAT will recompute neighbours directly from "
+                    "the catalog out to the influence radius (only those targets, not the whole "
+                    "catalog), which is slower per target than reading the pre-built index.\n\n"
+                    "Continue?"
+                )
+                if (not proceed):
+                    return False
 
         try:
             magnitude_columns = self.parse_magnitude_columns()
@@ -2003,9 +2036,8 @@ class ConfigGui(tk.Tk):
         mode = self.contamination_mode_var.get().strip() or "top_hat"
         fwhm_text = self.gaussian_fwhm_var.get().strip()
         gaussian_fwhm = float(fwhm_text) if (fwhm_text != "") else None
-        radial_weight = self.radial_weight_file_var.get().strip() or None
-        if (radial_weight is not None):
-            radial_weight = self.make_project_relative_path(radial_weight)
+        sigma_text = self.influence_sigma_var.get().strip()
+        influence_sigma = float(sigma_text) if (sigma_text != "") else None
 
         return {
             "interface": {
@@ -2046,7 +2078,6 @@ class ConfigGui(tk.Tk):
                 },
                 "settings": {
                     "field_of_view_arcsec": float(self.field_of_view_var.get().strip()),
-                    "influence_radius_arcsec": float(self.influence_radius_var.get().strip()),
                     "delta_mag": float(self.delta_mag_var.get().strip()),
                     "include_missing_targets": bool(self.include_missing_targets_var.get()),
                     "contamination_bands": contamination_bands,
@@ -2054,7 +2085,7 @@ class ConfigGui(tk.Tk):
                     "contamination_model": {
                         "mode": mode,
                         "gaussian_fwhm_arcsec": gaussian_fwhm,
-                        "radial_weight_file": radial_weight,
+                        "influence_sigma": influence_sigma,
                     },
                 },
             },

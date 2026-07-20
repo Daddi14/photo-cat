@@ -28,6 +28,11 @@ SKY_MAP_CLASSES: tuple[dict[str, Any], ...] = (
     {"key": "crowded", "label": ">3 contaminants", "color": "#D55E00", "marker": "o", "size": 2.0},
 )
 PUBLICATION_HISTOGRAM_COLOR = "#4477AA"
+# Publication-scale typography: axis labels and tick labels large enough to stay
+# legible once a figure is reduced to a single journal column.
+AXIS_LABEL_FONTSIZE = 14
+TICK_LABEL_FONTSIZE = 12
+LEGEND_FONTSIZE = 11
 
 
 def _coerce_float(value: Any) -> float:
@@ -122,6 +127,42 @@ def _separation_plot(rows: list[dict[str, Any]], destination: Path, dpi: int) ->
     return saved
 
 
+def _separation_density_plot(rows: list[dict[str, Any]], aperture_arcsec: float, destination: Path, dpi: int) -> str:
+    """Generate the area-normalized contaminant surface density against separation.
+
+    The raw separation histogram is biased by geometry: an annulus at larger radius
+    covers more sky, so it collects more contaminants even at constant density.
+    Dividing each 1-arcsec bin by its annular area, pi * (r_out^2 - r_in^2), removes
+    that bias and leaves a true surface density in arcsec^-2.
+    """
+    plt = _matplotlib_pyplot()
+    counts, edges = _separation_distribution(rows)
+    # Restrict to the configured aperture, the radius the counts are complete out to.
+    inside = edges[1:] <= aperture_arcsec
+    counts = counts[inside]
+    edges = edges[: counts.size + 1]
+
+    annular_area = np.pi * (edges[1:] ** 2 - edges[:-1] ** 2)
+    density = np.divide(
+        counts.astype(np.float64),
+        annular_area,
+        out=np.zeros(counts.shape, dtype=np.float64),
+        where=annular_area > 0.0,
+    )
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    fig, ax = plt.subplots(figsize=(6, 4), constrained_layout=True)
+    ax.step(centers, density, where="mid", linewidth=2, color=PUBLICATION_HISTOGRAM_COLOR)
+    ax.set_xlabel("Separation (arcsec)", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel(r"Contaminant density (arcsec$^{-2}$)", fontsize=AXIS_LABEL_FONTSIZE)
+    if (np.any(density > 0.0)):
+        ax.set_yscale("log")
+    ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_FONTSIZE, length=6, width=1.5)
+    saved = _save_figure(fig, destination, dpi)
+    plt.close(fig)
+    return saved
+
+
 def _sky_class(count: int) -> int:
     if (count <= 0):
         return 0
@@ -162,9 +203,10 @@ def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: i
     )
     ax.set_xlim(0.0, 360.0)
     ax.set_ylim(-90.0, 90.0)
-    ax.set_xlabel("RA [deg]")
-    ax.set_ylabel("Dec [deg]")
-    ax.tick_params(axis="both", which="both", labelsize=11)
+    ax.set_xlabel("RA [deg]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("Dec [deg]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_FONTSIZE, length=6, width=1.5)
+    ax.tick_params(axis="both", which="minor", length=3, width=1.0)
     ax.grid(alpha=0.15)
     # A single-pass scatter has no per-class labels, so build the colour legend
     # from proxy handles.
@@ -172,7 +214,7 @@ def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: i
         plt.Line2D([], [], marker="o", linestyle="", color=str(style["color"]), markersize=6, label=str(style["label"]))
         for style in SKY_MAP_CLASSES
     ]
-    ax.legend(handles=legend_handles, loc="upper right", fontsize=10)
+    ax.legend(handles=legend_handles, loc="upper right", fontsize=LEGEND_FONTSIZE)
     saved = _save_figure(fig, destination, dpi)
     plt.close(fig)
     return saved
@@ -210,6 +252,12 @@ def generate_publication_plots(
         destination / f"separation_distribution.{normalized_format}",
         dpi,
     )
+    separation_density_plot = _separation_density_plot(
+        rows,
+        aperture_arcsec,
+        destination / f"separation_density_distribution.{normalized_format}",
+        dpi,
+    )
     sky_map = _contamination_sky_map(
         rows,
         destination / f"contamination_sky_map.{normalized_format}",
@@ -218,6 +266,7 @@ def generate_publication_plots(
     products = {
         "contaminant_count_distribution": count_plot,
         "separation_distribution": separation_plot,
+        "separation_density_distribution": separation_density_plot,
         "contamination_sky_map": sky_map,
     }
     payload: dict[str, Any] = {
@@ -232,6 +281,13 @@ def generate_publication_plots(
         "plots": {
             "contaminant_count_distribution": {"path": count_plot, "x_scale": "linear", "y_scale": "log", "aperture_arcsec": aperture_arcsec},
             "separation_distribution": {"path": separation_plot, "y_scale": "log", "bin_width_arcsec": 1.0, "aperture_arcsec": aperture_arcsec},
+            "separation_density_distribution": {
+                "path": separation_density_plot,
+                "y_scale": "log",
+                "bin_width_arcsec": 1.0,
+                "aperture_arcsec": aperture_arcsec,
+                "normalization": "annular_area_arcsec2",
+            },
             "contamination_sky_map": {"path": sky_map, "encoding": list(SKY_MAP_CLASSES), "palette": "colourblind_safe"},
         },
     }

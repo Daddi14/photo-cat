@@ -168,7 +168,7 @@ photo-cat run --config config.yaml
 photo-cat run --config config.yaml --input-catalog data/catalog.csv --ra-column RAJ2000 --dec-column DEJ2000 --mag-column Gmag --field-of-view-arcsec 60 --delta-mag 4
 photo-cat build-index --config config.yaml --input-catalog data/catalog.csv --out-dir output/index
 photo-cat query --config config.yaml --index-dir output/index --targets-input data/targets.csv --field-of-view-arcsec 47 --delta-mag 5
-photo-cat query --config config.yaml --aperture-radius-arcsec 47 --influence-radius-arcsec 75 --contamination-model-mode gaussian_aperture --gaussian-fwhm-arcsec 20
+photo-cat query --config config.yaml --aperture-radius-arcsec 47 --contamination-model-mode gaussian_psf --gaussian-fwhm-arcsec 20 --influence-sigma 3
 photo-cat doctor
 ```
 

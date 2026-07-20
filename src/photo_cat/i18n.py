@@ -46,7 +46,6 @@ ITALIAN: dict[str, str] = {
     "Select catalog CSV": "Seleziona il CSV del catalogo",
     "Select targets CSV": "Seleziona il CSV dei target",
     "Select bandpass profile YAML": "Seleziona il profilo YAML della banda",
-    "Select radial weight CSV": "Seleziona il CSV dei pesi radiali",
     "Select output/index folder": "Seleziona la cartella output/indice",
     "Select existing index folder": "Seleziona la cartella di un indice esistente",
     "CSV files": "File CSV",
@@ -104,13 +103,19 @@ ITALIAN: dict[str, str] = {
     "Use manual list": "Usa elenco manuale",
     "Max build radius, arcsec": "Raggio massimo di costruzione, arcsec",
     "Query aperture radius, arcsec": "Raggio dell'apertura di query, arcsec",
-    "Outer influence radius, arcsec": "Raggio esterno di influenza, arcsec",
+    "Influence radius, number of sigmas": "Raggio di influenza, numero di sigma",
+    "Enter a FWHM and a number of sigmas to derive the outer influence radius.":
+        "Inserisci una FWHM e un numero di sigma per ricavare il raggio esterno di influenza.",
+    "FWHM and number of sigmas must both be greater than zero.":
+        "La FWHM e il numero di sigma devono essere entrambi maggiori di zero.",
+    "top_hat searches the aperture radius only; no PSF leakage is modelled.":
+        "top_hat cerca solo entro il raggio di apertura; non modella leakage della PSF.",
+    "outer influence radius": "raggio esterno di influenza",
     "Delta magnitude": "Differenza di magnitudine",
     "Contamination bands (comma-separated, or all)": "Bande di contaminazione (separate da virgole, oppure all)",
     "Bandpass profile YAML (optional)": "Profilo YAML della banda (opzionale)",
     "Contamination weighting model": "Modello di pesatura della contaminazione",
     "Gaussian FWHM, arcsec": "FWHM gaussiana, arcsec",
-    "Radial weight CSV": "CSV dei pesi radiali",
     "Advanced performance settings": "Impostazioni avanzate delle prestazioni",
     "Enable advanced settings": "Abilita impostazioni avanzate",
     "Chunk size": "Dimensione del blocco",
@@ -173,10 +178,10 @@ ITALIAN: dict[str, str] = {
         "Inserisci una riga banda=colonna_catalogo, per esempio gaia_bp=phot_bp_mean_mag. gaia_g usa sempre la colonna magnitudine principale. Le bande aggiuntive si selezionano nelle impostazioni di ricerca.",
     "Optional. Leave Targets CSV empty/null to use this source_id list instead. Use one source_id per line, or separate them with commas.":
         "Opzionale. Lascia vuoto il CSV dei target per usare questo elenco. Inserisci un source_id per riga oppure separali con virgole.",
-    "The aperture radius defines the extraction/screening circle. The influence radius can be larger when a weighted PSF model should include leakage from nearby sources outside that aperture. Both must be equal to or smaller than the max build radius.":
+    "The aperture radius defines the extraction/screening circle and must be equal to or smaller than the max build radius. With a Gaussian PSF the outer influence radius is not set here: it is derived below from the PSF width and the number of sigmas you choose to keep.":
         "Il raggio di apertura definisce il cerchio di misura. Il raggio di influenza può essere maggiore per includere luce di sorgenti esterne tramite un modello PSF pesato. Entrambi devono rientrare nel raggio massimo costruito.",
-    "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf and gaussian_aperture need a Gaussian FWHM. radial_weight needs a CSV of sep_arcsec,weight.":
-        "top_hat mantiene la stima storica catalogo/apertura. gaussian_psf e gaussian_aperture richiedono una FWHM gaussiana. radial_weight richiede un CSV sep_arcsec,weight.",
+    "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf models a 2D circular Gaussian PSF, where each source's flux decays with angular distance from the aperture centre. It needs the PSF FWHM and the number of sigmas of leakage to keep.":
+        "top_hat mantiene la stima storica catalogo/apertura. gaussian_psf modella una PSF gaussiana circolare 2D, in cui il flusso di ogni sorgente decade con la distanza angolare dal centro dell'apertura. Richiede la FWHM della PSF e il numero di sigma di leakage da considerare.",
     "Run selected pipeline stages using the current config and write benchmark metadata JSON. Uses the config.yaml saved by this GUI unless you pick another config file.":
         "Esegue le fasi selezionate con la configurazione corrente e salva un benchmark JSON. Usa il config.yaml della GUI salvo scelta di un altro file.",
     "Recommended workflow:\n1. Select Catalog CSV in Files & columns.\n2. Check that Targets CSV and output folders were auto-filled correctly.\n3. Leave the Gaia-like column names unchanged unless your CSV uses different headers.\n4. Click Save and run pipeline.\n5. Use the Results and Catalogue panels on the output JSON afterwards.":
@@ -271,7 +276,7 @@ ITALIAN: dict[str, str] = {
     "Radius, delta magnitude, chunk size, and checkpoint interval must be numbers.":
         "Raggio, differenza di magnitudine, dimensione del blocco e intervallo del checkpoint devono essere numeri.",
     "Gaussian FWHM must be a number.": "La FWHM gaussiana deve essere un numero.",
-    "The outer influence radius is larger than the build radius.":
+    "The derived outer influence radius is larger than the build radius.":
         "Il raggio esterno di influenza è maggiore del raggio di costruzione.",
     "The query cannot use neighbours that were not included in the built index.":
         "La query non può usare vicini non inclusi nell'indice costruito.",
@@ -415,12 +420,6 @@ ITALIAN: dict[str, str] = {
         "special_ids.npz non è sicuro o è malformato. Ricostruisci questo indice legacy prima della query.",
     "Build input catalog unexpectedly resolved to None.":
         "Il catalogo di input della costruzione è stato risolto inaspettatamente come None.",
-    "Could not normalize gaussian_aperture throughput for these settings.":
-        "Impossibile normalizzare il throughput gaussian_aperture con queste impostazioni.",
-    "radial_weight contamination model requires radial_weight_file.":
-        "Il modello di contaminazione radial_weight richiede radial_weight_file.",
-    "radial_weight contamination weighting requires a loaded radial weight table.":
-        "La pesatura radial_weight richiede una tabella di pesi radiali caricata.",
     "special_ids.npz uses the legacy unsafe object format. Rebuild the index.":
         "special_ids.npz usa il formato legacy non sicuro a oggetti. Ricostruisci l'indice.",
     "Provide at least one --config or --result-json.": "Specifica almeno un --config o --result-json.",
@@ -526,8 +525,8 @@ ITALIAN: dict[str, str] = {
         "bande da calcolare separate da virgole; usa all per tutte le bande presenti nell'indice",
     "aperture weighting model for flux metrics": "modello di pesatura dell'apertura per le metriche di flusso",
     "Gaussian PSF FWHM when using gaussian_psf mode": "FWHM della PSF gaussiana per la modalità gaussian_psf",
-    "CSV file with sep_arcsec,weight columns for radial_weight mode":
-        "file CSV con colonne sep_arcsec,weight per la modalità radial_weight",
+    "how many PSF standard deviations of leakage to count; sets the outer search radius":
+        "quante deviazioni standard della PSF contare come leakage; definisce il raggio di ricerca esterno",
     "enable or disable the build stage": "abilita o disabilita la fase di costruzione",
     "enable or disable the query stage": "abilita o disabilita la fase di query",
     "replace an already-running launcher pipeline session": "sostituisce una sessione pipeline già in esecuzione",
@@ -683,13 +682,12 @@ TOOLTIPS_EN: dict[str, str] = {
     "Manual targets": "Use this list when you want to analyse a few source IDs without creating a separate target CSV.",
     "Max build radius, arcsec": "Largest neighbour distance stored in the index. It must cover every aperture or influence radius you plan to query.",
     "Query aperture radius, arcsec": "Radius of the circular measurement region around each target. One arcsecond is 1/3600 of a degree.",
-    "Outer influence radius, arcsec": "Optional larger radius used by weighted models to include light leaking into the aperture from nearby stars outside it.",
+    "Influence radius, number of sigmas": "How many PSF standard deviations still count as leakage. Multiplied by sigma = FWHM / 2.355 it gives the outer search radius.",
     "Delta magnitude": "Maximum neighbour-minus-target magnitude difference. A value of 5 includes neighbours up to 100 times fainter than the target.",
     "Contamination bands (comma-separated, or all)": "Photometric bands used to calculate flux ratios. Use all to process every band stored in the index.",
     "Bandpass profile YAML (optional)": "A calibrated colour transformation that estimates magnitudes in an instrument or mission-specific band.",
     "Contamination weighting model": "Controls how strongly a neighbour contributes according to its distance from the target and the aperture response.",
     "Gaussian FWHM, arcsec": "Full width at half maximum of the Gaussian response. It describes the apparent width of a point source.",
-    "Radial weight CSV": "A two-column sep_arcsec/weight calibration describing how source contribution changes with angular distance.",
     "Use Dask for very large CSV files": "Processes large catalogues in partitions to reduce peak memory use. It may add overhead for small files.",
     "Store neighbor separations on disk": "Precomputes angular separations during index construction, making later queries faster at the cost of disk space.",
     "Run build step": "Creates or refreshes the neighbour index from the catalogue.",
@@ -726,13 +724,12 @@ TOOLTIPS_IT: dict[str, str] = {
     "Manual targets": "Usa questo elenco per analizzare pochi ID senza creare un CSV dei target separato.",
     "Max build radius, arcsec": "Massima distanza dei vicini salvata nell'indice. Deve coprire ogni apertura o raggio di influenza che userai.",
     "Query aperture radius, arcsec": "Raggio della regione circolare attorno al target. Un arcosecondo equivale a 1/3600 di grado.",
-    "Outer influence radius, arcsec": "Raggio più grande usato dai modelli pesati per includere luce proveniente da stelle esterne all'apertura.",
+    "Influence radius, number of sigmas": "Quante deviazioni standard della PSF contano come leakage. Moltiplicato per sigma = FWHM / 2.355 dà il raggio di ricerca esterno.",
     "Delta magnitude": "Massima differenza magnitudine_vicino - magnitudine_target. Il valore 5 include vicini fino a 100 volte più deboli.",
     "Contamination bands (comma-separated, or all)": "Bande fotometriche usate nei rapporti di flusso. Usa all per elaborare tutte le bande nell'indice.",
     "Bandpass profile YAML (optional)": "Trasformazione di colore calibrata per stimare magnitudini in una banda specifica dello strumento o missione.",
     "Contamination weighting model": "Stabilisce quanto contribuisce un vicino in funzione della distanza dal target e della risposta dell'apertura.",
     "Gaussian FWHM, arcsec": "Larghezza a metà altezza della risposta gaussiana; descrive la larghezza apparente di una sorgente puntiforme.",
-    "Radial weight CSV": "Calibrazione sep_arcsec/weight che descrive come varia il contributo con la distanza angolare.",
     "Use Dask for very large CSV files": "Elabora cataloghi grandi in partizioni per ridurre la memoria massima; può rallentare file piccoli.",
     "Store neighbor separations on disk": "Precalcola le separazioni durante la costruzione, velocizzando le query al costo di spazio su disco.",
     "Run build step": "Crea o aggiorna l'indice dei vicini dal catalogo. È necessario quando cambiano catalogo, colonne, raggio massimo o bande salvate.",
@@ -871,7 +868,7 @@ TOOLTIPS_EN.update({
     "Catalog column names": "These four case-sensitive headers identify each source and provide right ascension, declination, and the default photometric magnitude.",
     "Targets column name": "Set the case-sensitive target-table header containing source IDs. It normally remains source_id.",
     "Search settings": "Choose which neighbours can influence a target and how their catalogue flux is weighted inside or around the aperture.",
-    "Model mode": "Select top_hat for simple inclusion, Gaussian modes for a circular PSF approximation, or radial_weight for a calibrated response table.",
+    "Model mode": "Select top_hat for simple geometric inclusion, or gaussian_psf for a 2D circular Gaussian PSF whose flux decays with radius.",
     "Advanced performance settings": "Chunk and checkpoint controls affect speed, RAM, disk writes, and resumability, but do not change the intended scientific selection.",
     "Enable advanced settings": "Unlocks chunk size and checkpoint frequency. Leave disabled unless catalogue scale or available memory requires tuning.",
     "Options": "Select the pipeline stages and compatibility behavior for missing targets, stored separations, large CSV loading, and repeated launches.",
@@ -890,8 +887,8 @@ TOOLTIPS_EN.update({
     "Default target column is source_id. Change it only if your targets CSV uses another header. This is case-sensitive. Manual targets ignore this field.": "This maps the target-table identifier to the catalogue source ID. It does not select the catalogue source-ID column, which is configured separately above.",
     "One band=catalog_column per line, for example gaia_bp=phot_bp_mean_mag. gaia_g is always mapped to the catalog magnitude column above. Extra bands can then be requested in Search settings > Contamination bands.": "Store extra catalogue magnitudes only when the named columns exist and contain compatible numeric values. Every requested contamination band must be built into the index first.",
     "Optional. Leave Targets CSV empty/null to use this source_id list instead. Use one source_id per line, or separate them with commas.": "Best for small target sets. Large selections are easier to audit and reproduce with a targets CSV.",
-    "The aperture radius defines the extraction/screening circle. The influence radius can be larger when a weighted PSF model should include leakage from nearby sources outside that aperture. Both must be equal to or smaller than the max build radius.": "Choose radii in arcseconds. The build radius is the hard data limit: increasing a query radius later cannot recover neighbours that were never indexed.",
-    "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf and gaussian_aperture need a Gaussian FWHM. radial_weight needs a CSV of sep_arcsec,weight.": "Use top_hat for preliminary geometric screening. Use a weighted mode only when its FWHM or radial curve reasonably represents the instrument response.",
+    "The aperture radius defines the extraction/screening circle and must be equal to or smaller than the max build radius. With a Gaussian PSF the outer influence radius is not set here: it is derived below from the PSF width and the number of sigmas you choose to keep.": "Choose radii in arcseconds. The build radius is the hard data limit: increasing a query radius later cannot recover neighbours that were never indexed.",
+    "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf models a 2D circular Gaussian PSF, where each source's flux decays with angular distance from the aperture centre. It needs the PSF FWHM and the number of sigmas of leakage to keep.": "Use top_hat for preliminary geometric screening. Use gaussian_psf only when its FWHM reasonably represents the instrument response.",
     "Leave these locked unless you know what you are doing. Wrong values can make the tool slower, use too much RAM, write too often to disk, or make long runs harder to resume safely.": "Chunk size trades memory for throughput; checkpoint frequency trades disk overhead for less lost work after interruption. Test changes on a catalogue subset first.",
     "Enabled: the previous pipeline window opened by this GUI is closed before a new run starts. Disabled: each Save and run opens a separate pipeline window.": "Enable this on normal workstations to avoid two builds competing for RAM and disk. Disable only when intentionally running independent configurations in parallel.",
     "Output from Results / Catalogue / Benchmark / Diagnostics commands appears here.": "Command output includes saved-file paths, summaries, warnings, and expected errors. Pipeline build/query progress appears in its separate console.",
@@ -919,7 +916,7 @@ TOOLTIPS_IT.update({
     "Switch to dark mode": "Cambia soltanto l'aspetto della GUI usando un tema scuro. Valori scientifici, configurazione, file e palette dei grafici non cambiano.",
     "Configure pipeline": "Queste sezioni definiscono catalogo, colonne di coordinate e magnitudine, geometria di ricerca, modello di contaminazione e fasi da eseguire.",
     "Files & columns": "Apre i dati di input. Seleziona catalogo e target, poi verifica che ogni colonna corrisponda esattamente all'intestazione CSV.",
-    "Search settings": "Apre apertura, raggio di influenza, contrasto di magnitudine, bande fotometriche e modello di pesatura radiale.",
+    "Search settings": "Apre apertura, contrasto di magnitudine, bande fotometriche e modello di pesatura della PSF.",
     "Run options": "Apre i controlli che decidono se costruire l'indice, interrogare i target, conservare ID mancanti e sostituire una pipeline attiva.",
     "Results": "Questi comandi esaminano, classificano, rappresentano, documentano, esportano o validano un JSON di risultati.",
     "Catalogue": "Questi comandi documentano la provenienza del catalogo o uniscono stelle brillanti supplementari prima della costruzione.",
@@ -932,7 +929,7 @@ TOOLTIPS_IT.update({
     "Files and columns": "Definisce le tabelle lette da PHOTO-CAT e associa le intestazioni a ID sorgente, coordinate celesti e magnitudine.",
     "Catalog column names": "Queste quattro intestazioni distinguono maiuscole e minuscole e forniscono ID, ascensione retta, declinazione e magnitudine.",
     "Targets column name": "Imposta l'intestazione del CSV target contenente gli ID sorgente. Normalmente resta source_id.",
-    "Model mode": "Scegli top_hat per l'inclusione semplice, modalità gaussiane per una PSF circolare approssimata o radial_weight per una curva calibrata.",
+    "Model mode": "Scegli top_hat per l'inclusione geometrica semplice, o gaussian_psf per una PSF gaussiana circolare 2D il cui flusso decade con il raggio.",
     "Advanced performance settings": "Blocco e checkpoint influenzano velocità, RAM, scritture e ripresa, ma non la selezione scientifica prevista.",
     "Enable advanced settings": "Sblocca dimensione del blocco e frequenza dei checkpoint. Lascialo disabilitato salvo necessità di memoria o scala.",
     "Options": "Seleziona fasi e comportamento per target mancanti, separazioni salvate, CSV grandi e avvii ripetuti.",
@@ -951,8 +948,8 @@ TOOLTIPS_IT.update({
     "Default target column is source_id. Change it only if your targets CSV uses another header. This is case-sensitive. Manual targets ignore this field.": "Associa l'identificatore della tabella target all'ID del catalogo. Non seleziona la colonna ID del catalogo, configurata separatamente.",
     "One band=catalog_column per line, for example gaia_bp=phot_bp_mean_mag. gaia_g is always mapped to the catalog magnitude column above. Extra bands can then be requested in Search settings > Contamination bands.": "Salva bande aggiuntive solo se le colonne esistono e contengono numeri compatibili. Ogni banda richiesta deve essere prima inclusa nell'indice.",
     "Optional. Leave Targets CSV empty/null to use this source_id list instead. Use one source_id per line, or separate them with commas.": "Adatto a pochi target. Per selezioni grandi un CSV è più facile da verificare e riprodurre.",
-    "The aperture radius defines the extraction/screening circle. The influence radius can be larger when a weighted PSF model should include leakage from nearby sources outside that aperture. Both must be equal to or smaller than the max build radius.": "Scegli i raggi in arcosecondi. Il raggio di costruzione è il limite dei dati: una query più ampia non recupera vicini mai indicizzati.",
-    "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf and gaussian_aperture need a Gaussian FWHM. radial_weight needs a CSV of sep_arcsec,weight.": "Usa top_hat per screening geometrico preliminare. Usa un modello pesato solo se FWHM o curva radiale rappresentano ragionevolmente lo strumento.",
+    "The aperture radius defines the extraction/screening circle and must be equal to or smaller than the max build radius. With a Gaussian PSF the outer influence radius is not set here: it is derived below from the PSF width and the number of sigmas you choose to keep.": "Scegli i raggi in arcosecondi. Il raggio di costruzione è il limite dei dati: una query più ampia non recupera vicini mai indicizzati.",
+    "top_hat keeps the historical catalogue/aperture flux estimate. gaussian_psf models a 2D circular Gaussian PSF, where each source's flux decays with angular distance from the aperture centre. It needs the PSF FWHM and the number of sigmas of leakage to keep.": "Usa top_hat per screening geometrico preliminare. Usa gaussian_psf solo se la FWHM rappresenta ragionevolmente la risposta dello strumento.",
     "Leave these locked unless you know what you are doing. Wrong values can make the tool slower, use too much RAM, write too often to disk, or make long runs harder to resume safely.": "Il blocco bilancia memoria e velocità; il checkpoint bilancia scritture e lavoro perso dopo un'interruzione. Prova prima su un sottoinsieme.",
     "Enabled: the previous pipeline window opened by this GUI is closed before a new run starts. Disabled: each Save and run opens a separate pipeline window.": "Abilita su normali workstation per evitare due build in competizione per RAM e disco. Disabilita solo per configurazioni indipendenti intenzionali.",
     "Output from Results / Catalogue / Benchmark / Diagnostics commands appears here.": "Mostra percorsi salvati, riepiloghi, avvisi ed errori. L'avanzamento build/query appare nella console separata della pipeline.",

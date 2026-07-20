@@ -47,13 +47,40 @@ class BuildConfig:
     magnitude_columns: dict[str, str] = field(default_factory=dict)
 
 
+# Full-width-half-maximum to standard-deviation conversion factor, 2 * sqrt(2 * ln 2).
+GAUSSIAN_FWHM_TO_SIGMA = 2.3548200450309493
+
+# Supported contamination weighting models, in the order the GUI offers them.
+CONTAMINATION_MODES = ("top_hat", "gaussian_psf")
+
+
 @dataclass(frozen=True)
 class ContaminationModelConfig:
     """Validated query-side contamination weighting model."""
 
     mode: str = "top_hat"
     gaussian_fwhm_arcsec: float | None = None
-    radial_weight_file: str | None = None
+    influence_sigma: float | None = None
+
+    @property
+    def sigma_arcsec(self) -> float | None:
+        """Return the Gaussian standard deviation implied by the configured FWHM."""
+        if (self.gaussian_fwhm_arcsec is None):
+            return None
+        return self.gaussian_fwhm_arcsec / GAUSSIAN_FWHM_TO_SIGMA
+
+    @property
+    def influence_radius_arcsec(self) -> float | None:
+        """Return the outer neighbour radius implied by the FWHM and sigma multiple.
+
+        The radius is not configured directly: the user supplies a PSF FWHM and
+        decides how many standard deviations of that PSF still matter, so the
+        search radius follows the optics rather than an unrelated hand-set number.
+        """
+        sigma = self.sigma_arcsec
+        if (sigma is None or self.influence_sigma is None):
+            return None
+        return sigma * self.influence_sigma
 
 
 @dataclass(frozen=True)
@@ -69,7 +96,6 @@ class QueryConfig:
     include_missing_targets: bool = False
     contamination_model: ContaminationModelConfig = field(default_factory=ContaminationModelConfig)
     contamination_bands: list[str] = field(default_factory=lambda: ["gaia_g"])
-    influence_radius_arcsec: float | None = None
     bandpass_transform_file: str | None = None
 
     @property
@@ -79,8 +105,15 @@ class QueryConfig:
 
     @property
     def effective_influence_radius_arcsec(self) -> float:
-        """Return the outer neighbour radius, defaulting to the aperture for compatibility."""
-        return self.field_of_view_arcsec if self.influence_radius_arcsec is None else self.influence_radius_arcsec
+        """Return the outer neighbour radius derived from the PSF, or the aperture.
+
+        A Gaussian model derives the radius from its FWHM and sigma multiple. It may
+        legitimately fall below the aperture radius: a narrow PSF stops contributing
+        leakage well inside a wide extraction circle. top_hat has no PSF scale, so it
+        falls back to the aperture itself.
+        """
+        derived = self.contamination_model.influence_radius_arcsec
+        return self.field_of_view_arcsec if derived is None else derived
 
 
 @dataclass(frozen=True)
@@ -331,7 +364,7 @@ def normalize_magnitude_columns(
     return magnitude_columns
 
 
-def parse_contamination_model(settings: dict[str, Any], config_dir: Path) -> ContaminationModelConfig:
+def parse_contamination_model(settings: dict[str, Any]) -> ContaminationModelConfig:
     """Parse opt-in aperture/PSF-style weighting settings for query flux metrics."""
     raw_model = settings.get("contamination_model")
     if (raw_model is None):
@@ -339,10 +372,10 @@ def parse_contamination_model(settings: dict[str, Any], config_dir: Path) -> Con
     model = require_mapping(raw_model, f"{QUERY_SECTION}.settings.contamination_model")
     mode = require_text(model.get("mode"), f"{QUERY_SECTION}.settings.contamination_model.mode", "top_hat")
     normalized_mode = mode.lower().replace("-", "_")
-    if (normalized_mode not in {"top_hat", "radial_weight", "gaussian_psf", "gaussian_aperture"}):
+    if (normalized_mode not in CONTAMINATION_MODES):
         raise ValueError(
             "query_contamination_from_index.settings.contamination_model.mode "
-            "must be one of: top_hat, radial_weight, gaussian_psf, gaussian_aperture."
+            f"must be one of: {', '.join(CONTAMINATION_MODES)}."
         )
 
     gaussian_fwhm_arcsec = None
@@ -355,23 +388,33 @@ def parse_contamination_model(settings: dict[str, Any], config_dir: Path) -> Con
             exclusive_minimum=True,
         )
 
-    radial_weight_file = resolve_path(model.get("radial_weight_file"), config_dir)
+    influence_sigma = None
+    if (model.get("influence_sigma") is not None):
+        influence_sigma = parse_float(
+            model.get("influence_sigma"),
+            f"{QUERY_SECTION}.settings.contamination_model.influence_sigma",
+            0.0,
+            minimum=0.0,
+            exclusive_minimum=True,
+        )
 
-    if (normalized_mode in {"gaussian_psf", "gaussian_aperture"} and gaussian_fwhm_arcsec is None):
-        raise ValueError(
-            "query_contamination_from_index.settings.contamination_model.gaussian_fwhm_arcsec "
-            "is required when mode is gaussian_psf or gaussian_aperture."
-        )
-    if (normalized_mode == "radial_weight" and radial_weight_file is None):
-        raise ValueError(
-            "query_contamination_from_index.settings.contamination_model.radial_weight_file "
-            "is required when mode is radial_weight."
-        )
+    if (normalized_mode == "gaussian_psf"):
+        if (gaussian_fwhm_arcsec is None):
+            raise ValueError(
+                "query_contamination_from_index.settings.contamination_model.gaussian_fwhm_arcsec "
+                "is required when mode is gaussian_psf."
+            )
+        if (influence_sigma is None):
+            raise ValueError(
+                "query_contamination_from_index.settings.contamination_model.influence_sigma "
+                "is required when mode is gaussian_psf. It sets how many PSF standard "
+                "deviations of leakage are still counted."
+            )
 
     return ContaminationModelConfig(
         mode=normalized_mode,
         gaussian_fwhm_arcsec=gaussian_fwhm_arcsec,
-        radial_weight_file=radial_weight_file,
+        influence_sigma=influence_sigma,
     )
 
 
@@ -479,20 +522,6 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
         exclusive_minimum=True,
         maximum=648000.0,
     )
-    influence_radius_arcsec = parse_float(
-        settings.get("influence_radius_arcsec"),
-        "query_contamination_from_index.settings.influence_radius_arcsec",
-        aperture_radius_arcsec,
-        minimum=0.0,
-        exclusive_minimum=True,
-        maximum=648000.0,
-    )
-    if (influence_radius_arcsec < aperture_radius_arcsec):
-        raise ValueError(
-            "query_contamination_from_index.settings.influence_radius_arcsec "
-            "must be greater than or equal to field_of_view_arcsec."
-        )
-
     return QueryConfig(
         INDEX_DIR=resolve_required_path(io.get("INDEX_DIR"), "query_contamination_from_index.io.INDEX_DIR", config_dir),
         TARGETS_INPUT=targets_input,
@@ -513,9 +542,8 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
             "query_contamination_from_index.settings.include_missing_targets",
             False,
         ),
-        contamination_model=parse_contamination_model(settings, config_dir),
+        contamination_model=parse_contamination_model(settings),
         contamination_bands=parse_contamination_bands(settings),
-        influence_radius_arcsec=influence_radius_arcsec,
         bandpass_transform_file=resolve_path(settings.get("bandpass_transform_file"), config_dir),
     )
 
@@ -523,14 +551,10 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
 def validate_query_config_runtime(config: QueryConfig) -> QueryConfig:
     """Validate query target inputs after pure parsing and resolution succeed."""
     targets_input = require_file(config.TARGETS_INPUT, "TARGETS_INPUT")
-    radial_weight_file = config.contamination_model.radial_weight_file
-    if (radial_weight_file is not None):
-        radial_weight_file = require_file(radial_weight_file, "contamination_model.radial_weight_file")
     bandpass_transform_file = require_file(config.bandpass_transform_file, "bandpass_transform_file")
     return replace(
         config,
         TARGETS_INPUT=targets_input,
-        contamination_model=replace(config.contamination_model, radial_weight_file=radial_weight_file),
         bandpass_transform_file=bandpass_transform_file,
     )
 

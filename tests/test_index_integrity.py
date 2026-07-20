@@ -263,7 +263,9 @@ def test_query_reports_weighted_leakage_from_outside_aperture() -> None:
         influence_radius_arcsec=30.0,
         delta_mag=5.0,
         neighbor_separations_mm=np.array([15.0], dtype=np.float64),
-        contamination_model=ContaminationModelConfig(mode="gaussian_aperture", gaussian_fwhm_arcsec=10.0),
+        contamination_model=ContaminationModelConfig(
+            mode="gaussian_psf", gaussian_fwhm_arcsec=10.0, influence_sigma=7.0
+        ),
     )
 
     assert result is not None

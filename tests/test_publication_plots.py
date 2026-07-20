@@ -7,10 +7,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from photo_cat import cli
-from photo_cat.publication_plots import SKY_MAP_CLASSES, generate_publication_plots
+from photo_cat.publication_plots import (
+    SKY_MAP_CLASSES,
+    _separation_distribution,
+    generate_publication_plots,
+)
+from photo_cat.result_products import load_result_rows
 
 
 def write_result(tmp_path: Path) -> Path:
@@ -64,12 +70,48 @@ def test_generate_publication_plots_uses_one_configured_aperture(tmp_path: Path)
     assert payload["plots"]["contaminant_count_distribution"]["aperture_arcsec"] == 47.0
     assert payload["plots"]["contaminant_count_distribution"]["x_scale"] == "linear"
     assert payload["plots"]["contaminant_count_distribution"]["y_scale"] == "log"
-    assert "separation_density_area_normalized" not in payload["plots"]
+    assert payload["plots"]["separation_density_distribution"]["normalization"] == "annular_area_arcsec2"
+    assert payload["plots"]["separation_density_distribution"]["aperture_arcsec"] == 47.0
     assert payload["plots"]["contamination_sky_map"]["palette"] == "colourblind_safe"
     assert Path(payload["manifest_path"]).is_file()
     for plot in payload["plots"].values():
         assert Path(plot["path"]).stat().st_size > 0
         assert plot["sha256"]
+
+
+@pytest.mark.unit
+def test_separation_density_divides_by_annular_area_not_bin_width(tmp_path: Path) -> None:
+    """A uniform surface density must flatten out once each bin is divided by its ring area.
+
+    Guards the normalization itself: dividing by pi*(r_out^2 - r_in^2) removes the
+    geometric bias that makes outer annuli collect more contaminants. Dividing by
+    anything proportional to the bin width instead leaves the rising count profile.
+    """
+    rng = np.random.default_rng(0)
+    separations = np.sqrt(rng.uniform(0.0, 47.0**2, size=200_000))
+    result_path = tmp_path / "uniform.json"
+    result_path.write_text(
+        json.dumps([
+            {
+                "source_id": "uniform",
+                "ra": 10.0,
+                "dec": -20.0,
+                "num_contaminants": int(separations.size),
+                "contaminants": [{"source_id": str(i), "sep_arcsec": float(s)} for i, s in enumerate(separations)],
+            }
+        ]),
+        encoding="utf-8",
+    )
+
+    rows = load_result_rows(result_path)
+    counts, edges = _separation_distribution(rows)
+    inside = edges[1:] <= 47.0
+    counts, edges = counts[inside], edges[: int(inside.sum()) + 1]
+    density = counts / (np.pi * (edges[1:] ** 2 - edges[:-1] ** 2))
+
+    # Flat to within a few percent, and emphatically not rising like the raw counts.
+    assert density.std() / density.mean() < 0.1
+    assert counts[-1] > 10 * counts[0]
 
 
 @pytest.mark.regression

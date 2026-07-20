@@ -64,41 +64,41 @@ La fase di query legge un indice esistente e processa i target selezionati.
 Usala quando l’indice esiste già e devi solo interrogare target o modificare opzioni di query.
 
 Il modello di contaminazione predefinito è `top_hat`, che conserva la stima
-storica catalogo/apertura. Per esperimenti di screening si può selezionare una
-pesatura radiale opzionale:
+storica catalogo/apertura. In alternativa si può selezionare una PSF gaussiana
+circolare 2D, che pesa ogni sorgente secondo il decadimento radiale del flusso:
 
 ```yaml
 query_contamination_from_index:
   settings:
     field_of_view_arcsec: 47.0       # apertura di estrazione/screening
-    influence_radius_arcsec: 75.0   # ricerca esterna opzionale del leakage
     contamination_bands: [gaia_g, gaia_bp, gaia_rp]
     contamination_model:
-      mode: gaussian_aperture
-      gaussian_fwhm_arcsec: 47.0
+      mode: gaussian_psf
+      gaussian_fwhm_arcsec: 2.0      # larghezza a metà altezza della PSF
+      influence_sigma: 5.0           # quanti sigma di leakage considerare
 ```
 
-`influence_radius_arcsec` usa per default `field_of_view_arcsec`, deve essere
-almeno altrettanto grande e non può superare il raggio di build dell'indice.
-`gaussian_aperture` integra una PSF gaussiana circolare sull'apertura circolare
-configurata e normalizza il risultato al throughput del target centrato. La
-modalità precedente `gaussian_psf` resta disponibile come semplice
-approssimazione della risposta puntuale.
+Con `gaussian_psf` ogni sorgente contribuisce con `exp(-r^2 / 2*sigma^2)` del
+proprio flusso a distanza angolare `r` dal centro dell'apertura, dove
+`sigma = gaussian_fwhm_arcsec / 2.3548`.
 
-Per una curva radiale tabulata dell'apertura, usa:
+Il raggio esterno di influenza **non si configura direttamente**: si ricava come
+`sigma * influence_sigma`, così il raggio di ricerca segue l'ottica invece di
+essere un numero impostato a mano. Con i valori qui sopra `sigma = 0.849"` e il
+raggio di influenza è `4.25"`. Può legittimamente risultare più piccolo del
+raggio di apertura: una PSF stretta smette di contribuire leakage ben dentro una
+circonferenza di estrazione ampia. Se supera il raggio di build dell'indice,
+PHOTO-CAT ricalcola i vicini direttamente dal catalogo per i target interrogati,
+operazione più lenta per target.
 
-```yaml
-query_contamination_from_index:
-  settings:
-    contamination_model:
-      mode: radial_weight
-      radial_weight_file: data/radial_weights.csv
-```
+`top_hat` non ha una scala PSF, quindi cerca solo entro il raggio di apertura.
 
-Il CSV dei pesi radiali deve contenere le colonne `sep_arcsec` e `weight`.
-Questi modelli restano approssimazioni a livello di catalogo per lo screening,
-salvo che i pesi provengano da una calibrazione PSF/apertura specifica dello
-strumento.
+Oltre ai pesi, `gaussian_psf` riporta anche metriche integrate sull'apertura
+(`effective_target_flux`, `effective_contaminating_flux`, `contamination_ratio`,
+`target_purity`), che integrano la gaussiana circolare sull'apertura disassata.
+
+Resta un'approssimazione a livello di catalogo per lo screening, salvo che la
+FWHM provenga da una calibrazione PSF specifica dello strumento.
 
 ### Trasformazioni empiriche nella banda di missione
 

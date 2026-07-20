@@ -38,19 +38,18 @@ un'analisi successiva aggiunga modellazione specifica della missione.
   detector, una larghezza di PSF, un'apertura di estrazione o una scala di
   pixel: usa il valore che corrisponde all'apertura di screening che vuoi
   testare.
-- `influence_radius_arcsec` è un raggio opzionale più grande per la ricerca dei
-  vicini, usato dai modelli pesati per stimare il flusso che entra da fuori
-  dell'apertura. Per default coincide con l'apertura e deve restare entro il
-  raggio dell'indice costruito.
+- Il raggio esterno di ricerca dei vicini è derivato, non configurato: con
+  `gaussian_psf` vale `sigma * influence_sigma`, dove
+  `sigma = gaussian_fwhm_arcsec / 2.3548`. `top_hat` cerca solo entro l'apertura.
 - `delta_mag` è la differenza massima di magnitudine di catalogo ammessa,
   `mag_vicino - mag_target`, perché un vicino venga selezionato.
 - Un `contaminant` nell'output JSON è un vicino che supera sia il taglio sul
   raggio circolare configurato sia il taglio `delta_mag`.
 - `contamination_model` registra la modalità di pesatura della query. `top_hat`
   è la stima storica non pesata con apertura circolare. `gaussian_psf` applica
-  un peso radiale gaussiano puntuale dalla FWHM configurata,
-  `gaussian_aperture` integra una gaussiana circolare sull'apertura circolare
-  disassata, mentre `radial_weight` applica una tabella `sep_arcsec,weight`.
+  una PSF gaussiana circolare 2D dalla FWHM configurata, per cui il flusso di
+  ogni sorgente decade come `exp(-r^2 / 2*sigma^2)` con la distanza angolare dal
+  centro dell'apertura, e riporta inoltre metriche di flusso integrate sull'apertura.
 - `flux_fraction_selected` viene calcolato sugli stessi contaminanti selezionati
   usati da `num_contaminants`, tramite rapporti di flusso da magnitudini di
   catalogo `10 ** (-0.4 * (mag_vicino - mag_target))`, ed è espresso come

@@ -1,4 +1,4 @@
-# PHOTO-CAT - Photometric Contamination Analyzer Tool configuration
+# PHOTO-CAT configuration
 # You can edit this file manually, or run the starter for your operating system and use the GUI.
 # Selecting Catalog CSV in the GUI auto-fills Targets CSV and the output/index folders.
 # To use manual source_id targets, set TARGETS_INPUT to null and list IDs under targets.
@@ -6,9 +6,7 @@
 # Change them in the GUI only if your CSV headers differ.
 
 interface:
-  # User-facing GUI, CLI, console, warning, and error language: en or it.
   language: en
-
 build_neighbors_index:
   io:
     input_catalog: data/example_catalog.csv
@@ -23,10 +21,6 @@ build_neighbors_index:
       ra: ra
       dec: dec
       phot_g_mean_mag: phot_g_mean_mag
-    # Optional additional magnitude bands can be queried later with:
-    # magnitude_columns:
-    #   gaia_bp: phot_bp_mean_mag
-    #   gaia_rp: phot_rp_mean_mag
     magnitude_columns:
       gaia_g: phot_g_mean_mag
   settings:
@@ -38,25 +32,20 @@ build_neighbors_index:
 query_contamination_from_index:
   io:
     INDEX_DIR: data/output
-    TARGETS_INPUT: data/example_targets.csv
+    TARGETS_INPUT: data/example_catalog.csv
     targets: []
     target_source_id_column: source_id
   settings:
     field_of_view_arcsec: 47.0
-    # Optional outer search radius for PSF/aperture leakage. Must not exceed the build radius.
-    influence_radius_arcsec: 47.0
     delta_mag: 5.0
     include_missing_targets: false
     contamination_bands:
     - gaia_g
-    # Optional empirical colour transformation into a named mission band.
-    bandpass_transform_file:
+    bandpass_transform_file: null
     contamination_model:
-      # top_hat preserves the historical catalogue/aperture flux estimate.
-      # Opt-in alternatives: gaussian_psf, gaussian_aperture, or radial_weight.
-      mode: top_hat
-      gaussian_fwhm_arcsec:
-      radial_weight_file:
+      mode: gaussian_psf
+      gaussian_fwhm_arcsec: 120.0
+      influence_sigma: 3.0
 execution:
   run_build: true
   run_query: true

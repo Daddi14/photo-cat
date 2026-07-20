@@ -26,7 +26,6 @@ query_contamination_from_index:
     target_source_id_column: source_id
   settings:
     field_of_view_arcsec: 47.0
-    influence_radius_arcsec: 47.0
     delta_mag: 5.0
 
 execution:

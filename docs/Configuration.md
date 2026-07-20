@@ -63,39 +63,40 @@ The query stage reads an existing index and processes selected targets.
 Use this when the index already exists and you only need to query targets or adjust query options.
 
 The default contamination model is `top_hat`, which preserves the historical
-catalogue/aperture estimate. Optional radial weighting can be selected for
-screening experiments:
+catalogue/aperture estimate. A 2D circular Gaussian PSF can be selected instead,
+weighting each source by its radial flux decay:
 
 ```yaml
 query_contamination_from_index:
   settings:
     field_of_view_arcsec: 47.0       # extraction/screening aperture
-    influence_radius_arcsec: 75.0   # optional outer leakage search
     contamination_bands: [gaia_g, gaia_bp, gaia_rp]
     contamination_model:
-      mode: gaussian_aperture
-      gaussian_fwhm_arcsec: 47.0
+      mode: gaussian_psf
+      gaussian_fwhm_arcsec: 2.0      # PSF full width at half maximum
+      influence_sigma: 5.0           # how many sigmas of leakage still count
 ```
 
-`influence_radius_arcsec` defaults to `field_of_view_arcsec`, must be at least
-as large as it, and cannot exceed the index build radius. `gaussian_aperture`
-integrates a circular Gaussian PSF over the configured circular aperture and
-normalizes the result to the centered target throughput. The older
-`gaussian_psf` mode remains available as a simple point-response approximation.
+Under `gaussian_psf` each source contributes `exp(-r^2 / 2*sigma^2)` of its flux
+at angular distance `r` from the aperture centre, with
+`sigma = gaussian_fwhm_arcsec / 2.3548`.
 
-For a tabulated radial aperture curve, use:
+The outer influence radius is **not configured directly**. It is derived as
+`sigma * influence_sigma`, so the search radius follows the optics rather than an
+unrelated hand-set number. With the values above, `sigma = 0.849"` and the
+influence radius is `4.25"`. It may legitimately fall below the aperture radius:
+a narrow PSF stops contributing leakage well inside a wide extraction circle. If
+it exceeds the index build radius, PHOTO-CAT recomputes neighbours directly from
+the catalogue for the queried targets, which is slower per target.
 
-```yaml
-query_contamination_from_index:
-  settings:
-    contamination_model:
-      mode: radial_weight
-      radial_weight_file: data/radial_weights.csv
-```
+`top_hat` has no PSF scale, so it searches the aperture radius only.
 
-The radial weight CSV must contain `sep_arcsec` and `weight` columns. These
-models are still catalogue-level screening approximations unless the weights
-come from an instrument-specific PSF/aperture calibration.
+Alongside the weights, `gaussian_psf` also reports aperture-integrated metrics
+(`effective_target_flux`, `effective_contaminating_flux`, `contamination_ratio`,
+`target_purity`), which integrate the circular Gaussian over the offset aperture.
+
+This remains a catalogue-level screening approximation unless the FWHM comes from
+an instrument-specific PSF calibration.
 
 ### Empirical mission-band transformations
 

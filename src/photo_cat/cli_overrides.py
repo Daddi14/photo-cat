@@ -58,7 +58,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "settings": {
             "field_of_view_arcsec": 47.0,
-            "influence_radius_arcsec": 47.0,
             "delta_mag": 5.0,
             "include_missing_targets": False,
             "contamination_bands": ["gaia_g"],
@@ -66,7 +65,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "contamination_model": {
                 "mode": "top_hat",
                 "gaussian_fwhm_arcsec": None,
-                "radial_weight_file": None,
+                "influence_sigma": None,
             },
         },
     },
@@ -97,14 +96,13 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "targets": ("query_contamination_from_index", "io", "targets"),
     "target_source_id_column": ("query_contamination_from_index", "io", "target_source_id_column"),
     "field_of_view_arcsec": ("query_contamination_from_index", "settings", "field_of_view_arcsec"),
-    "influence_radius_arcsec": ("query_contamination_from_index", "settings", "influence_radius_arcsec"),
     "delta_mag": ("query_contamination_from_index", "settings", "delta_mag"),
     "include_missing_targets": ("query_contamination_from_index", "settings", "include_missing_targets"),
     "contamination_bands": ("query_contamination_from_index", "settings", "contamination_bands"),
     "bandpass_transform_file": ("query_contamination_from_index", "settings", "bandpass_transform_file"),
     "contamination_model_mode": ("query_contamination_from_index", "settings", "contamination_model", "mode"),
     "gaussian_fwhm_arcsec": ("query_contamination_from_index", "settings", "contamination_model", "gaussian_fwhm_arcsec"),
-    "radial_weight_file": ("query_contamination_from_index", "settings", "contamination_model", "radial_weight_file"),
+    "influence_sigma": ("query_contamination_from_index", "settings", "contamination_model", "influence_sigma"),
     "run_build": ("execution", "run_build"),
     "run_query": ("execution", "run_query"),
     "replace_running_pipeline": ("execution", "replace_running_pipeline"),
@@ -116,7 +114,6 @@ PATH_OVERRIDE_NAMES = {
     "out_dir",
     "index_dir",
     "targets_input",
-    "radial_weight_file",
     "bandpass_transform_file",
 }
 

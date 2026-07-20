@@ -15,7 +15,7 @@ from photo_cat.query_contamination_from_index import (
     source_id_from_internal_id,
     valid_neighbor_indices,
 )
-from photo_cat.load_config import ContaminationModelConfig
+from photo_cat.load_config import CONTAMINATION_MODES, GAUSSIAN_FWHM_TO_SIGMA, ContaminationModelConfig
 
 
 @pytest.mark.unit
@@ -75,19 +75,6 @@ def test_gaussian_contamination_weights_decline_with_radius() -> None:
 
 
 @pytest.mark.unit
-def test_gaussian_aperture_models_offset_flux_and_normalizes_target() -> None:
-    """Integrated Gaussian throughput should include diminishing light beyond the aperture edge."""
-    weights = contamination_weights(
-        np.array([0.0, 10.0, 30.0]),
-        ContaminationModelConfig(mode="gaussian_aperture", gaussian_fwhm_arcsec=10.0),
-        aperture_radius_arcsec=10.0,
-    )
-
-    assert weights[0] == pytest.approx(1.0)
-    assert 0.0 < weights[2] < weights[1] < weights[0]
-
-
-@pytest.mark.unit
 def test_top_hat_has_no_flux_response_outside_aperture() -> None:
     """The compatibility top-hat model must not invent leakage in an expanded influence radius."""
     weights = contamination_weights(
@@ -97,29 +84,6 @@ def test_top_hat_has_no_flux_response_outside_aperture() -> None:
     )
 
     assert weights.tolist() == [1.0, 0.0]
-
-
-@pytest.mark.unit
-def test_radial_weight_model_interpolates_table_and_clamps_beyond_last_row() -> None:
-    """The radial-weight model interpolates the table and drops to zero past its outer edge."""
-    table = (np.array([0.0, 10.0]), np.array([1.0, 0.0]))
-    weights = contamination_weights(
-        np.array([0.0, 5.0, 10.0, 15.0]),
-        ContaminationModelConfig(mode="radial_weight"),
-        radial_weight_table=table,
-    )
-
-    assert weights.tolist() == [1.0, 0.5, 0.0, 0.0]
-
-
-@pytest.mark.unit
-def test_radial_weight_model_requires_a_loaded_table() -> None:
-    """radial_weight cannot run without its sep/weight table loaded."""
-    with pytest.raises(ValueError, match="radial weight table"):
-        contamination_weights(
-            np.array([1.0]),
-            ContaminationModelConfig(mode="radial_weight"),
-        )
 
 
 @pytest.mark.unit
@@ -135,12 +99,7 @@ def test_unsupported_contamination_model_is_rejected() -> None:
 @pytest.mark.unit
 def test_weighter_registry_covers_exactly_the_supported_modes() -> None:
     """The registry must stay in sync with the modes accepted by the configuration parser."""
-    assert set(CONTAMINATION_WEIGHTERS) == {
-        "top_hat",
-        "gaussian_psf",
-        "gaussian_aperture",
-        "radial_weight",
-    }
+    assert set(CONTAMINATION_WEIGHTERS) == set(CONTAMINATION_MODES)
 
 
 @pytest.mark.unit
@@ -160,6 +119,9 @@ def test_psf_aperture_metrics_reports_ratio_purity_and_fraction() -> None:
     assert metrics["contamination_ratio"] == pytest.approx(1.0)
     assert metrics["target_purity"] == pytest.approx(0.5)
     assert metrics["contaminating_fraction"] == pytest.approx(0.5)
+    # The PSF width used for the metrics is reported in both forms.
+    assert metrics["fwhm_arcsec"] == pytest.approx(5.0)
+    assert metrics["sigma_arcsec"] == pytest.approx(5.0 / GAUSSIAN_FWHM_TO_SIGMA)
 
 
 @pytest.mark.unit
@@ -184,7 +146,7 @@ def test_psf_aperture_metrics_only_apply_to_gaussian_psf_models() -> None:
     top_hat = ContaminationModelConfig(mode="top_hat")
     assert psf_aperture_metrics(10.0, np.array([10.0]), np.array([True]), np.array([0.0]), top_hat, 10.0) is None
 
-    model = ContaminationModelConfig(mode="gaussian_aperture", gaussian_fwhm_arcsec=5.0)
+    model = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=5.0)
     empty = psf_aperture_metrics(10.0, np.empty(0), np.empty(0, dtype=bool), np.empty(0), model, 10.0)
     assert empty is not None
     assert empty["contamination_ratio"] == 0.0

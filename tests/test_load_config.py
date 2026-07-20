@@ -9,7 +9,14 @@ from typing import Callable
 
 import pytest
 
-from photo_cat.load_config import BuildConfig, ExecutionConfig, QueryConfig, load_config, resolve_config_path
+from photo_cat.load_config import (
+    GAUSSIAN_FWHM_TO_SIGMA,
+    BuildConfig,
+    ExecutionConfig,
+    QueryConfig,
+    load_config,
+    resolve_config_path,
+)
 
 
 @pytest.mark.unit
@@ -45,7 +52,8 @@ def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_
     assert query.TARGETS_INPUT == str((tmp_path / "targets.csv").resolve())
     assert query.field_of_view_arcsec == 47.0
     assert query.delta_mag == 5.0
-    assert query.influence_radius_arcsec == 47.0
+    # top_hat has no PSF scale, so the influence radius falls back to the aperture.
+    assert query.effective_influence_radius_arcsec == 47.0
     assert query.bandpass_transform_file is None
 
     assert isinstance(execution, ExecutionConfig)
@@ -65,7 +73,8 @@ def test_load_config_parses_multiband_and_contamination_model(
         1,
     ).replace(
         "delta_mag: 5.0",
-        "delta_mag: 5.0\n    contamination_bands: [gaia_g, gaia_bp]\n    contamination_model:\n      mode: gaussian_psf\n      gaussian_fwhm_arcsec: 30",
+        "delta_mag: 5.0\n    contamination_bands: [gaia_g, gaia_bp]\n    contamination_model:\n"
+        "      mode: gaussian_psf\n      gaussian_fwhm_arcsec: 30\n      influence_sigma: 4",
     )
 
     build = load_config("build_neighbors_index", str(write_config(modified)), validate_runtime=False)
@@ -77,21 +86,42 @@ def test_load_config_parses_multiband_and_contamination_model(
     assert query.contamination_bands == ["gaia_g", "gaia_bp"]
     assert query.contamination_model.mode == "gaussian_psf"
     assert query.contamination_model.gaussian_fwhm_arcsec == 30.0
+    assert query.contamination_model.influence_sigma == 4.0
 
 
 @pytest.mark.unit
-def test_query_influence_radius_must_cover_aperture(
+def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
     write_config: Callable[[str | None], Path],
     config_text: str,
 ) -> None:
-    """The leakage search cannot be smaller than the extraction aperture."""
+    """The outer radius follows the optics: sigma = FWHM / 2.3548, times the sigma count."""
     modified = config_text.replace(
-        "field_of_view_arcsec: 47.0",
-        "field_of_view_arcsec: 47.0\n    influence_radius_arcsec: 30.0",
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n    contamination_model:\n"
+        "      mode: gaussian_psf\n      gaussian_fwhm_arcsec: 2.0\n      influence_sigma: 5.0",
     )
 
-    with pytest.raises(ValueError, match="must be greater than or equal"):
-        load_config("query_contamination_from_index", str(write_config(modified)))
+    query = load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
+
+    assert query.contamination_model.sigma_arcsec == pytest.approx(2.0 / GAUSSIAN_FWHM_TO_SIGMA)
+    assert query.effective_influence_radius_arcsec == pytest.approx(5.0 * 2.0 / GAUSSIAN_FWHM_TO_SIGMA)
+    # A narrow PSF legitimately stops contributing well inside a wide aperture.
+    assert query.effective_influence_radius_arcsec < query.field_of_view_arcsec
+
+
+@pytest.mark.unit
+def test_gaussian_psf_requires_both_fwhm_and_sigma_count(
+    write_config: Callable[[str | None], Path],
+    config_text: str,
+) -> None:
+    """A Gaussian PSF without its sigma count has no derivable influence radius."""
+    modified = config_text.replace(
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n    contamination_model:\n      mode: gaussian_psf\n      gaussian_fwhm_arcsec: 2.0",
+    )
+
+    with pytest.raises(ValueError, match="influence_sigma"):
+        load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
 
 
 @pytest.mark.unit

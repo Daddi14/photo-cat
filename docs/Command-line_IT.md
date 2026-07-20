@@ -425,7 +425,7 @@ Le opzioni booleane supportano forma positiva e negativa:
 | `query_contamination_from_index.io.target_source_id_column` | `--target-source-id-column NAME` |
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--field-of-view-arcsec VALUE` |
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--aperture-radius-arcsec VALUE` (alias più chiaro) |
-| `query_contamination_from_index.settings.influence_radius_arcsec` | `--influence-radius-arcsec VALUE` |
+| `query_contamination_from_index.settings.contamination_model.influence_sigma` | `--influence-sigma VALUE` |
 | `query_contamination_from_index.settings.bandpass_transform_file` | `--bandpass-transform-file PATH` |
 | `query_contamination_from_index.settings.delta_mag` | `--delta-mag VALUE` |
 | `query_contamination_from_index.settings.include_missing_targets` | `--include-missing-targets` / `--no-include-missing-targets` |

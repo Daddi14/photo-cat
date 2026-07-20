@@ -13,9 +13,10 @@ Model scope
 -----------
 PHOTO-CAT's current query model is catalogue-level and aperture-like: it selects
 neighbouring catalogue sources inside a configured circular angular radius and
-estimates flux ratios from configured catalogue magnitude columns. Optional
-circular radial models estimate aperture throughput and leakage from a larger
-influence radius. It does not perform spatially varying or asymmetric PSF
+estimates flux ratios from configured catalogue magnitude columns. An optional
+circular Gaussian PSF model weights each source by its radial flux decay and
+estimates leakage out to a PSF-derived influence radius. It does not perform
+spatially varying or asymmetric PSF
 convolution, detector-pixel modelling, scattered-light modelling, or full
 spectral/passband integration. An optional provenance-tracked empirical colour
 transformation can estimate a calibrated mission band. Treat the result as a
@@ -86,9 +87,10 @@ Inputs (from config_and_run_new)
     - field_of_view_arcsec (float)
         Circular angular query radius (in arcsec) used as the screening aperture.
 
-    - influence_radius_arcsec (float | None)
-        Optional outer neighbour radius used to model weighted leakage from
-        sources outside the aperture.
+    - contamination_model.gaussian_fwhm_arcsec / contamination_model.influence_sigma
+        Gaussian PSF width and the number of standard deviations still counted.
+        Their product is the outer neighbour radius used to model weighted
+        leakage from sources outside the aperture.
 
     - delta_mag (float)
         Magnitude difference threshold. A contaminant is selected if:
@@ -148,7 +150,7 @@ from .index_manifest import (
 from .target_result import TargetResult
 from .contaminant import Contaminant
 from .logger_setup import get_logger
-from .load_config import ContaminationModelConfig, QueryConfig, load_config
+from .load_config import GAUSSIAN_FWHM_TO_SIGMA, ContaminationModelConfig, QueryConfig, load_config
 from .pipeline_display import ActivityBar, progress_bar
 from .path_policy import (
     IndexPaths,
@@ -696,37 +698,12 @@ def safe_band_name(band: str) -> str:
     return safe
 
 
-def load_radial_weight_table(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
-    """Load a radial aperture-weight CSV with sep_arcsec and weight columns."""
-    dataframe = pd.read_csv(path)
-    required = {"sep_arcsec", "weight"}
-    missing = required.difference(dataframe.columns)
-    if (missing):
-        raise ValueError(
-            "Radial weight CSV must contain sep_arcsec and weight columns. "
-            f"Missing: {', '.join(sorted(missing))}"
-        )
-    separations = pd.to_numeric(dataframe["sep_arcsec"], errors="coerce").to_numpy(dtype=np.float64)
-    weights = pd.to_numeric(dataframe["weight"], errors="coerce").to_numpy(dtype=np.float64)
-    valid = np.isfinite(separations) & np.isfinite(weights) & (separations >= 0.0)
-    separations = separations[valid]
-    weights = np.clip(weights[valid], 0.0, 1.0)
-    if (separations.size < 2):
-        raise ValueError("Radial weight CSV must contain at least two valid rows.")
-    order = np.argsort(separations, kind="stable")
-    return separations[order], weights[order]
-
-
-# Full-width-half-maximum to standard-deviation conversion factor, 2 * sqrt(2 * ln 2).
-GAUSSIAN_FWHM_TO_SIGMA = 2.3548200450309493
-
-
 def _gaussian_sigma_arcsec(fwhm_arcsec: float) -> float:
     """Convert a Gaussian FWHM in arcseconds to its standard deviation."""
     return float(fwhm_arcsec) / GAUSSIAN_FWHM_TO_SIGMA
 
 
-PSF_MODEL_MODES = ("gaussian_psf", "gaussian_aperture")
+PSF_MODEL_MODES = ("gaussian_psf",)
 
 
 def psf_aperture_metrics(
@@ -739,11 +716,13 @@ def psf_aperture_metrics(
 ) -> dict[str, float] | None:
     """Return integrated circular-Gaussian-PSF contamination metrics for one target.
 
-    Only produced for a Gaussian PSF model (``gaussian_psf``/``gaussian_aperture``),
+    Only produced for the Gaussian PSF model (``gaussian_psf``),
     which is defined solely by the FWHM. All fluxes are expressed in units of the
     target's total flux. With sigma = FWHM / (2*sqrt(2*ln 2)) and a circular aperture
     of radius R centred on the target:
 
+    - ``sigma_arcsec``  the PSF standard deviation the metrics were computed with,
+      reported alongside ``fwhm_arcsec`` so the result is self-describing.
     - ``effective_target_flux``  F_target = fraction of the target's own flux that
       falls inside the aperture = 1 - exp(-R^2 / (2*sigma^2)).
     - ``effective_contaminating_flux``  F_cont = sum over the selected contaminants of
@@ -785,6 +764,7 @@ def psf_aperture_metrics(
 
     return {
         "fwhm_arcsec": round(float(model.gaussian_fwhm_arcsec), 6),
+        "sigma_arcsec": round(sigma, 6),
         "aperture_radius_arcsec": round(float(aperture_radius_arcsec), 6),
         "effective_target_flux": round(effective_target_flux, 6),
         "effective_contaminating_flux": round(effective_contaminating_flux, 6),
@@ -797,7 +777,6 @@ def psf_aperture_metrics(
 def _top_hat_weights(
     separations_arcsec: np.ndarray,
     model: ContaminationModelConfig,
-    radial_weight_table: tuple[np.ndarray, np.ndarray] | None,
     aperture_radius_arcsec: float | None,
 ) -> np.ndarray:
     """Compatibility model: full weight inside the aperture, none beyond it."""
@@ -809,78 +788,38 @@ def _top_hat_weights(
 def _gaussian_psf_weights(
     separations_arcsec: np.ndarray,
     model: ContaminationModelConfig,
-    radial_weight_table: tuple[np.ndarray, np.ndarray] | None,
     aperture_radius_arcsec: float | None,
 ) -> np.ndarray:
-    """Radial Gaussian point-spread-function response, peaking at the centre."""
+    """Radial Gaussian point-spread-function response, peaking at the centre.
+
+    Each source's flux decays as exp(-r^2 / 2*sigma^2) with angular distance from
+    the aperture centre, so a contaminant contributes less the further out it sits.
+    """
     if (model.gaussian_fwhm_arcsec is None):
         raise ValueError("gaussian_fwhm_arcsec is required for gaussian_psf contamination weighting.")
     sigma = _gaussian_sigma_arcsec(model.gaussian_fwhm_arcsec)
     return np.exp(-0.5 * (separations_arcsec / sigma) ** 2)
 
 
-def _gaussian_aperture_weights(
-    separations_arcsec: np.ndarray,
-    model: ContaminationModelConfig,
-    radial_weight_table: tuple[np.ndarray, np.ndarray] | None,
-    aperture_radius_arcsec: float | None,
-) -> np.ndarray:
-    """Integrated Gaussian throughput captured by a circular aperture, target-normalised."""
-    if (model.gaussian_fwhm_arcsec is None):
-        raise ValueError("gaussian_fwhm_arcsec is required for gaussian_aperture weighting.")
-    if (aperture_radius_arcsec is None or aperture_radius_arcsec <= 0.0):
-        raise ValueError("A positive aperture radius is required for gaussian_aperture weighting.")
-    sigma = _gaussian_sigma_arcsec(model.gaussian_fwhm_arcsec)
-    radius_squared = (float(aperture_radius_arcsec) / sigma) ** 2
-    centered_throughput = float(ncx2.cdf(radius_squared, df=2, nc=0.0))
-    if (not np.isfinite(centered_throughput) or centered_throughput <= 0.0):
-        raise ValueError("Could not normalize gaussian_aperture throughput for these settings.")
-    noncentrality = (np.asarray(separations_arcsec, dtype=np.float64) / sigma) ** 2
-    captured = ncx2.cdf(radius_squared, df=2, nc=noncentrality)
-    return np.clip(np.asarray(captured, dtype=np.float64) / centered_throughput, 0.0, 1.0)
-
-
-def _radial_weight_weights(
-    separations_arcsec: np.ndarray,
-    model: ContaminationModelConfig,
-    radial_weight_table: tuple[np.ndarray, np.ndarray] | None,
-    aperture_radius_arcsec: float | None,
-) -> np.ndarray:
-    """Empirical radial weighting interpolated from a user-provided sep/weight table."""
-    if (radial_weight_table is None):
-        raise ValueError("radial_weight contamination weighting requires a loaded radial weight table.")
-    radial_separations, radial_weights = radial_weight_table
-    return np.interp(
-        separations_arcsec,
-        radial_separations,
-        radial_weights,
-        left=radial_weights[0],
-        right=0.0,
-    )
-
-
 # Registry of contamination-weighting models. Adding a model is a single entry here,
-# and each weighter shares the (separations, model, radial_weight_table, aperture)
-# signature so it can be selected by name without a branching dispatch.
+# and each weighter shares the (separations, model, aperture) signature so it can be
+# selected by name without a branching dispatch.
 CONTAMINATION_WEIGHTERS = {
     "top_hat": _top_hat_weights,
     "gaussian_psf": _gaussian_psf_weights,
-    "gaussian_aperture": _gaussian_aperture_weights,
-    "radial_weight": _radial_weight_weights,
 }
 
 
 def contamination_weights(
     separations_arcsec: np.ndarray,
     model: ContaminationModelConfig,
-    radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
     aperture_radius_arcsec: float | None = None,
 ) -> np.ndarray:
     """Return per-neighbour aperture/PSF weights for the configured model."""
     weighter = CONTAMINATION_WEIGHTERS.get(model.mode)
     if (weighter is None):
         raise ValueError(f"Unsupported contamination model: {model.mode}")
-    return weighter(separations_arcsec, model, radial_weight_table, aperture_radius_arcsec)
+    return weighter(separations_arcsec, model, aperture_radius_arcsec)
 
 
 def manifest_magnitude_bands(manifest: IndexManifest) -> dict[str, dict[str, str]]:
@@ -1055,7 +994,6 @@ def process_target(
     delta_mag: float,
     neighbor_separations_mm: Optional[np.ndarray] = None,
     contamination_model: ContaminationModelConfig | None = None,
-    radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
     influence_radius_arcsec: float | None = None,
     bandpass_status_codes: np.ndarray | None = None,
@@ -1071,9 +1009,10 @@ def process_target(
     """
     contamination_model = contamination_model or ContaminationModelConfig()
     magnitude_arrays = magnitude_arrays or {}
+    # A PSF-derived influence radius may fall below the aperture: a narrow PSF stops
+    # contributing leakage well inside a wide extraction circle. Only the aperture
+    # itself bounds the selected contaminants.
     influence_radius_arcsec = field_of_view_arcsec if influence_radius_arcsec is None else influence_radius_arcsec
-    if (influence_radius_arcsec < field_of_view_arcsec):
-        raise ValueError("influence_radius_arcsec must be greater than or equal to field_of_view_arcsec.")
     number_of_sources = ra.shape[0]
     if (internal_target < 1 or internal_target > number_of_sources):
         logger.warning("internal_target %s out of range; skipping.", internal_target)
@@ -1162,7 +1101,6 @@ def process_target(
     weights = contamination_weights(
         contaminant_separations,
         contamination_model,
-        radial_weight_table,
         field_of_view_arcsec,
     )
     psf_metrics = psf_aperture_metrics(
@@ -1309,7 +1247,6 @@ def loop_over_targets(
     targets_internal: list[int],
     neighbor_separations_mm: Optional[np.ndarray] = None,
     contamination_model: ContaminationModelConfig | None = None,
-    radial_weight_table: tuple[np.ndarray, np.ndarray] | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
     influence_radius_arcsec: float | None = None,
     bandpass_status_codes: np.ndarray | None = None,
@@ -1338,7 +1275,6 @@ def loop_over_targets(
             delta_mag,
             neighbor_separations_mm,
             contamination_model,
-            radial_weight_table,
             magnitude_arrays,
             influence_radius_arcsec,
             bandpass_status_codes,
@@ -1490,12 +1426,6 @@ def main(config_path: str | Path | None = None) -> int:
                 shape=(total_neighbors,),
             )
 
-    radial_weight_table = None
-    if (config_query.contamination_model.mode == "radial_weight"):
-        if (config_query.contamination_model.radial_weight_file is None):
-            raise ValueError("radial_weight contamination model requires radial_weight_file.")
-        radial_weight_table = load_radial_weight_table(config_query.contamination_model.radial_weight_file)
-
     bandpass_profile = None
     if (config_query.bandpass_transform_file is not None):
         bandpass_profile = load_bandpass_profile(config_query.bandpass_transform_file)
@@ -1579,7 +1509,6 @@ def main(config_path: str | Path | None = None) -> int:
         targets_internal=targets_internal,
         neighbor_separations_mm=neighbor_separations_mm,
         contamination_model=config_query.contamination_model,
-        radial_weight_table=radial_weight_table,
         magnitude_arrays=magnitude_arrays,
         influence_radius_arcsec=config_query.effective_influence_radius_arcsec,
         bandpass_status_codes=bandpass_status_codes,
