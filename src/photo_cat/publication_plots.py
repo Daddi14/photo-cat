@@ -28,11 +28,30 @@ SKY_MAP_CLASSES: tuple[dict[str, Any], ...] = (
     {"key": "crowded", "label": ">3 contaminants", "color": "#D55E00", "marker": "o", "size": 2.0},
 )
 PUBLICATION_HISTOGRAM_COLOR = "#4477AA"
-# Publication-scale typography: axis labels and tick labels large enough to stay
-# legible once a figure is reduced to a single journal column.
-AXIS_LABEL_FONTSIZE = 14
-TICK_LABEL_FONTSIZE = 12
-LEGEND_FONTSIZE = 11
+# Font sizes are absolute points while these figures differ in size, so one shared
+# value reads large on the 6x4 density plot and small on the 12x6 sky map. Each plot
+# therefore carries typography tuned to its own figsize: larger figures take larger
+# points to keep the apparent size consistent once the figure is scaled to a column.
+# Tune a single figure by editing its entry here.
+PLOT_TYPOGRAPHY: dict[str, dict[str, int]] = {
+    # figsize (10, 6)
+    "contaminant_count_distribution": {"axis_label": 16, "tick_label": 14, "legend": 14},
+    # figsize (10, 6)
+    "separation_distribution": {"axis_label": 16, "tick_label": 14, "legend": 12},
+    # figsize (6, 4) - the smallest figure, so the smallest points
+    "separation_density_distribution": {"axis_label": 14, "tick_label": 12, "legend": 11},
+    # figsize (12, 6) - the largest figure, so the largest points
+    "contamination_sky_map": {"axis_label": 18, "tick_label": 15, "legend": 13},
+}
+
+
+def _apply_axis_typography(ax, plot_key: str) -> None:
+    """Apply this plot's tuned label and tick typography to a finished axis."""
+    fonts = PLOT_TYPOGRAPHY[plot_key]
+    ax.xaxis.label.set_fontsize(fonts["axis_label"])
+    ax.yaxis.label.set_fontsize(fonts["axis_label"])
+    ax.tick_params(axis="both", which="major", labelsize=fonts["tick_label"], length=6, width=1.5)
+    ax.tick_params(axis="both", which="minor", length=3, width=1.0)
 
 
 def _coerce_float(value: Any) -> float:
@@ -100,8 +119,8 @@ def _contaminant_count_plot(rows: list[dict[str, Any]], aperture_arcsec: float, 
     ax.set_yscale("log")
     ax.set_xlabel("Number of contaminants")
     ax.set_ylabel("Number of Stars")
-    ax.tick_params(axis="both", which="both", labelsize=11)
-    ax.legend(fontsize=11)
+    _apply_axis_typography(ax, "contaminant_count_distribution")
+    ax.legend(fontsize=PLOT_TYPOGRAPHY["contaminant_count_distribution"]["legend"])
     ax.grid(alpha=0.2, which="both")
     saved = _save_figure(fig, destination, dpi)
     plt.close(fig)
@@ -119,9 +138,9 @@ def _separation_plot(rows: list[dict[str, Any]], destination: Path, dpi: int) ->
         ax.set_yscale("log")
     ax.set_xlabel("Separation (arcsec)")
     ax.set_ylabel("Number of contaminants")
-    ax.tick_params(axis="both", which="both", labelsize=11)
+    _apply_axis_typography(ax, "separation_distribution")
     ax.grid(alpha=0.2, which="both")
-    ax.legend(fontsize=10)
+    ax.legend(fontsize=PLOT_TYPOGRAPHY["separation_distribution"]["legend"])
     saved = _save_figure(fig, destination, dpi)
     plt.close(fig)
     return saved
@@ -153,11 +172,11 @@ def _separation_density_plot(rows: list[dict[str, Any]], aperture_arcsec: float,
 
     fig, ax = plt.subplots(figsize=(6, 4), constrained_layout=True)
     ax.step(centers, density, where="mid", linewidth=2, color=PUBLICATION_HISTOGRAM_COLOR)
-    ax.set_xlabel("Separation (arcsec)", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel(r"Contaminant density (arcsec$^{-2}$)", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_xlabel("Separation (arcsec)")
+    ax.set_ylabel(r"Contaminant density (arcsec$^{-2}$)")
     if (np.any(density > 0.0)):
         ax.set_yscale("log")
-    ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_FONTSIZE, length=6, width=1.5)
+    _apply_axis_typography(ax, "separation_density_distribution")
     saved = _save_figure(fig, destination, dpi)
     plt.close(fig)
     return saved
@@ -203,10 +222,9 @@ def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: i
     )
     ax.set_xlim(0.0, 360.0)
     ax.set_ylim(-90.0, 90.0)
-    ax.set_xlabel("RA [deg]", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("Dec [deg]", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_FONTSIZE, length=6, width=1.5)
-    ax.tick_params(axis="both", which="minor", length=3, width=1.0)
+    ax.set_xlabel("RA [deg]")
+    ax.set_ylabel("Dec [deg]")
+    _apply_axis_typography(ax, "contamination_sky_map")
     ax.grid(alpha=0.15)
     # A single-pass scatter has no per-class labels, so build the colour legend
     # from proxy handles.
@@ -214,7 +232,7 @@ def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: i
         plt.Line2D([], [], marker="o", linestyle="", color=str(style["color"]), markersize=6, label=str(style["label"]))
         for style in SKY_MAP_CLASSES
     ]
-    ax.legend(handles=legend_handles, loc="upper right", fontsize=LEGEND_FONTSIZE)
+    ax.legend(handles=legend_handles, loc="upper right", fontsize=PLOT_TYPOGRAPHY["contamination_sky_map"]["legend"])
     saved = _save_figure(fig, destination, dpi)
     plt.close(fig)
     return saved
