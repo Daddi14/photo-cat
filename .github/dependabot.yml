@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Keep GitHub Actions and Python dependencies current with weekly update PRs.
 version: 2
+
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -16,5 +17,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    versioning-strategy: "increase-if-necessary"
     commit-message:
       prefix: "deps"
