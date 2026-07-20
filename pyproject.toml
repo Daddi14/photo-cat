@@ -43,7 +43,7 @@ photo-cat-query-contamination = "photo_cat.query_contamination_from_index:main"
 photo-cat-doctor = "photo_cat.doctor:main"
 
 [tool.poetry.group.dev.dependencies]
-pytest = ">=8.0"
+pytest = ">=9.1.1"
 pytest-cov = ">=5.0"
 build = ">=1.0"
 ruff = ">=0.6"
