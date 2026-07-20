@@ -51,12 +51,12 @@ The index is stored in a CSR-like layout plus a compact ID mapping:
     - special_ids.npz
         Compressed NPZ file with two arrays:
             * internal_ids : int64[:]  -> internal_id values for rows with non-numeric IDs
-            * names    : object[:] -> the original string IDs for those rows
+            * names    : unicode[:] -> the original string IDs for those rows
         Only a tiny subset of the catalog (e.g. ~2000 rows) will be stored here.
 
-    - ckdtree.pkl
-        Pickled scipy.spatial.cKDTree built on 3D unit vectors (RA/Dec on sphere)
-        for fast neighbor queries. Reused to resume computations.
+    - index_manifest.json
+        Versioned completion metadata tying the index to its catalogue, radius,
+        counts, and safe on-disk format.
 
 Key ideas
 ---------
@@ -64,8 +64,8 @@ Key ideas
       for angular neighbor searches on the sphere.
     - Process sources in chunks to keep memory usage under control.
     - Stream neighbors to disk with small Python buffers and periodic flushes.
-    - Save a checkpoint with CSR offsets and total neighbor count to resume
-      after interruptions without restarting from scratch.
+    - Save an atomic, input-bound checkpoint with CSR offsets and total neighbor
+      count to resume after interruptions without restarting from scratch.
 
 Inputs (from config_and_run_new)
 --------------------------------
@@ -103,11 +103,12 @@ All files listed above are created under out_dir.
 """
 
 import csv
+import re
 import os
-import pickle
 import sys
+from contextlib import contextmanager
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Iterator
 
 import numpy as np
 import pandas as pd
@@ -115,13 +116,64 @@ from scipy.spatial import cKDTree
 from tqdm import tqdm
 from numpy.typing import NDArray
 
+from .index_manifest import (
+    INDEX_MANIFEST_FILENAME,
+    IndexManifest,
+    atomic_save_npy,
+    atomic_save_npz,
+    build_signature,
+    load_index_manifest,
+    sha256_file,
+    validate_index_structure,
+    write_index_manifest,
+)
 from .logger_setup import get_logger
-from .load_config import load_config
-from .path_policy import ensure_directory
-from .pipeline_display import ActivityBar, progress_bar, tqdm_options
+from .load_config import BuildConfig, load_config
+from .path_policy import ensure_directory, index_paths
+from .pipeline_display import ActivityBar, tqdm_options
 
 
 logger = get_logger(__name__)
+
+
+@contextmanager
+def exclusive_build_lock(out_dir: str | Path) -> Iterator[None]:
+    """Hold a cross-platform advisory lock for one index output directory."""
+    lock_path = Path(out_dir) / ".photo-cat-build.lock"
+    lock_file = lock_path.open("a+b")
+    if (lock_file.seek(0, os.SEEK_END) == 0):
+        lock_file.write(b"\0")
+        lock_file.flush()
+    lock_file.seek(0)
+
+    try:
+        if (sys.platform == "win32"):
+            import msvcrt
+
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as error:
+        lock_file.close()
+        raise RuntimeError(
+            f"Another PHOTO-CAT build is already using this output directory: {out_dir}"
+        ) from error
+
+    try:
+        yield
+    finally:
+        lock_file.seek(0)
+        if (sys.platform == "win32"):
+            import msvcrt
+
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file.close()
 
 
 def read_csv_header(input_catalog: str) -> list[str]:
@@ -181,7 +233,8 @@ def load_star_dataframe(
     source_id_column: str = "source_id",
     ra_column: str = "ra",
     dec_column: str = "dec",
-    phot_g_mean_mag_column: str = "phot_g_mean_mag"
+    phot_g_mean_mag_column: str = "phot_g_mean_mag",
+    magnitude_columns: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
     Load the star catalog from CSV using pandas or Dask, keep only valid rows,
@@ -211,12 +264,16 @@ def load_star_dataframe(
     logger.info(f"Loading catalog: {input_catalog}")
     logger.info(f"Using {'Dask' if use_dask else 'Pandas'}...")
 
+    magnitude_columns = {"gaia_g": phot_g_mean_mag_column, **(magnitude_columns or {})}
     usecolumns = [
         source_id_column,
         ra_column,
         dec_column,
         phot_g_mean_mag_column,
     ]
+    for column in magnitude_columns.values():
+        if (column not in usecolumns):
+            usecolumns.append(column)
 
     if (any(column == "" for column in usecolumns)):
         raise ValueError("Catalog column names cannot be empty.")
@@ -229,6 +286,9 @@ def load_star_dataframe(
     logger.info(f" - ra: {ra_column}")
     logger.info(f" - dec: {dec_column}")
     logger.info(f" - phot_g_mean_mag: {phot_g_mean_mag_column}")
+    if (len(magnitude_columns) > 1):
+        for band, column in sorted(magnitude_columns.items()):
+            logger.info(f" - magnitude band {band}: {column}")
 
     validate_required_columns(input_catalog, usecolumns)
 
@@ -267,7 +327,15 @@ def load_star_dataframe(
         }
     )
 
+    for band, source_column in magnitude_columns.items():
+        safe_band = safe_band_name(band)
+        if (source_column == phot_g_mean_mag_column):
+            continue
+        band_column = f"magnitude_{safe_band}"
+        star_dataframe[band_column] = star_dataframe[source_column]
+
     logger.info(f"Loaded {len(star_dataframe)} rows.")
+    logger.info("Validating and cleaning catalog rows (this can take a while for very large catalogs)...")
 
     if (len(star_dataframe) == 0):
         raise ValueError(
@@ -275,7 +343,12 @@ def load_star_dataframe(
             "Add at least one catalog row below the header."
         )
 
-    numeric_columns = ["ra", "dec", "phot_g_mean_mag"]
+    band_numeric_columns = [
+        f"magnitude_{safe_band_name(band)}"
+        for band, source_column in magnitude_columns.items()
+        if (source_column != phot_g_mean_mag_column)
+    ]
+    numeric_columns = ["ra", "dec", "phot_g_mean_mag", *band_numeric_columns]
     numeric_errors = []
     for column in numeric_columns:
         star_dataframe[column] = pd.to_numeric(star_dataframe[column], errors="coerce")
@@ -312,6 +385,58 @@ def load_star_dataframe(
 
     final_star_dataframe['source_id'] = final_star_dataframe['source_id'].astype(str)
 
+    finite_rows = np.isfinite(
+        final_star_dataframe[["ra", "dec", "phot_g_mean_mag"]].to_numpy(dtype=np.float64)
+    ).all(axis=1)
+    coordinate_rows = (
+        (final_star_dataframe["ra"] >= 0.0)
+        & (final_star_dataframe["ra"] < 360.0)
+        & (final_star_dataframe["dec"] >= -90.0)
+        & (final_star_dataframe["dec"] <= 90.0)
+    )
+    valid_rows = finite_rows & coordinate_rows
+    invalid_coordinate_count = int((~valid_rows).sum())
+    if (invalid_coordinate_count):
+        logger.warning(
+            "Dropped %s catalog rows with non-finite or out-of-range RA/Dec/magnitude values.",
+            invalid_coordinate_count,
+        )
+        final_star_dataframe = final_star_dataframe.loc[valid_rows].reset_index(drop=True)
+
+    if (final_star_dataframe.empty):
+        raise ValueError(
+            "No valid catalog rows remain after coordinate validation. "
+            "RA must be in [0, 360), Dec in [-90, 90], and magnitudes must be finite."
+        )
+
+    duplicate_ids = final_star_dataframe["source_id"].duplicated(keep=False)
+    if (duplicate_ids.any()):
+        examples = ", ".join(final_star_dataframe.loc[duplicate_ids, "source_id"].unique()[:8])
+        raise ValueError(
+            "Catalog source_id values must be unique because query targets map to one row. "
+            f"Duplicate examples: {examples}"
+        )
+
+    with ActivityBar("[validating source IDs]"):
+        canonical_ids: list[tuple[str, object]] = []
+        for source_id in final_star_dataframe["source_id"]:
+            try:
+                numeric_id = int(source_id)
+            except (TypeError, ValueError):
+                canonical_ids.append(("text", source_id))
+            else:
+                if (0 <= numeric_id <= np.iinfo(np.int64).max):
+                    canonical_ids.append(("numeric", numeric_id))
+                else:
+                    canonical_ids.append(("text", source_id))
+        canonical_duplicates = pd.Series(canonical_ids).duplicated(keep=False)
+    if (canonical_duplicates.any()):
+        examples = ", ".join(final_star_dataframe.loc[canonical_duplicates, "source_id"].unique()[:8])
+        raise ValueError(
+            "Catalog source_id values must remain unique after numeric normalization. "
+            f"Ambiguous examples: {examples}"
+        )
+
     # Assign monotonically increasing internal IDs for internal indexing.
     # These will be used to:
     #   - store neighbors in neighbors_ids.bin
@@ -324,6 +449,27 @@ def load_star_dataframe(
 
     logger.info(f"Final catalog contains {len(final_star_dataframe)} valid rows.\n")
     return final_star_dataframe
+
+
+def safe_band_name(band: str) -> str:
+    """Return a stable filesystem-safe magnitude-band identifier."""
+    safe = re.sub(r"[^0-9A-Za-z_]+", "_", str(band).strip().lower()).strip("_")
+    if (safe == ""):
+        raise ValueError("Magnitude band names cannot be empty.")
+    return safe
+
+
+def magnitude_band_manifest(magnitude_columns: dict[str, str], phot_g_mean_mag_column: str) -> dict[str, dict[str, str]]:
+    """Describe persisted magnitude arrays for query-time multi-band metrics."""
+    manifest: dict[str, dict[str, str]] = {}
+    for band, source_column in magnitude_columns.items():
+        safe_band = safe_band_name(band)
+        array_file = "phot_g_mean_mag.npy" if (source_column == phot_g_mean_mag_column) else f"magnitude_{safe_band}.npy"
+        manifest[band] = {
+            "catalog_column": source_column,
+            "array_file": array_file,
+        }
+    return manifest
 
 
 def convert_ra_dec_to_unit_vectors(
@@ -347,19 +493,20 @@ def convert_ra_dec_to_unit_vectors(
     """
     logger.info("Converting RA/Dec to 3D unit vectors...")
 
-    ra_rad = np.deg2rad(final_star_dataframe['ra'].values.astype(np.float64))
-    dec_rad = np.deg2rad(final_star_dataframe['dec'].values.astype(np.float64))
+    with ActivityBar("[converting coordinates]"):
+        ra_rad = np.deg2rad(final_star_dataframe['ra'].values.astype(np.float64))
+        dec_rad = np.deg2rad(final_star_dataframe['dec'].values.astype(np.float64))
 
-    x = np.cos(dec_rad) * np.cos(ra_rad)
-    y = np.cos(dec_rad) * np.sin(ra_rad)
-    z = np.sin(dec_rad)
+        x = np.cos(dec_rad) * np.cos(ra_rad)
+        y = np.cos(dec_rad) * np.sin(ra_rad)
+        z = np.sin(dec_rad)
 
-    # Stack into an (N, 3) array.
-    coords = np.hstack([
-        x[:, None],
-        y[:, None],
-        z[:, None]
-    ]).astype(np.float64)
+        # Stack into an (N, 3) array.
+        coords = np.hstack([
+            x[:, None],
+            y[:, None],
+            z[:, None]
+        ]).astype(np.float64)
 
     logger.info(f"Converted {len(coords)} coordinates to 3D unit vectors.\n")
     return coords
@@ -394,53 +541,31 @@ def compute_chord_radius(max_radius_arcsec: float) -> np.float64:
 
 def build_or_load_kdtree(
     coords: np.ndarray,
-    out_dir: str,
-    kdtree_filename: str = "ckdtree.pkl"
-) -> tuple[cKDTree, str]:
+) -> cKDTree:
     """
-    Build a cKDTree on the 3D unit vectors, or load a previously built tree
-    from disk if it exists.
+    Build a cKDTree without deserializing executable pickle payloads.
 
     Parameters
     ----------
     coords : numpy.ndarray
         Unit vectors with shape (N, 3).
 
-    out_dir : str
-        Directory where the KDTree pickle is stored or should be created.
-
-    kdtree_filename : str, optional
-        File name for the KDTree pickle (default: "ckdtree.pkl").
-
     Returns
     -------
     coordinate_tree : scipy.spatial.cKDTree
         KDTree instance ready for query_ball_point searches.
-
-    tree_path : str
-        Full path to the KDTree pickle file.
     """
-    tree_path = os.path.join(out_dir, kdtree_filename)
+    logger.info("Building cKDTree in memory...")
+    with ActivityBar("[building KDTree]"):
+        coordinate_tree = cKDTree(coords)
 
-    if os.path.exists(tree_path):
-        logger.info(f"Loading existing KDTree from {tree_path} ...")
-        with ActivityBar("[loading KDTree]"):
-            with open(tree_path, "rb") as f:
-                coordinate_tree = pickle.load(f)
-    else:
-        logger.info("Building cKDTree...")
-        with ActivityBar("[building KDTree]"):
-            coordinate_tree = cKDTree(coords)
-            with open(tree_path, "wb") as f:
-                pickle.dump(coordinate_tree, f)
-        logger.info(f"Saved KDTree to {tree_path}")
-
-    return coordinate_tree, tree_path
+    return coordinate_tree
 
 
 def resume_from_checkpoint(
     checkpoint_path: str,
-    number_of_stars_in_dataframe: int
+    number_of_stars_in_dataframe: int,
+    expected_build_signature: str,
 ) -> tuple[int, np.ndarray, int]:
     """
     Load or initialize CSR offsets and progress for a resumable run.
@@ -473,15 +598,40 @@ def resume_from_checkpoint(
     checkpoint_index = 0
 
     if os.path.exists(checkpoint_path):
-        checkpoint = np.load(checkpoint_path)
-        checkpoint_index = int(checkpoint["start_index"])
+        try:
+            with np.load(checkpoint_path, allow_pickle=False) as checkpoint:
+                checkpoint_signature = str(checkpoint["build_signature"].item())
+                checkpoint_index = int(checkpoint["start_index"])
+                offsets = checkpoint["offsets"].astype(np.int64, copy=True)
+                checkpoint_total = int(checkpoint["total"])
+        except (KeyError, OSError, ValueError) as error:
+            raise ValueError(
+                f"Resume checkpoint is malformed: {checkpoint_path}. "
+                "Remove it to start a clean rebuild."
+            ) from error
 
-        if checkpoint_index >= number_of_stars_in_dataframe:
-            logger.info("Checkpoint indicates index already completed.")
-
-        offsets = checkpoint["offsets"]
-        checkpoint_total = int(checkpoint["total"])
-        logger.info(f"[RESUME] Found checkpoint. Resuming from index {checkpoint_index}.")
+        if (checkpoint_signature != expected_build_signature):
+            logger.warning("Ignoring a stale checkpoint created from different build inputs.")
+            checkpoint_index = 0
+            offsets = np.empty(number_of_stars_in_dataframe + 1, dtype=np.int64)
+            offsets[0] = 0
+            checkpoint_total = 0
+        elif (
+            checkpoint_index < 0
+            or checkpoint_index > number_of_stars_in_dataframe
+            or offsets.shape != (number_of_stars_in_dataframe + 1,)
+            or checkpoint_total < 0
+            or int(offsets[checkpoint_index]) != checkpoint_total
+        ):
+            raise ValueError(
+                "Resume checkpoint does not match its catalog dimensions or binary progress. "
+                "Remove it to start a clean rebuild."
+            )
+        else:
+            if checkpoint_index == number_of_stars_in_dataframe:
+                logger.info("Checkpoint contains all neighbour blocks; finalizing index outputs.")
+            else:
+                logger.info(f"[RESUME] Found checkpoint. Resuming from index {checkpoint_index}.")
     else:
         # Fresh run: allocate offsets (N+1) and start at 0 neighbors.
         offsets = np.empty(number_of_stars_in_dataframe + 1, dtype=np.int64)
@@ -531,13 +681,48 @@ def flush_neighbor_buffers(
         separations_buffer.clear()
 
 
-def write_checkpoint(checkpoint_path: str, start_index: int, offsets: NDArray[np.int64], total: int) -> None:
+def reconcile_resume_file(
+    temporary_path: str,
+    final_path: str,
+    expected_size: int,
+    *,
+    checkpoint_complete: bool,
+) -> None:
+    """Truncate uncheckpointed bytes or recover a file already finalized before a crash."""
+    temporary = Path(temporary_path)
+    final = Path(final_path)
+    if (not temporary.exists()):
+        if (checkpoint_complete and final.is_file() and final.stat().st_size == expected_size):
+            return
+        raise ValueError(
+            f"Resume data is missing: {temporary}. Remove resume_checkpoint.npz to rebuild cleanly."
+        )
+
+    actual_size = temporary.stat().st_size
+    if (actual_size < expected_size):
+        raise ValueError(
+            f"Resume data is truncated: {temporary}. Remove resume_checkpoint.npz to rebuild cleanly."
+        )
+    if (actual_size > expected_size):
+        logger.warning("Discarding %s uncheckpointed byte(s) from %s.", actual_size - expected_size, temporary)
+        with temporary.open("r+b") as file:
+            file.truncate(expected_size)
+
+
+def write_checkpoint(
+    checkpoint_path: str,
+    start_index: int,
+    offsets: NDArray[np.int64],
+    total: int,
+    build_signature_value: str,
+) -> None:
     """Persist resumable CSR progress after complete output blocks."""
-    np.savez(
+    atomic_save_npz(
         checkpoint_path,
-        start_index=start_index,
+        start_index=np.array(start_index, dtype=np.int64),
         offsets=offsets,
-        total=total,
+        total=np.array(total, dtype=np.int64),
+        build_signature=np.array(build_signature_value),
     )
 
 
@@ -556,6 +741,7 @@ def calculate_contaminants(
     buffer_flush_interval: int,
     calculate_separations: bool,
     checkpoint_path: str,
+    build_signature_value: str,
 ) -> tuple[pd.DataFrame, NDArray[np.int64], int]:
     """Build the resumable CSR neighbour index without mixing I/O helper responsibilities."""
     logger.info("Building neighbor index (resumable mode)...")
@@ -610,7 +796,18 @@ def calculate_contaminants(
                     separations_file,
                     calculate_separations,
                 )
-                write_checkpoint(checkpoint_path, end, offsets, checkpoint_total)
+                neighbors_file.flush()
+                os.fsync(neighbors_file.fileno())
+                if (separations_file is not None):
+                    separations_file.flush()
+                    os.fsync(separations_file.fileno())
+                write_checkpoint(
+                    checkpoint_path,
+                    end,
+                    offsets,
+                    checkpoint_total,
+                    build_signature_value,
+                )
                 blocks_since_flush = 0
 
         flush_neighbor_buffers(
@@ -620,7 +817,18 @@ def calculate_contaminants(
             separations_file,
             calculate_separations,
         )
-        write_checkpoint(checkpoint_path, number_of_stars_in_dataframe, offsets, checkpoint_total)
+        neighbors_file.flush()
+        os.fsync(neighbors_file.fileno())
+        if (separations_file is not None):
+            separations_file.flush()
+            os.fsync(separations_file.fileno())
+        write_checkpoint(
+            checkpoint_path,
+            number_of_stars_in_dataframe,
+            offsets,
+            checkpoint_total,
+            build_signature_value,
+        )
     finally:
         neighbors_file.close()
         if (separations_file is not None):
@@ -634,8 +842,15 @@ def save_final_outputs(
     final_star_dataframe: pd.DataFrame,
     offsets: np.ndarray,
     neighbors_tmp_path: str,
-    separations_tmp_path: str,
-    calculate_separations: bool
+    separations_tmp_path: str | None,
+    calculate_separations: bool,
+    *,
+    build_signature_value: str,
+    catalog_sha256: str,
+    max_radius_arcsec: float,
+    total_neighbors: int,
+    magnitude_columns: dict[str, str],
+    phot_g_mean_mag_column: str,
 ) -> str:
     """
     Finalize temporary files atomically, build compact ID mapping arrays,
@@ -667,18 +882,40 @@ def save_final_outputs(
     master_path : str
         Path to master_catalog.parquet.
     """
-    # Rename temporary neighbor files to their final names.
-    os.replace(neighbors_tmp_path, os.path.join(out_dir, "neighbors_ids.bin"))
+    manifest_path = Path(out_dir) / INDEX_MANIFEST_FILENAME
+    manifest_path.unlink(missing_ok=True)
+
+    # Rename temporary neighbor files to their final names. If a prior finalization
+    # crashed after this rename, retain the already-complete binary and rewrite the
+    # remaining derived files before publishing a new manifest.
+    neighbors_final_path = Path(out_dir) / "neighbors_ids.bin"
+    if (Path(neighbors_tmp_path).exists()):
+        os.replace(neighbors_tmp_path, neighbors_final_path)
+    elif (
+        not neighbors_final_path.is_file()
+        or neighbors_final_path.stat().st_size != total_neighbors * np.dtype(np.int64).itemsize
+    ):
+        raise ValueError("Completed neighbour data is missing or truncated.")
+
     if calculate_separations and separations_tmp_path is not None:
-        os.replace(separations_tmp_path, os.path.join(out_dir, "neighbors_seps.bin"))
+        separations_final_path = Path(out_dir) / "neighbors_seps.bin"
+        if (Path(separations_tmp_path).exists()):
+            os.replace(separations_tmp_path, separations_final_path)
+        elif (
+            not separations_final_path.is_file()
+            or separations_final_path.stat().st_size != total_neighbors * np.dtype(np.float64).itemsize
+        ):
+            raise ValueError("Completed neighbour-separation data is missing or truncated.")
+    else:
+        (Path(out_dir) / "neighbors_seps.bin").unlink(missing_ok=True)
 
     # Save primary neighbor index arrays.
-    np.save(
-        os.path.join(out_dir, "source_ids.npy"),
+    atomic_save_npy(
+        Path(out_dir) / "source_ids.npy",
         final_star_dataframe['internal_id'].values.astype(np.int64)
     )
-    np.save(
-        os.path.join(out_dir, "offsets.npy"),
+    atomic_save_npy(
+        Path(out_dir) / "offsets.npy",
         offsets
     )
 
@@ -713,7 +950,11 @@ def save_final_outputs(
         try:
             # Try to interpret the ID as an integer (fast path: Gaia-like IDs).
             val = int(sid)
-            real_ids_int[i] = val
+            if (0 <= val <= np.iinfo(np.int64).max):
+                real_ids_int[i] = val
+            else:
+                special_internal_ids.append(int(internal_id))
+                special_names.append(str(sid))
         except (ValueError, TypeError):
             # Non-numeric IDs end up here (e.g. "HD 216608A").
             special_internal_ids.append(int(internal_id))
@@ -721,14 +962,27 @@ def save_final_outputs(
 
     # Save numeric real IDs (one int64 per row).
     real_ids_int_path = os.path.join(out_dir, "real_ids_int.npy")
-    np.save(real_ids_int_path, real_ids_int)
+    atomic_save_npy(real_ids_int_path, real_ids_int)
 
     # Save special ID mapping (a tiny NPZ file).
     special_ids_path = os.path.join(out_dir, "special_ids.npz")
-    np.savez_compressed(
+    atomic_save_npz(
         special_ids_path,
         internal_ids=np.array(special_internal_ids, dtype=np.int64),
-        names=np.array(special_names, dtype=object)
+        names=np.asarray(special_names, dtype=np.str_)
+    )
+
+    numeric_mask = real_ids_int >= 0
+    numeric_indices = np.nonzero(numeric_mask)[0].astype(np.int64)
+    numeric_real_ids = real_ids_int[numeric_mask]
+    numeric_order = np.argsort(numeric_real_ids, kind="stable")
+    atomic_save_npy(
+        Path(out_dir) / "numeric_real_ids_sorted.npy",
+        numeric_real_ids[numeric_order].astype(np.int64, copy=False),
+    )
+    atomic_save_npy(
+        Path(out_dir) / "numeric_internal_ids_sorted.npy",
+        (numeric_indices[numeric_order] + 1).astype(np.int64, copy=False),
     )
 
     # If desired, the old full NPZ mapping could be kept as well:
@@ -737,11 +991,15 @@ def save_final_outputs(
 
     # Save full catalog for inspection / secondary analyses.
     master_path = os.path.join(out_dir, "master_catalog.parquet")
+    master_temporary_path = master_path + ".tmp"
     try:
-        final_star_dataframe.to_parquet(master_path, index=False, compression='snappy')
+        final_star_dataframe.to_parquet(master_temporary_path, index=False, compression='snappy')
+        os.replace(master_temporary_path, master_path)
     except ImportError:
         master_path = os.path.join(out_dir, "master_catalog.csv")
-        final_star_dataframe.to_csv(master_path, index=False)
+        master_temporary_path = master_path + ".tmp"
+        final_star_dataframe.to_csv(master_temporary_path, index=False)
+        os.replace(master_temporary_path, master_path)
         logger.warning(
             "Could not save master_catalog.parquet because no Parquet engine is installed. "
             f"Saved CSV fallback instead: {master_path}"
@@ -752,20 +1010,46 @@ def save_final_outputs(
     dec_path = os.path.join(out_dir, "dec.npy")
     gmag_path = os.path.join(out_dir, "phot_g_mean_mag.npy")
 
-    np.save(
+    atomic_save_npy(
         ra_path,
         final_star_dataframe['ra'].to_numpy(dtype=np.float64)
     )
-    np.save(
+    atomic_save_npy(
         dec_path,
         final_star_dataframe['dec'].to_numpy(dtype=np.float64)
     )
 
     if 'phot_g_mean_mag' in final_star_dataframe.columns:
-        np.save(
+        atomic_save_npy(
             gmag_path,
             final_star_dataframe['phot_g_mean_mag'].to_numpy(dtype=np.float64)
         )
+
+    magnitude_bands = magnitude_band_manifest(magnitude_columns, phot_g_mean_mag_column)
+    for metadata in magnitude_bands.values():
+        array_file = metadata["array_file"]
+        if (array_file == "phot_g_mean_mag.npy"):
+            continue
+        column_name = Path(array_file).stem
+        if (column_name in final_star_dataframe.columns):
+            atomic_save_npy(
+                Path(out_dir) / array_file,
+                final_star_dataframe[column_name].to_numpy(dtype=np.float64),
+            )
+
+    manifest = IndexManifest(
+        format_version=2,
+        status="complete",
+        build_signature=build_signature_value,
+        catalog_sha256=catalog_sha256,
+        max_radius_arcsec=max_radius_arcsec,
+        number_of_sources=len(final_star_dataframe),
+        total_neighbors=total_neighbors,
+        calculate_separations=calculate_separations,
+        magnitude_bands=magnitude_bands,
+    )
+    write_index_manifest(manifest_path, manifest)
+    validate_index_structure(index_paths(out_dir), manifest)
 
     return master_path
 
@@ -774,13 +1058,8 @@ def save_final_outputs(
 # MAIN EXECUTION
 # ============================================================
 
-def main(config_path: str | Path | None = None) -> int:
-    """Build an index only after configuration parsing and runtime validation succeed."""
-    config_build = load_config("build_neighbors_index", config_path)
-
-    # Runtime directory creation happens after pure parsing and filesystem validation.
-    ensure_directory(config_build.out_dir, "build_neighbors_index.io.out_dir")
-
+def run_build(config_build: BuildConfig) -> int:
+    """Build one already-validated configuration while its output lock is held."""
     # --- Load minimal catalog ---
     logger.info("Loading input catalog...")
     final_star_dataframe = load_star_dataframe(
@@ -789,17 +1068,34 @@ def main(config_path: str | Path | None = None) -> int:
         config_build.source_id_column,
         config_build.ra_column,
         config_build.dec_column,
-        config_build.phot_g_mean_mag_column
+        config_build.phot_g_mean_mag_column,
+        config_build.magnitude_columns,
     )
+
+    catalog_digest = sha256_file(config_build.input_catalog)
+    current_build_signature = build_signature(
+        catalog_sha256=catalog_digest,
+        max_radius_arcsec=config_build.max_radius_arcsec,
+        calculate_separations=config_build.calculate_separations,
+        columns=config_build.usecolumns,
+        magnitude_columns=config_build.magnitude_columns,
+    )
+    existing_manifest_path = Path(config_build.out_dir) / INDEX_MANIFEST_FILENAME
+    if (existing_manifest_path.is_file()):
+        try:
+            existing_manifest = load_index_manifest(existing_manifest_path)
+            if (existing_manifest.build_signature == current_build_signature):
+                validate_index_structure(index_paths(config_build.out_dir), existing_manifest)
+                logger.info("A complete index already matches the current catalog and settings.")
+                return 0
+            logger.info("Build inputs changed; replacing the existing index.")
+        except ValueError as error:
+            logger.warning("Existing index is incomplete or invalid and will be rebuilt: %s", error)
 
     # Compute 3D coordinates and KDTree.
     coords = convert_ra_dec_to_unit_vectors(final_star_dataframe)
     chord_radius = compute_chord_radius(config_build.max_radius_arcsec)
-    coordinate_tree, tree_path = build_or_load_kdtree(
-        coords,
-        config_build.out_dir,
-        config_build.KDTREE_FILENAME
-    )
+    coordinate_tree = build_or_load_kdtree(coords)
 
     number_of_stars_in_dataframe = len(final_star_dataframe)
     logger.info(
@@ -819,43 +1115,58 @@ def main(config_path: str | Path | None = None) -> int:
     checkpoint_path = os.path.join(config_build.out_dir, "resume_checkpoint.npz")
     checkpoint_index, offsets, checkpoint_total = resume_from_checkpoint(
         checkpoint_path,
-        number_of_stars_in_dataframe
+        number_of_stars_in_dataframe,
+        current_build_signature,
     )
 
-    if (checkpoint_index >= number_of_stars_in_dataframe):
-        logger.info("Index checkpoint is already complete. Remove resume_checkpoint.npz to rebuild it.")
-        return 0
+    checkpoint_complete = checkpoint_index == number_of_stars_in_dataframe
+    if (checkpoint_index > 0):
+        reconcile_resume_file(
+            neighbors_tmp_path,
+            os.path.join(config_build.out_dir, "neighbors_ids.bin"),
+            checkpoint_total * np.dtype(np.int64).itemsize,
+            checkpoint_complete=checkpoint_complete,
+        )
+        if config_build.calculate_separations and separations_tmp_path is not None:
+            reconcile_resume_file(
+                separations_tmp_path,
+                os.path.join(config_build.out_dir, "neighbors_seps.bin"),
+                checkpoint_total * np.dtype(np.float64).itemsize,
+                checkpoint_complete=checkpoint_complete,
+            )
 
-    # Open binary files in append mode if resuming, else write mode.
-    neighbors_file = open(
-        neighbors_tmp_path,
-        "ab" if checkpoint_index > 0 else "wb"
-    )
-
-    separations_file = None
-    if config_build.calculate_separations:
-        separations_file = open(
-            separations_tmp_path,
+    if (not checkpoint_complete):
+        # Open binary files in append mode if resuming, else write mode.
+        neighbors_file = open(
+            neighbors_tmp_path,
             "ab" if checkpoint_index > 0 else "wb"
         )
 
-    # Main computation: fill neighbors_ids.bin + offsets (CSR).
-    final_star_dataframe, offsets, checkpoint_total = calculate_contaminants(
-        checkpoint_index=checkpoint_index,
-        number_of_stars_in_dataframe=number_of_stars_in_dataframe,
-        chunk_size=config_build.chunk_size,
-        coords=coords,
-        chord_radius=chord_radius,
-        coordinate_tree=coordinate_tree,
-        offsets=offsets,
-        checkpoint_total=checkpoint_total,
-        final_star_dataframe=final_star_dataframe,
-        neighbors_file=neighbors_file,
-        separations_file=separations_file,
-        buffer_flush_interval=config_build.buffer_flush_interval,
-        calculate_separations=config_build.calculate_separations,
-        checkpoint_path=checkpoint_path
-    )
+        separations_file = None
+        if config_build.calculate_separations and separations_tmp_path is not None:
+            separations_file = open(
+                separations_tmp_path,
+                "ab" if checkpoint_index > 0 else "wb"
+            )
+
+        # Main computation: fill neighbors_ids.bin + offsets (CSR).
+        final_star_dataframe, offsets, checkpoint_total = calculate_contaminants(
+            checkpoint_index=checkpoint_index,
+            number_of_stars_in_dataframe=number_of_stars_in_dataframe,
+            chunk_size=config_build.chunk_size,
+            coords=coords,
+            chord_radius=chord_radius,
+            coordinate_tree=coordinate_tree,
+            offsets=offsets,
+            checkpoint_total=checkpoint_total,
+            final_star_dataframe=final_star_dataframe,
+            neighbors_file=neighbors_file,
+            separations_file=separations_file,
+            buffer_flush_interval=config_build.buffer_flush_interval,
+            calculate_separations=config_build.calculate_separations,
+            checkpoint_path=checkpoint_path,
+            build_signature_value=current_build_signature,
+        )
 
     # Finalize files and write auxiliary arrays.
     with ActivityBar("[saving index outputs]"):
@@ -865,8 +1176,15 @@ def main(config_path: str | Path | None = None) -> int:
             offsets=offsets,
             neighbors_tmp_path=neighbors_tmp_path,
             separations_tmp_path=separations_tmp_path,
-            calculate_separations=config_build.calculate_separations
+            calculate_separations=config_build.calculate_separations,
+            build_signature_value=current_build_signature,
+            catalog_sha256=catalog_digest,
+            max_radius_arcsec=config_build.max_radius_arcsec,
+            total_neighbors=checkpoint_total,
+            magnitude_columns=config_build.magnitude_columns,
+            phot_g_mean_mag_column=config_build.phot_g_mean_mag_column,
         )
+    Path(checkpoint_path).unlink(missing_ok=True)
 
     # Summary.
     logger.info("")
@@ -877,10 +1195,22 @@ def main(config_path: str | Path | None = None) -> int:
     if config_build.calculate_separations:
         logger.info(" - neighbors_seps.bin: written")
     logger.info(f" - master_catalog.parquet: {master_path}")
-    logger.info(f" - KDTree: {tree_path}")
+    logger.info(" - KDTree: built safely in memory")
     logger.info("Build step finished.")
 
     return 0
+
+
+def main(config_path: str | Path | None = None) -> int:
+    """Build an index only after configuration parsing and runtime validation succeed."""
+    config_build = load_config("build_neighbors_index", config_path)
+    if (not isinstance(config_build, BuildConfig)):
+        raise RuntimeError("Failed to load build configuration.")
+
+    # Runtime directory creation happens after pure parsing and filesystem validation.
+    ensure_directory(config_build.out_dir, "build_neighbors_index.io.out_dir")
+    with exclusive_build_lock(config_build.out_dir):
+        return run_build(config_build)
 
 
 if (__name__ == "__main__"):

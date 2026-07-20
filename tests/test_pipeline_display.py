@@ -48,9 +48,9 @@ def test_progress_bar_clamps_progress_and_terminates_completed_output(
 
 
 @pytest.mark.unit
-def test_activity_bar_reverses_direction_at_configured_progress_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The activity indicator oscillates within its requested limits instead of exceeding them."""
-    calls: list[int] = []
+def test_activity_bar_animates_indeterminately_without_fake_percentages(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Opaque work advances animation frames without inventing a completion percentage."""
+    calls: list[tuple[int, str, bool]] = []
 
     class ControlledEvent:
         def __init__(self) -> None:
@@ -63,10 +63,37 @@ def test_activity_bar_reverses_direction_at_configured_progress_bounds(monkeypat
             self.calls += 1
             return False
 
-    activity_bar = pipeline_display.ActivityBar("loading", start=2, stop=3, interval=0.0)
+    activity_bar = pipeline_display.ActivityBar("loading", interval=0.0)
     activity_bar._done = ControlledEvent()
-    monkeypatch.setattr(pipeline_display, "progress_bar", lambda percent, *args, **kwargs: calls.append(percent))
+    monkeypatch.setattr(
+        pipeline_display,
+        "activity_indicator",
+        lambda frame, detail, elapsed, complete=False: calls.append((frame, detail, complete)),
+    )
 
     activity_bar._run()
 
-    assert calls == [2, 3, 2, 3]
+    assert calls == [
+        (0, "loading", False),
+        (1, "loading", False),
+        (2, "loading", False),
+        (3, "loading", False),
+    ]
+
+
+@pytest.mark.unit
+def test_indeterminate_indicator_shows_activity_and_elapsed_time_without_percent(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    """Users can see that opaque work is alive while the console avoids misleading percentages."""
+    monkeypatch.setattr(pipeline_display, "USE_COLOR", False)
+    monkeypatch.setattr(pipeline_display.shutil, "get_terminal_size", lambda fallback: SimpleNamespace(columns=100))
+
+    pipeline_display.activity_indicator(0, "creating environment", 5.2)
+    first = capsys.readouterr().out
+    pipeline_display.activity_indicator(4, "creating environment", 6.2)
+    second = capsys.readouterr().out
+
+    assert "working" in first
+    assert "00:05" in first
+    assert "creating environment" in first
+    assert "%" not in first
+    assert first != second

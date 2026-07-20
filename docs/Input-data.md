@@ -13,7 +13,9 @@ The default expected columns are:
 - `dec`
 - `phot_g_mean_mag`
 
-`ra` and `dec` must be numeric coordinates. `phot_g_mean_mag` must be numeric if magnitude filtering is used.
+`source_id` values must be unique, including after numeric normalization
+(`1` and `001` are ambiguous). `ra` must be finite and in `[0, 360)`, `dec`
+must be finite and in `[-90, 90]`, and `phot_g_mean_mag` must be finite.
 
 ## Targets CSV
 
@@ -45,3 +47,25 @@ Small example files are included in `data/`:
 - `example_targets.csv`
 
 These are only for testing the workflow. Replace them with real catalogue and target files for analysis.
+
+## Reproducible catalogue selections
+
+PHOTO-CAT records the SHA-256 digest of the catalogue CSV in the version-2 index
+manifest, but it cannot infer how that CSV was produced. For publishable or
+reviewable analyses, keep the catalogue provenance beside the run:
+
+- the exact catalogue release and service used, for example a Gaia DR/EDR table;
+- the exact query, quality cuts, magnitude limits, sky region, and row limits;
+- any cross-match inputs such as Bright Star Catalog selections;
+- the exported CSV filename and checksum;
+- the `config.yaml` or CLI command used for the build and query.
+
+Use `photo-cat --version`, `photo-cat build-index ...`, and `photo-cat query ...`
+in scripts or notebooks so the command sequence can be rerun. Query metadata
+sidecars under `INDEX_DIR/results/metadata/` record the PHOTO-CAT version, query
+settings, index manifest, and model scope for each result file.
+
+See `docs/gaia_selection_example.txt` for a plain-text template that can be
+filled with the exact Gaia/Bright Star Catalog selections used by an analysis. The
+`examples/reproducibility/` folder also contains ADQL/config templates and a small script
+for regenerating summary, SVG plot, and report products from a query result JSON.

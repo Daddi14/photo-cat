@@ -68,12 +68,12 @@ This keeps filesystem rules independently testable and avoids changing the proce
 
 ## Responsibility review
 
-The v1.6.0 review applies the practical parts of SOLID without adding patterns solely for their names:
+The v2.0.0 review applies the practical parts of SOLID without adding patterns solely for their names:
 
 - **Single responsibility:** `load_config.py` now separates document loading, section parsing, and runtime-input validation; `path_policy.py` owns explicit runtime-directory creation; query setup prepares validated paths before numerical processing.
 - **Explicit dependency direction:** CLI code passes a config path into runtime modules. Pipeline code passes that path only to child-process environments, instead of depending on a parent-process environment mutation.
-- **Stable public boundary:** build, query, and diagnostics continue to expose the same documented commands, config keys, result layout, and error conventions.
-- **Remaining concentrated responsibilities:** GUI persistence, build checkpoint/final-output persistence, query target parsing/JSON persistence, and installer/doctor operational checks remain the next candidates for isolated work.
+- **Versioned persistence boundary:** `index_manifest.py` owns safe atomic array/manifest persistence and structural validation. Version 1 executable index payloads are rejected.
+- **Remaining concentrated responsibilities:** GUI persistence, query target parsing/JSON persistence, and installer/doctor operational checks remain the next candidates for isolated work.
 
 Strategy and Chain of Responsibility are still not justified: the current code has one build mode, one query mode, and one ordered validation lifecycle rather than interchangeable policies.
 
@@ -84,7 +84,7 @@ The following candidates are identified for future focused work; they are not a 
 | Module or area | Candidate responsibility to isolate | Suggested protection before change |
 |---|---|---|
 | `configure_gui.py` | UI state, path presentation, and configuration persistence are still closely coupled. | GUI/config save regression checks and manual launcher verification. |
-| `build_neighbors_index.py` | Resume/checkpoint lifecycle and final index-file persistence remain procedural runtime work. | Index-layout regression test plus focused checkpoint tests. |
+| `build_neighbors_index.py` | Catalogue loading and neighbour computation still share one large runtime module. | Numerical and index-layout regression tests. |
 | `query_contamination_from_index.py` | Target-input parsing and JSON persistence can be separated further from numerical processing. | Query-result schema regression tests. |
 | `doctor.py` and `install.py` | Environment diagnostics and installation workflow are intentionally operational but large. | Package-install and source-project diagnostics tests. |
 

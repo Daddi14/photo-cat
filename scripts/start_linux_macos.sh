@@ -41,6 +41,7 @@ RUNTIME_PYTHON_DIR="$RUNTIME_DIR/python"
 RUNTIME_DOWNLOADS_DIR="$RUNTIME_DIR/downloads"
 RUNTIME_UV_DIR="$RUNTIME_TOOLS_DIR/uv"
 PREFERRED_RUNTIME_PYTHON="3.12"
+UV_VERSION="0.11.16"
 LOCAL_UV_PATH=""
 
 USE_COLOR=0
@@ -259,23 +260,59 @@ download_file() {
     output="$2"
 
     if command -v curl >/dev/null 2>&1; then
-        curl -L "$url" -o "$output"
+        curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail -L "$url" -o "$output"
         return $?
     fi
 
     if command -v wget >/dev/null 2>&1; then
-        wget -O "$output" "$url"
+        wget --https-only -O "$output" "$url"
         return $?
     fi
 
     return 1
 }
 
+uv_target_sha256() {
+    case "$1" in
+        uv-aarch64-apple-darwin.tar.gz)
+            printf "%s\n" "2b25be1af546be330b340b0a76b99f989daa6d92678fdffb87438e661e9d88fb"
+            ;;
+        uv-x86_64-apple-darwin.tar.gz)
+            printf "%s\n" "6b91ae3de155f51bd1f5b74814821c79f016a176561f252cd9ddfb976939af2e"
+            ;;
+        uv-aarch64-unknown-linux-gnu.tar.gz)
+            printf "%s\n" "8c9d0f0ee98166ae6ab198747519ba6f25db29d185bd2ae5960ecebc91a5c22a"
+            ;;
+        uv-x86_64-unknown-linux-gnu.tar.gz)
+            printf "%s\n" "74947fe2c03315cf07e82ab3acc703eddef01aba4d5232a98e4c6825ec116131"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+file_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+        return $?
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+        return $?
+    fi
+    return 1
+}
+
 get_local_uv() {
     uv_path="$RUNTIME_UV_DIR/uv"
-    if [ -x "$uv_path" ]; then
-        LOCAL_UV_PATH="$uv_path"
-        return 0
+    uv_version_file="$RUNTIME_UV_DIR/version.txt"
+    if [ -x "$uv_path" ] && [ -f "$uv_version_file" ]; then
+        installed_uv_version="$(head -n 1 "$uv_version_file" 2>/dev/null | tr -d '\r')"
+        if [ "$installed_uv_version" = "$UV_VERSION" ]; then
+            LOCAL_UV_PATH="$uv_path"
+            return 0
+        fi
     fi
 
     target="$(uv_target_name)" || {
@@ -290,7 +327,11 @@ get_local_uv() {
     mkdir -p "$RUNTIME_DOWNLOADS_DIR" "$RUNTIME_UV_DIR"
     archive_path="$RUNTIME_DOWNLOADS_DIR/$target"
     extract_path="$RUNTIME_DOWNLOADS_DIR/uv-extract"
-    download_url="https://github.com/astral-sh/uv/releases/latest/download/$target"
+    expected_sha256="$(uv_target_sha256 "$target")" || {
+        fail "No trusted checksum is configured for this platform."
+        return 1
+    }
+    download_url="https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$target"
 
     rm -rf "$extract_path"
     mkdir -p "$extract_path"
@@ -302,6 +343,16 @@ get_local_uv() {
         echo
         echo "Manual fix: install Python 3.10-3.13 with Tkinter, then run: sh START_UNIX.sh"
         echo
+        return 1
+    fi
+
+    actual_sha256="$(file_sha256 "$archive_path")" || {
+        fail "No SHA-256 verification tool is available (sha256sum or shasum)."
+        return 1
+    }
+    if [ "$actual_sha256" != "$expected_sha256" ]; then
+        rm -f "$archive_path"
+        fail "Downloaded uv archive failed SHA-256 verification."
         return 1
     fi
 
@@ -318,6 +369,7 @@ get_local_uv() {
 
     cp "$found_uv" "$uv_path"
     chmod +x "$uv_path"
+    printf "%s\n" "$UV_VERSION" > "$uv_version_file"
     ok "Local runtime helper is ready."
     LOCAL_UV_PATH="$uv_path"
     return 0

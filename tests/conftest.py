@@ -11,6 +11,8 @@ from typing import Callable
 import numpy as np
 import pytest
 
+from photo_cat.index_manifest import IndexManifest, write_index_manifest
+
 
 @dataclass(frozen=True)
 class SampleInputs:
@@ -52,7 +54,6 @@ build_neighbors_index:
   io:
     input_catalog: catalog.csv
     out_dir: output
-    KDTREE_FILENAME: ckdtree.pkl
     columns:
       source_id: source_id
       ra: ra
@@ -118,10 +119,25 @@ def write_minimal_index(tmp_path: Path) -> Callable[[], Path]:
         np.save(index_dir / "dec.npy", np.array([20.0, 21.0, 22.0], dtype=np.float64))
         np.save(index_dir / "phot_g_mean_mag.npy", np.array([10.0, 11.0, 12.0], dtype=np.float64))
         np.save(index_dir / "real_ids_int.npy", np.array([1001, 1002, -1], dtype=np.int64))
+        np.save(index_dir / "numeric_real_ids_sorted.npy", np.array([1001, 1002], dtype=np.int64))
+        np.save(index_dir / "numeric_internal_ids_sorted.npy", np.array([1, 2], dtype=np.int64))
         np.savez_compressed(
             index_dir / "special_ids.npz",
             internal_ids=np.array([3], dtype=np.int64),
-            names=np.array(["HD 216608A"], dtype=object),
+            names=np.array(["HD 216608A"], dtype=np.str_),
+        )
+        write_index_manifest(
+            index_dir / "index_manifest.json",
+            IndexManifest(
+                format_version=2,
+                status="complete",
+                build_signature="test-signature",
+                catalog_sha256="test-catalog",
+                max_radius_arcsec=120.0,
+                number_of_sources=3,
+                total_neighbors=0,
+                calculate_separations=False,
+            ),
         )
 
         return index_dir

@@ -10,8 +10,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Final
 
+from .index_manifest import INDEX_MANIFEST_FILENAME
+
 
 INDEX_REQUIRED_FILENAMES: Final[tuple[str, ...]] = (
+    INDEX_MANIFEST_FILENAME,
     "offsets.npy",
     "neighbors_ids.bin",
     "ra.npy",
@@ -19,6 +22,8 @@ INDEX_REQUIRED_FILENAMES: Final[tuple[str, ...]] = (
     "phot_g_mean_mag.npy",
     "real_ids_int.npy",
     "special_ids.npz",
+    "numeric_real_ids_sorted.npy",
+    "numeric_internal_ids_sorted.npy",
 )
 
 
@@ -34,6 +39,10 @@ class IndexPaths:
     phot_g_mean_mag: Path
     real_ids_int: Path
     special_ids: Path
+    numeric_real_ids_sorted: Path
+    numeric_internal_ids_sorted: Path
+    manifest: Path
+    neighbors_seps: Path
     output_dir: Path
 
 
@@ -117,21 +126,6 @@ def ensure_directory(path: str | Path, label: str) -> Path:
     return directory
 
 
-def validate_filename_only(value: str, label: str) -> str:
-    """Require a child filename instead of a path that could escape its folder."""
-    filename = str(value).strip()
-    if (filename == ""):
-        raise ValueError(f"{label} cannot be empty.")
-
-    if (filename in {".", ".."} or "/" in filename or "\\" in filename):
-        raise ValueError(
-            f"{label} must be a filename only, not a path: {filename}\n"
-            "Use --out-dir/config out_dir to choose the folder."
-        )
-
-    return filename
-
-
 def index_paths(index_dir: str | Path) -> IndexPaths:
     """Return named index paths without performing filesystem validation."""
     root = Path(index_dir).expanduser().resolve()
@@ -144,7 +138,11 @@ def index_paths(index_dir: str | Path) -> IndexPaths:
         phot_g_mean_mag=root / "phot_g_mean_mag.npy",
         real_ids_int=root / "real_ids_int.npy",
         special_ids=root / "special_ids.npz",
-        output_dir=root / "output",
+        numeric_real_ids_sorted=root / "numeric_real_ids_sorted.npy",
+        numeric_internal_ids_sorted=root / "numeric_internal_ids_sorted.npy",
+        manifest=root / INDEX_MANIFEST_FILENAME,
+        neighbors_seps=root / "neighbors_seps.bin",
+        output_dir=root / "results",
     )
 
 
@@ -198,7 +196,7 @@ def query_output_json_path(
 ) -> Path:
     """Build a timestamped query-result path within the controlled output directory."""
     output_dir = ensure_query_output_directory(paths)
-    timestamp = (now or datetime.now()).strftime("%Y%m%d_%H%M")
+    timestamp = (now or datetime.now()).strftime("%Y%m%d_%H%M%S_%f")
     target_name = Path(targets_input).stem if (targets_input is not None) else "manual_targets"
     filename = f"{target_name}_FoV{int(field_of_view_arcsec)}_dmag{int(delta_mag)}_{timestamp}.json"
     return output_dir / filename

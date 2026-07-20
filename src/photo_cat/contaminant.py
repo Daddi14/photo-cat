@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
-"""Data model for one neighbouring source selected as a contaminant."""
+"""Data model for one catalogue neighbour selected by query cuts."""
 
 from dataclasses import dataclass
 
 
 @dataclass
 class Contaminant:
-    """A catalogue neighbour that contributes flux inside the target aperture."""
+    """A neighbour inside the configured angular radius and delta-magnitude cut."""
 
     source_id: str
     ra: float

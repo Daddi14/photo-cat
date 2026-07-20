@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Callable
 
 from .load_config import EXECUTION_SECTION, ExecutionConfig, load_config, resolve_config_path
+from .i18n import initialize_language, tr
 from .logger_setup import get_logger
+from .pipeline_display import ActivityBar
 
 
 logger = get_logger(__name__)
@@ -58,7 +60,7 @@ class Style:
 
 def enable_windows_ansi() -> None:
     """Enable ANSI console formatting on supported Windows terminals."""
-    if (os.name != "nt"):
+    if (sys.platform != "win32"):
         return
 
     try:
@@ -103,13 +105,13 @@ def write_soft_rule() -> None:
 
 def write_info_line(label: str, value: object) -> None:
     """Write one aligned pipeline-information line."""
-    print(f"  {label:<{INFO_LABEL_WIDTH}}: {value}")
+    print(f"  {tr(label):<{INFO_LABEL_WIDTH}}: {value}")
 
 
 def write_header(title: str, config_path: Path) -> None:
     """Print the pipeline header without loading or mutating configuration."""
     write_rule(Style.CYAN)
-    print(color(title, Style.BOLD + Style.CYAN))
+    print(color(tr(title), Style.BOLD + Style.CYAN))
     write_rule(Style.CYAN)
     print()
     write_info_line("Version", PROGRAM_VERSION)
@@ -121,21 +123,21 @@ def write_header(title: str, config_path: Path) -> None:
 def write_step(index: int, total: int, message: str) -> None:
     """Write a numbered pipeline-stage heading."""
     print()
-    print(color(f"Step {index} of {total} - {message}", Style.CYAN))
+    print(color(f"{tr('Step')} {index} {tr('of')} {total} - {tr(message)}", Style.CYAN))
     write_soft_rule()
 
 
 def write_success(message: str) -> None:
     """Write a successful stage message."""
-    print(color(message, Style.GREEN))
+    print(color(tr(message), Style.GREEN))
 
 
 def write_success_summary() -> None:
     """Write the pipeline completion summary."""
     print()
     write_rule(Style.GREEN)
-    print(color("PHOTO-CAT pipeline is complete.", Style.BOLD + Style.GREEN))
-    print(color("Check the output folder for results.", Style.GREEN))
+    print(color(tr("PHOTO-CAT pipeline is complete."), Style.BOLD + Style.GREEN))
+    print(color(tr("Check the output folder for results."), Style.GREEN))
     write_rule(Style.GREEN)
     print()
 
@@ -151,7 +153,7 @@ def compact_environment(config_path: Path | None = None) -> dict[str, str]:
     if (config_path is not None):
         env["PHOTO_CAT_CONFIG"] = str(config_path)
 
-    if (os.name == "nt"):
+    if (sys.platform == "win32"):
         env.setdefault("PHOTO_CAT_FORCE_COLOR", "1")
 
     return env
@@ -183,21 +185,47 @@ def run_stage(
 
     write_step(step_index, step_total, stage.title)
 
-    result = subprocess.run(
-        [sys.executable, "-m", f"photo_cat.{stage.module_name}"],
-        check=False,
-        cwd=PROJECT_DIR,
-        env=compact_environment(config_path),
-    )
+    with ActivityBar(tr("starting stage: {activity}", activity=tr(stage.activity_label))):
+        process = subprocess.Popen(
+            [sys.executable, "-m", f"photo_cat.{stage.module_name}"],
+            cwd=PROJECT_DIR,
+            env=compact_environment(config_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=-1,
+        )
+        first_output = process.stdout.read(1) if process.stdout is not None else b""
 
-    if (result.returncode != 0):
+    if (process.stdout is not None):
+        _write_stage_output(first_output)
+        read_chunk = getattr(process.stdout, "read1", process.stdout.read)
+        while (chunk := read_chunk(4096)):
+            _write_stage_output(chunk)
+    return_code = process.wait()
+
+    if (return_code != 0):
         raise RuntimeError(
             f"{stage.module_name}.py failed.\n"
             "Read the error message above, fix the configuration in the GUI, then run again."
         )
 
     print()
-    write_success(f"Completed: {stage.activity_label}")
+    write_success(tr("Completed: {activity}", activity=tr(stage.activity_label)))
+
+
+def _write_stage_output(output: bytes | str) -> None:
+    """Forward child output byte-for-byte, including carriage-return progress bars."""
+    if (not output):
+        return
+    if (isinstance(output, bytes)):
+        binary_stream = getattr(sys.stdout, "buffer", None)
+        if (binary_stream is not None):
+            binary_stream.write(output)
+            binary_stream.flush()
+            return
+        output = output.decode("utf-8", errors="replace")
+    sys.stdout.write(output)
+    sys.stdout.flush()
 
 
 def run_pipeline_stages(
@@ -223,6 +251,7 @@ def main(config_path: str | Path | None = None) -> int:
     enable_windows_ansi()
 
     resolved_config_path = resolve_config_path(config_path)
+    initialize_language(resolved_config_path)
     execution_config = load_config(EXECUTION_SECTION, resolved_config_path)
     if (not isinstance(execution_config, ExecutionConfig)):
         raise RuntimeError("Failed to load execution configuration.")

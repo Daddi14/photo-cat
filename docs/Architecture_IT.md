@@ -68,12 +68,12 @@ Questo rende le regole del filesystem testabili in modo indipendente ed evita di
 
 ## Revisione delle responsabilità
 
-La revisione v1.6.0 applica le parti pratiche di SOLID senza aggiungere pattern solo per il loro nome:
+La revisione v2.0.0 applica le parti pratiche di SOLID senza aggiungere pattern solo per il loro nome:
 
 - **Responsabilità singola:** `load_config.py` ora separa caricamento del documento, interpretazione delle sezioni e validazione degli input runtime; `path_policy.py` gestisce la creazione esplicita delle directory runtime; la preparazione della query predispone percorsi validati prima dell'elaborazione numerica.
 - **Direzione esplicita delle dipendenze:** il codice CLI passa un percorso config ai moduli runtime. Il codice pipeline passa tale percorso solo agli ambienti dei processi figli, invece di dipendere da una modifica dell'ambiente del processo padre.
-- **Confine pubblico stabile:** build, query e diagnostica continuano a esporre gli stessi comandi documentati, chiavi di configurazione, layout dei risultati e convenzioni degli errori.
-- **Responsabilità ancora concentrate:** persistenza della GUI, ciclo checkpoint/output finale della build, interpretazione target/persistenza JSON della query e controlli operativi di installer/doctor restano i prossimi candidati per lavoro isolato.
+- **Confine di persistenza versionato:** `index_manifest.py` gestisce persistenza atomica sicura e validazione strutturale. I payload eseguibili degli indici versione 1 vengono rifiutati.
+- **Responsabilità ancora concentrate:** persistenza della GUI, interpretazione target/persistenza JSON della query e controlli operativi di installer/doctor restano i prossimi candidati per lavoro isolato.
 
 Strategy e Chain of Responsibility non sono ancora giustificati: il codice attuale ha una modalità build, una modalità query e un unico ciclo di validazione ordinato, non politiche intercambiabili.
 
@@ -84,7 +84,7 @@ I seguenti candidati sono identificati per future attività mirate; non richiedo
 | Modulo o area | Responsabilità candidata da isolare | Protezione suggerita prima della modifica |
 |---|---|---|
 | `configure_gui.py` | Stato UI, presentazione dei percorsi e persistenza della configurazione sono ancora strettamente collegati. | Test di regressione GUI/salvataggio config e verifica manuale dei launcher. |
-| `build_neighbors_index.py` | Ciclo di resume/checkpoint e persistenza finale dei file dell’indice restano lavoro runtime procedurale. | Test di regressione del layout dell’indice e test mirati dei checkpoint. |
+| `build_neighbors_index.py` | Caricamento del catalogo e calcolo dei vicini condividono ancora un modulo runtime esteso. | Test numerici e di regressione del layout dell'indice. |
 | `query_contamination_from_index.py` | Interpretazione degli input target e persistenza JSON possono essere ulteriormente separate dal calcolo numerico. | Test di regressione dello schema dei risultati query. |
 | `doctor.py` e `install.py` | Diagnostica dell’ambiente e workflow di installazione sono intenzionalmente operativi ma estesi. | Test della diagnostica in modalità pacchetto installato e progetto sorgente. |
 

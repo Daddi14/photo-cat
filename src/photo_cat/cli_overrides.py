@@ -18,11 +18,13 @@ from .path_policy import resolve_user_path
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
+    "interface": {
+        "language": "en",
+    },
     "build_neighbors_index": {
         "io": {
             "input_catalog": "data/example_catalog.csv",
             "out_dir": "data/output",
-            "KDTREE_FILENAME": "ckdtree.pkl",
             "usecolumns": [
                 "source_id",
                 "ra",
@@ -34,6 +36,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "ra": "ra",
                 "dec": "dec",
                 "phot_g_mean_mag": "phot_g_mean_mag",
+            },
+            "magnitude_columns": {
+                "gaia_g": "phot_g_mean_mag",
             },
         },
         "settings": {
@@ -54,6 +59,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "settings": {
             "field_of_view_arcsec": 47.0,
             "delta_mag": 5.0,
+            "include_missing_targets": False,
+            "contamination_bands": ["gaia_g"],
+            "bandpass_transform_file": None,
+            "contamination_model": {
+                "mode": "top_hat",
+                "gaussian_fwhm_arcsec": None,
+                "influence_sigma": None,
+            },
         },
     },
     "execution": {
@@ -67,12 +80,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
 OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "input_catalog": ("build_neighbors_index", "io", "input_catalog"),
     "out_dir": ("build_neighbors_index", "io", "out_dir"),
-    "kdtree_filename": ("build_neighbors_index", "io", "KDTREE_FILENAME"),
     "usecolumns": ("build_neighbors_index", "io", "usecolumns"),
     "catalog_source_id_column": ("build_neighbors_index", "io", "columns", "source_id"),
     "ra_column": ("build_neighbors_index", "io", "columns", "ra"),
     "dec_column": ("build_neighbors_index", "io", "columns", "dec"),
     "phot_g_mean_mag_column": ("build_neighbors_index", "io", "columns", "phot_g_mean_mag"),
+    "magnitude_columns": ("build_neighbors_index", "io", "magnitude_columns"),
     "use_dask": ("build_neighbors_index", "settings", "use_dask"),
     "calculate_separations": ("build_neighbors_index", "settings", "calculate_separations"),
     "max_radius_arcsec": ("build_neighbors_index", "settings", "max_radius_arcsec"),
@@ -84,6 +97,12 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "target_source_id_column": ("query_contamination_from_index", "io", "target_source_id_column"),
     "field_of_view_arcsec": ("query_contamination_from_index", "settings", "field_of_view_arcsec"),
     "delta_mag": ("query_contamination_from_index", "settings", "delta_mag"),
+    "include_missing_targets": ("query_contamination_from_index", "settings", "include_missing_targets"),
+    "contamination_bands": ("query_contamination_from_index", "settings", "contamination_bands"),
+    "bandpass_transform_file": ("query_contamination_from_index", "settings", "bandpass_transform_file"),
+    "contamination_model_mode": ("query_contamination_from_index", "settings", "contamination_model", "mode"),
+    "gaussian_fwhm_arcsec": ("query_contamination_from_index", "settings", "contamination_model", "gaussian_fwhm_arcsec"),
+    "influence_sigma": ("query_contamination_from_index", "settings", "contamination_model", "influence_sigma"),
     "run_build": ("execution", "run_build"),
     "run_query": ("execution", "run_query"),
     "replace_running_pipeline": ("execution", "replace_running_pipeline"),
@@ -95,6 +114,7 @@ PATH_OVERRIDE_NAMES = {
     "out_dir",
     "index_dir",
     "targets_input",
+    "bandpass_transform_file",
 }
 
 
@@ -145,6 +165,23 @@ def parse_targets(value: str | None) -> list[str]:
     return parse_csv_list(value)
 
 
+def parse_key_value_list(value: str | None) -> dict[str, str]:
+    """Parse comma-separated key=value pairs for compact CLI mappings."""
+    if (value is None):
+        return {}
+    parsed: dict[str, str] = {}
+    for item in parse_csv_list(value):
+        if ("=" not in item):
+            raise ValueError("Expected comma-separated band=column entries.")
+        key, column = item.split("=", 1)
+        key = key.strip()
+        column = column.strip()
+        if (key == "" or column == ""):
+            raise ValueError("Band and column names cannot be empty in band=column entries.")
+        parsed[key] = column
+    return parsed
+
+
 def collect_overrides(args: Any) -> dict[str, Any]:
     """Collect non-empty override values from parsed CLI arguments."""
     overrides: dict[str, Any] = {}
@@ -161,6 +198,10 @@ def collect_overrides(args: Any) -> dict[str, Any]:
             value = parse_csv_list(value)
         elif (name == "targets"):
             value = parse_targets(value)
+        elif (name == "contamination_bands"):
+            value = parse_csv_list(value)
+        elif (name == "magnitude_columns"):
+            value = parse_key_value_list(value)
         elif (name in PATH_OVERRIDE_NAMES):
             value = resolve_cli_path(value)
 

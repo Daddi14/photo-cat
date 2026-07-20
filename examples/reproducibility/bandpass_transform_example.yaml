@@ -1,0 +1,18 @@
+# Example empirical colour transformation. These coefficients are illustrative
+# only and must be replaced with a cited mission calibration before scientific use.
+schema_version: 1
+name: Example mission band from Gaia
+output_band: mission_band
+base_band: gaia_g
+color_bands:
+- gaia_bp
+- gaia_rp
+# m_mission = m_gaia_g + c0 + c1*(BP-RP) + c2*(BP-RP)^2
+coefficients: [0.0, 0.0, 0.0]
+validity:
+  color_min: -0.5
+  color_max: 3.0
+  base_magnitude_min: 3.0
+  base_magnitude_max: 18.0
+out_of_range: null
+reference: Replace with the calibration reference, version, or DOI

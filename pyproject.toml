@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "photo-cat"
-version = "1.7.0"
-description = "A GUI-assisted photometric contamination analysis tool."
+version = "2.0.0"
+description = "A GUI-assisted catalogue-level photometric contamination risk-assessment and target-screening tool."
 authors = ["Gabriele Galletta <gabriele.galletta@inaf.it>", "PHOTO-CAT contributors"]
 readme = "README.md"
 license = "GPL-3.0-only"
@@ -27,6 +27,7 @@ python = ">=3.10,<3.14"
 numpy = ">=1.24"
 pandas = ">=2.0"
 scipy = ">=1.10"
+matplotlib = ">=3.7"
 tqdm = ">=4.64"
 PyYAML = ">=6.0"
 pyarrow = ">=12.0"
@@ -45,6 +46,8 @@ photo-cat-doctor = "photo_cat.doctor:main"
 pytest = ">=8.0"
 pytest-cov = ">=5.0"
 build = ">=1.0"
+ruff = ">=0.6"
+mypy = ">=1.8"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -67,6 +70,31 @@ omit = [
 show_missing = true
 skip_covered = true
 fail_under = 78
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+# Enforce the correctness-focused default rules (pyflakes plus import/syntax checks)
+# without adopting opinionated stylistic rules that would churn the codebase.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+files = ["src/photo_cat"]
+# Third-party scientific packages ship partial or no type stubs.
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# The Tk GUI and the installer are exempt for now, matching the coverage omit list;
+# they are the least type-critical modules and are typed opportunistically later.
+# This must be an override rather than `exclude`: exclude only skips recursive file
+# discovery, and cli.py imports configure_gui, which pulled it back in and made the
+# CI job fail on errors the configuration claimed to have waived.
+[[tool.mypy.overrides]]
+module = ["photo_cat.configure_gui", "photo_cat.install"]
+ignore_errors = true
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

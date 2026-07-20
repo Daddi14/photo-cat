@@ -7,7 +7,7 @@ from __future__ import annotations
 import copy
 import math
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,6 @@ from .path_policy import (
     resolve_config_file_path,
     resolve_user_path,
     validate_directory_target,
-    validate_filename_only,
 )
 
 
@@ -35,7 +34,6 @@ class BuildConfig:
 
     input_catalog: str
     out_dir: str
-    KDTREE_FILENAME: str
     use_dask: bool
     calculate_separations: bool
     max_radius_arcsec: float
@@ -46,6 +44,43 @@ class BuildConfig:
     ra_column: str
     dec_column: str
     phot_g_mean_mag_column: str
+    magnitude_columns: dict[str, str] = field(default_factory=dict)
+
+
+# Full-width-half-maximum to standard-deviation conversion factor, 2 * sqrt(2 * ln 2).
+GAUSSIAN_FWHM_TO_SIGMA = 2.3548200450309493
+
+# Supported contamination weighting models, in the order the GUI offers them.
+CONTAMINATION_MODES = ("top_hat", "gaussian_psf")
+
+
+@dataclass(frozen=True)
+class ContaminationModelConfig:
+    """Validated query-side contamination weighting model."""
+
+    mode: str = "top_hat"
+    gaussian_fwhm_arcsec: float | None = None
+    influence_sigma: float | None = None
+
+    @property
+    def sigma_arcsec(self) -> float | None:
+        """Return the Gaussian standard deviation implied by the configured FWHM."""
+        if (self.gaussian_fwhm_arcsec is None):
+            return None
+        return self.gaussian_fwhm_arcsec / GAUSSIAN_FWHM_TO_SIGMA
+
+    @property
+    def influence_radius_arcsec(self) -> float | None:
+        """Return the outer neighbour radius implied by the FWHM and sigma multiple.
+
+        The radius is not configured directly: the user supplies a PSF FWHM and
+        decides how many standard deviations of that PSF still matter, so the
+        search radius follows the optics rather than an unrelated hand-set number.
+        """
+        sigma = self.sigma_arcsec
+        if (sigma is None or self.influence_sigma is None):
+            return None
+        return sigma * self.influence_sigma
 
 
 @dataclass(frozen=True)
@@ -58,6 +93,27 @@ class QueryConfig:
     delta_mag: float
     targets: list[str | int]
     target_source_id_column: str
+    include_missing_targets: bool = False
+    contamination_model: ContaminationModelConfig = field(default_factory=ContaminationModelConfig)
+    contamination_bands: list[str] = field(default_factory=lambda: ["gaia_g"])
+    bandpass_transform_file: str | None = None
+
+    @property
+    def aperture_radius_arcsec(self) -> float:
+        """Return the legacy field-of-view setting using its physical aperture meaning."""
+        return self.field_of_view_arcsec
+
+    @property
+    def effective_influence_radius_arcsec(self) -> float:
+        """Return the outer neighbour radius derived from the PSF, or the aperture.
+
+        A Gaussian model derives the radius from its FWHM and sigma multiple. It may
+        legitimately fall below the aperture radius: a narrow PSF stops contributing
+        leakage well inside a wide extraction circle. top_hat has no PSF scale, so it
+        falls back to the aperture itself.
+        """
+        derived = self.contamination_model.influence_radius_arcsec
+        return self.field_of_view_arcsec if derived is None else derived
 
 
 @dataclass(frozen=True)
@@ -187,6 +243,7 @@ def parse_float(
     *,
     minimum: float | None = None,
     exclusive_minimum: bool = False,
+    maximum: float | None = None,
 ) -> float:
     """Parse a finite numeric setting and optionally enforce a lower bound."""
     if (value is None):
@@ -205,6 +262,9 @@ def parse_float(
         if (below_minimum):
             comparison = f"greater than {minimum}" if (exclusive_minimum) else f"at least {minimum}"
             raise ValueError(f"{label} must be {comparison}.")
+
+    if (maximum is not None and result > maximum):
+        raise ValueError(f"{label} must be at most {maximum}.")
 
     return result
 
@@ -258,11 +318,6 @@ def validate_output_directory(path_value: str, label: str) -> str:
     return str(validate_directory_target(Path(path_value), label))
 
 
-def validate_output_filename(value: str, label: str) -> str:
-    """Require an output filename rather than a path outside the configured output folder."""
-    return validate_filename_only(value, label)
-
-
 def column_name(columns: dict[str, Any], legacy_usecolumns: list[Any], key: str, index: int, default: str) -> str:
     """Resolve one catalogue column name from the modern mapping, legacy list, or default."""
     if (columns.get(key) is not None):
@@ -283,6 +338,99 @@ def validate_columns(columns: list[str]) -> None:
         raise ValueError("Catalog source_id, ra, dec, and phot_g_mean_mag columns must be different.")
 
 
+def parse_text_mapping(value: Any, label: str) -> dict[str, str]:
+    """Parse a YAML mapping whose keys and values must be non-empty text."""
+    if (value is None):
+        return {}
+    mapping = require_mapping(value, label)
+    parsed: dict[str, str] = {}
+    for key, item in mapping.items():
+        parsed[require_text(key, f"{label} key")] = require_text(item, f"{label}.{key}")
+    return parsed
+
+
+def normalize_magnitude_columns(
+    configured_columns: dict[str, str],
+    phot_g_mean_mag_column: str,
+) -> dict[str, str]:
+    """Return a band-to-catalogue-column map with a stable Gaia-G default."""
+    magnitude_columns = {"gaia_g": phot_g_mean_mag_column}
+    magnitude_columns.update(configured_columns)
+
+    for band in magnitude_columns:
+        if (band.strip() == ""):
+            raise ValueError("build_neighbors_index.io.magnitude_columns band names cannot be empty.")
+
+    return magnitude_columns
+
+
+def parse_contamination_model(settings: dict[str, Any]) -> ContaminationModelConfig:
+    """Parse opt-in aperture/PSF-style weighting settings for query flux metrics."""
+    raw_model = settings.get("contamination_model")
+    if (raw_model is None):
+        return ContaminationModelConfig()
+    model = require_mapping(raw_model, f"{QUERY_SECTION}.settings.contamination_model")
+    mode = require_text(model.get("mode"), f"{QUERY_SECTION}.settings.contamination_model.mode", "top_hat")
+    normalized_mode = mode.lower().replace("-", "_")
+    if (normalized_mode not in CONTAMINATION_MODES):
+        raise ValueError(
+            "query_contamination_from_index.settings.contamination_model.mode "
+            f"must be one of: {', '.join(CONTAMINATION_MODES)}."
+        )
+
+    gaussian_fwhm_arcsec = None
+    if (model.get("gaussian_fwhm_arcsec") is not None):
+        gaussian_fwhm_arcsec = parse_float(
+            model.get("gaussian_fwhm_arcsec"),
+            f"{QUERY_SECTION}.settings.contamination_model.gaussian_fwhm_arcsec",
+            0.0,
+            minimum=0.0,
+            exclusive_minimum=True,
+        )
+
+    influence_sigma = None
+    if (model.get("influence_sigma") is not None):
+        influence_sigma = parse_float(
+            model.get("influence_sigma"),
+            f"{QUERY_SECTION}.settings.contamination_model.influence_sigma",
+            0.0,
+            minimum=0.0,
+            exclusive_minimum=True,
+        )
+
+    if (normalized_mode == "gaussian_psf"):
+        if (gaussian_fwhm_arcsec is None):
+            raise ValueError(
+                "query_contamination_from_index.settings.contamination_model.gaussian_fwhm_arcsec "
+                "is required when mode is gaussian_psf."
+            )
+        if (influence_sigma is None):
+            raise ValueError(
+                "query_contamination_from_index.settings.contamination_model.influence_sigma "
+                "is required when mode is gaussian_psf. It sets how many PSF standard "
+                "deviations of leakage are still counted."
+            )
+
+    return ContaminationModelConfig(
+        mode=normalized_mode,
+        gaussian_fwhm_arcsec=gaussian_fwhm_arcsec,
+        influence_sigma=influence_sigma,
+    )
+
+
+def parse_contamination_bands(settings: dict[str, Any]) -> list[str]:
+    """Parse requested result bands while keeping Gaia-G as the default metric."""
+    raw_bands = settings.get("contamination_bands")
+    if (raw_bands is None):
+        return ["gaia_g"]
+    if (not isinstance(raw_bands, list)):
+        raise ValueError("query_contamination_from_index.settings.contamination_bands must be a list.")
+    bands = [require_text(item, "query_contamination_from_index.settings.contamination_bands[]") for item in raw_bands]
+    if (not bands):
+        raise ValueError("query_contamination_from_index.settings.contamination_bands cannot be empty.")
+    return bands
+
+
 def load_build_config(section_config: dict[str, Any], config_dir: Path) -> BuildConfig:
     """Parse a build config without checking files or creating output directories."""
     io = require_mapping(section_config.get("io"), f"{BUILD_SECTION}.io")
@@ -297,6 +445,10 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
     ra_column = column_name(columns, legacy_usecolumns, "ra", 1, "ra")
     dec_column = column_name(columns, legacy_usecolumns, "dec", 2, "dec")
     phot_g_mean_mag_column = column_name(columns, legacy_usecolumns, "phot_g_mean_mag", 3, "phot_g_mean_mag")
+    magnitude_columns = normalize_magnitude_columns(
+        parse_text_mapping(io.get("magnitude_columns"), f"{BUILD_SECTION}.io.magnitude_columns"),
+        phot_g_mean_mag_column,
+    )
     usecolumns = [source_id_column, ra_column, dec_column, phot_g_mean_mag_column]
     validate_columns(usecolumns)
 
@@ -307,10 +459,6 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
             config_dir,
         ),
         out_dir=resolve_required_path(io.get("out_dir"), "build_neighbors_index.io.out_dir", config_dir),
-        KDTREE_FILENAME=validate_output_filename(
-            require_text(io.get("KDTREE_FILENAME"), "build_neighbors_index.io.KDTREE_FILENAME", "ckdtree.pkl"),
-            "build_neighbors_index.io.KDTREE_FILENAME",
-        ),
         use_dask=parse_bool(settings.get("use_dask"), "build_neighbors_index.settings.use_dask", True),
         calculate_separations=parse_bool(
             settings.get("calculate_separations"),
@@ -323,6 +471,7 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
             120.0,
             minimum=0.0,
             exclusive_minimum=True,
+            maximum=648000.0,
         ),
         chunk_size=parse_positive_int(settings.get("chunk_size"), "build_neighbors_index.settings.chunk_size", 10000),
         buffer_flush_interval=parse_positive_int(
@@ -335,6 +484,7 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
         ra_column=ra_column,
         dec_column=dec_column,
         phot_g_mean_mag_column=phot_g_mean_mag_column,
+        magnitude_columns=magnitude_columns,
     )
 
 
@@ -364,16 +514,18 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
     if (targets_input is None and not targets):
         raise ValueError("No targets were configured. Set TARGETS_INPUT to a CSV file, or set targets to a list.")
 
+    aperture_radius_arcsec = parse_float(
+        settings.get("field_of_view_arcsec"),
+        "query_contamination_from_index.settings.field_of_view_arcsec",
+        47.0,
+        minimum=0.0,
+        exclusive_minimum=True,
+        maximum=648000.0,
+    )
     return QueryConfig(
         INDEX_DIR=resolve_required_path(io.get("INDEX_DIR"), "query_contamination_from_index.io.INDEX_DIR", config_dir),
         TARGETS_INPUT=targets_input,
-        field_of_view_arcsec=parse_float(
-            settings.get("field_of_view_arcsec"),
-            "query_contamination_from_index.settings.field_of_view_arcsec",
-            47.0,
-            minimum=0.0,
-            exclusive_minimum=True,
-        ),
+        field_of_view_arcsec=aperture_radius_arcsec,
         delta_mag=parse_float(
             settings.get("delta_mag"),
             "query_contamination_from_index.settings.delta_mag",
@@ -385,13 +537,26 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
             "query_contamination_from_index.io.target_source_id_column",
             "source_id",
         ),
+        include_missing_targets=parse_bool(
+            settings.get("include_missing_targets"),
+            "query_contamination_from_index.settings.include_missing_targets",
+            False,
+        ),
+        contamination_model=parse_contamination_model(settings),
+        contamination_bands=parse_contamination_bands(settings),
+        bandpass_transform_file=resolve_path(settings.get("bandpass_transform_file"), config_dir),
     )
 
 
 def validate_query_config_runtime(config: QueryConfig) -> QueryConfig:
     """Validate query target inputs after pure parsing and resolution succeed."""
     targets_input = require_file(config.TARGETS_INPUT, "TARGETS_INPUT")
-    return replace(config, TARGETS_INPUT=targets_input)
+    bandpass_transform_file = require_file(config.bandpass_transform_file, "bandpass_transform_file")
+    return replace(
+        config,
+        TARGETS_INPUT=targets_input,
+        bandpass_transform_file=bandpass_transform_file,
+    )
 
 
 def load_execution_config(section_config: dict[str, Any]) -> ExecutionConfig:
@@ -417,12 +582,12 @@ def load_config_from_document(
     section_config = document.section(section)
 
     if (section == BUILD_SECTION):
-        config = load_build_config(section_config, document.directory)
-        return validate_build_config_runtime(config) if validate_runtime else config
+        build_config = load_build_config(section_config, document.directory)
+        return validate_build_config_runtime(build_config) if validate_runtime else build_config
 
     if (section == QUERY_SECTION):
-        config = load_query_config(section_config, document.directory)
-        return validate_query_config_runtime(config) if validate_runtime else config
+        query_config = load_query_config(section_config, document.directory)
+        return validate_query_config_runtime(query_config) if validate_runtime else query_config
 
     if (section == EXECUTION_SECTION):
         return load_execution_config(section_config)

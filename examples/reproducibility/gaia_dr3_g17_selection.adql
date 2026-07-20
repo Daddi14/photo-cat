@@ -1,0 +1,25 @@
+-- PHOTO-CAT reproducibility template.
+-- Replace comments/placeholders with the exact archive query used for an analysis
+-- or data release. This skeleton selects the columns required by PHOTO-CAT.
+
+SELECT
+  source_id,
+  ra,
+  dec,
+  phot_g_mean_mag
+FROM gaiadr3.gaia_source
+WHERE
+  source_id IS NOT NULL
+  AND ra IS NOT NULL
+  AND dec IS NOT NULL
+  AND phot_g_mean_mag IS NOT NULL
+  AND ra >= 0
+  AND ra < 360
+  AND dec >= -90
+  AND dec <= 90
+  AND phot_g_mean_mag <= 17
+  -- Data-release runs should state every quality cut explicitly.
+  -- Examples to evaluate, not defaults:
+  -- AND visibility_periods_used >= 8
+  -- AND duplicated_source = 'false'
+  -- AND astrometric_params_solved IN (31, 95)

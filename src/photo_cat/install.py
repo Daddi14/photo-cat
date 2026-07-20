@@ -12,12 +12,14 @@ import ctypes
 import os
 import re
 import subprocess
-import time
 import sys
 import venv
 import shutil
 from datetime import datetime
 from pathlib import Path
+
+from .i18n import initialize_language, tr
+from .pipeline_display import ActivityBar
 
 
 MINIMUM_PYTHON_VERSION = (3, 10)
@@ -92,16 +94,16 @@ def write_title_rule(style: str = Style.CYAN) -> None:
 
 
 def write_info_line(label: str, value: object) -> None:
-    print(f"  {label:<{INFO_LABEL_WIDTH}}: {value}")
+    print(f"  {tr(label):<{INFO_LABEL_WIDTH}}: {value}")
 
 
 def write_note(message: str) -> None:
-    print(color(f"  {message}", Style.DIM))
+    print(color(f"  {tr(message)}", Style.DIM))
 
 
 def write_header(title: str) -> None:
     write_title_rule(Style.CYAN)
-    print(color(title, Style.BOLD + Style.CYAN))
+    print(color(tr(title), Style.BOLD + Style.CYAN))
     write_title_rule(Style.CYAN)
     print()
     write_info_line("Version", PROGRAM_VERSION)
@@ -113,20 +115,20 @@ def write_header(title: str) -> None:
 
 def write_step(index: int, total: int, message: str) -> None:
     print()
-    print(color(f"Step {index} of {total} - {message}", Style.CYAN))
+    print(color(f"{tr('Step')} {index} {tr('of')} {total} - {tr(message)}", Style.CYAN))
     write_rule(Style.GRAY)
 
 
 def write_ok(message: str) -> None:
-    print(color(f"[ OK ] {message}", Style.GREEN))
+    print(color(f"[ OK ] {tr(message)}", Style.GREEN))
 
 
 def write_warn(message: str) -> None:
-    print(color(f"[WARN] {message}", Style.YELLOW))
+    print(color(f"[{tr('WARN')}] {tr(message)}", Style.YELLOW))
 
 
 def write_error(message: str) -> None:
-    print(color(f"[ERROR] {message}", Style.RED))
+    print(color(f"[{tr('ERROR')}] {tr(message)}", Style.RED))
 
 
 def write_progress_suffix(suffix: str) -> None:
@@ -374,15 +376,16 @@ def virtual_environment_rebuild_reason() -> str:
 
 def rebuild_virtual_environment(reason: str) -> bool:
     write_warn("The existing .venv needs to be rebuilt.")
-    print(f"  Reason: {reason}")
+    print(f"  {tr('Reason:')} {tr(reason)}")
     write_note("PHOTO-CAT will recreate .venv now. Dependencies may be downloaded again.")
     append_log(f"Rebuilding virtual environment: {reason}")
 
     try:
-        shutil.rmtree(VENV_DIR)
+        with ActivityBar("removing the old virtual environment"):
+            shutil.rmtree(VENV_DIR)
     except Exception as exc:
         write_error("Could not remove the old .venv folder.")
-        print(f"Details: {exc}")
+        print(f"{tr('Details:')} {tr(exc)}")
         append_log(f"ERROR: could not remove old .venv: {exc}")
         return False
 
@@ -442,61 +445,90 @@ def run_logged(command: list[str], description: str) -> bool:
 def run_logged_with_progress(
     command: list[str],
     description: str,
-    start_percent: int,
-    end_percent: int,
     detail: str,
+    completed_items: int,
+    total_items: int,
     complete: bool = False,
 ) -> bool:
+    """Run opaque subprocess work indeterminately, then record real item progress."""
     append_log("=" * 80)
     append_log(description)
     append_log("> " + " ".join(str(part) for part in command))
     append_log("=" * 80)
 
-    spinner_frames = ["-", "\\", "|", "/"]
-    start_percent = max(0, min(int(start_percent), 100))
-    end_percent = max(start_percent, min(int(end_percent), 100))
-    span = max(1, end_percent - start_percent)
-
     with INSTALL_LOG_FILE.open("a", encoding="utf-8", errors="replace") as log_file:
-        process = subprocess.Popen(
-            command,
-            cwd=PROJECT_DIR,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-
-        frame_index = 0
-        started_at = time.monotonic()
-        while (process.poll() is None):
-            elapsed = time.monotonic() - started_at
-            animated_percent = start_percent + min(span - 1, int(elapsed * max(4, span / 2)))
-            progress_bar(animated_percent, detail, spinner_frames[frame_index % len(spinner_frames)])
-            frame_index += 1
-            time.sleep(0.12)
-
-        exit_code = int(process.returncode or 0)
+        with ActivityBar(detail):
+            process = subprocess.run(
+                command,
+                cwd=PROJECT_DIR,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        exit_code = process.returncode
 
     append_log("")
     append_log(f"Exit code: {exit_code}")
     append_log("")
 
     if (exit_code == 0):
-        progress_bar(end_percent, detail, complete=complete)
+        total_items = max(1, int(total_items))
+        completed_items = max(0, min(int(completed_items), total_items))
+        percent = int(round((completed_items / total_items) * 100.0))
+        progress_bar(percent, f"{completed_items}/{total_items} [{detail}]", complete=complete)
         return True
 
-    sys.stdout.write("\n")
-    sys.stdout.flush()
     return False
+
+
+class ProgressEnvBuilder(venv.EnvBuilder):
+    """Expose the real phases performed by Python's otherwise opaque venv builder."""
+
+    PHASE_COUNT = 6
+
+    def __init__(self) -> None:
+        super().__init__(with_pip=True)
+        self.phase_index = 0
+
+    def _run_phase(self, label: str, operation, *args):
+        phase_number = self.phase_index + 1
+        detail = f"{phase_number}/{self.PHASE_COUNT} [{tr(label)}]"
+        with ActivityBar(detail):
+            result = operation(*args)
+        self.phase_index = phase_number
+        return result
+
+    def ensure_directories(self, env_dir):
+        return self._run_phase("creating environment folders", super().ensure_directories, env_dir)
+
+    def create_configuration(self, context) -> None:
+        self._run_phase("writing pyvenv.cfg", super().create_configuration, context)
+
+    def setup_python(self, context) -> None:
+        self._run_phase("installing the Python executable", super().setup_python, context)
+
+    def _setup_pip(self, context) -> None:
+        self._run_phase("bootstrapping pip", super()._setup_pip, context)
+
+    def setup_scripts(self, context) -> None:
+        self._run_phase("installing activation scripts", super().setup_scripts, context)
+
+    def post_setup(self, context) -> None:
+        self._run_phase("finalizing the virtual environment", super().post_setup, context)
+
+
+def create_virtual_environment() -> None:
+    """Create the local environment while reporting each completed venv phase."""
+    ProgressEnvBuilder().create(VENV_DIR)
 
 def print_failure_details() -> None:
     write_error("Dependency installation failed.")
-    print(f"Detailed log: {INSTALL_LOG_FILE}")
+    print(f"{tr('Detailed log:')} {INSTALL_LOG_FILE}")
 
     log_tail = tail_log()
     if (log_tail):
         print()
-        print(color("Last log lines:", Style.YELLOW))
+        print(color(tr("Last log lines:"), Style.YELLOW))
         print("-" * 64)
         for line in log_tail:
             print(line)
@@ -741,26 +773,11 @@ raise SystemExit(check.returncode)
     return (process.returncode == 0)
 
 
-def show_project_check_progress(dependencies: list[str]) -> None:
-    total = max(1, len(dependencies) + 1)
-
-    for index, requirement in enumerate(dependencies, start=1):
-        package_name = display_requirement_name(requirement)
-        percent = int(round((index / total) * 100.0))
-        detail = f"{index}/{total} [{package_name}]"
-        progress_bar(percent, detail, complete=False)
-
-    progress_bar(100, f"{total}/{total} [photo-cat]", complete=True)
-
-
 def install_project_dependencies(python_exe: Path, dependencies: list[str]) -> bool:
     total = max(1, len(dependencies) + 1)
 
     for index, requirement in enumerate(dependencies, start=1):
         package_name = display_requirement_name(requirement)
-        start_percent = int(round(((index - 1) / total) * 100.0))
-        end_percent = int(round((index / total) * 100.0))
-        detail = f"{index}/{total} [{package_name}]"
 
         if (not run_logged_with_progress(
             [
@@ -773,9 +790,9 @@ def install_project_dependencies(python_exe: Path, dependencies: list[str]) -> b
                 requirement,
             ],
             f"Installing dependency: {requirement}",
-            start_percent,
-            end_percent,
-            detail,
+            f"downloading/installing {package_name}",
+            index,
+            total,
             complete=False,
         )):
             print_failure_details()
@@ -785,9 +802,6 @@ def install_project_dependencies(python_exe: Path, dependencies: list[str]) -> b
 
 
 def install_project_package(python_exe: Path, package_index: int, total: int) -> bool:
-    start_percent = int(round(((package_index - 1) / total) * 100.0))
-    end_percent = int(round((package_index / total) * 100.0))
-
     return run_logged_with_progress(
         [
             str(python_exe),
@@ -800,14 +814,15 @@ def install_project_package(python_exe: Path, package_index: int, total: int) ->
             ".",
         ],
         "Installing PHOTO-CAT package",
-        start_percent,
-        end_percent,
-        f"{package_index}/{total} [photo-cat]",
+        "building/installing photo-cat",
+        package_index,
+        total,
         complete=True,
     )
 
 
 def main() -> int:
+    initialize_language(PROJECT_DIR / "config.yaml")
     enable_windows_ansi()
     reset_log_file()
 
@@ -815,7 +830,7 @@ def main() -> int:
         current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         required_version = f"{MINIMUM_PYTHON_VERSION[0]}.{MINIMUM_PYTHON_VERSION[1]}"
         write_error(f"Python {required_version} or newer is required. You are using Python {current_version}.")
-        print("Install Python from https://www.python.org/downloads/ and run this again.")
+        print(tr("Install Python from https://www.python.org/downloads/ and run this again."))
         return 1
 
     if (not PYPROJECT_FILE.is_file()):
@@ -825,7 +840,6 @@ def main() -> int:
     write_header("PHOTO-CAT - dependency setup")
 
     write_step(1, 3, "Prepare local environment")
-    progress_bar(0, "[virtual environment]")
 
     rebuild_reason = virtual_environment_rebuild_reason()
     if (rebuild_reason):
@@ -833,28 +847,25 @@ def main() -> int:
         sys.stdout.flush()
         if (not rebuild_virtual_environment(rebuild_reason)):
             return 1
-        progress_bar(0, "[virtual environment]")
 
     if (not VENV_DIR.exists()):
         try:
-            venv.create(VENV_DIR, with_pip=True)
+            create_virtual_environment()
         except Exception as exc:
             write_error("Could not create the virtual environment.")
-            print("On Linux, you may need to install the python3-venv package first.")
-            print(f"Details: {exc}")
+            print(tr("On Linux, you may need to install the python3-venv package first."))
+            print(f"{tr('Details:')} {tr(exc)}")
             append_log(f"ERROR: could not create virtual environment: {exc}")
             return 1
 
-        progress_bar(100, "[virtual environment]", complete=True)
         write_ok("Virtual environment created.")
     else:
-        progress_bar(100, "[virtual environment]", complete=True)
         write_ok("Virtual environment already exists. Reusing it.")
 
     python_exe = venv_python_path()
     if (not python_exe.is_file()):
         write_error(f"Could not find the virtual environment Python here: {python_exe}")
-        print("Delete the .venv folder and run the installer again.")
+        print(tr("Delete the .venv folder and run the installer again."))
         return 1
 
     try:
@@ -866,10 +877,6 @@ def main() -> int:
     write_step(2, 3, "Verify installation tools")
     tools = ["pip", "setuptools", "wheel"]
     for index, tool_name in enumerate(tools, start=1):
-        start_percent = int(round(((index - 1) / len(tools)) * 100.0))
-        end_percent = int(round((index / len(tools)) * 100.0))
-        detail = f"{index}/{len(tools)} [{tool_name}]"
-
         if (not run_logged_with_progress(
             [
                 str(python_exe),
@@ -881,9 +888,9 @@ def main() -> int:
                 tool_name,
             ],
             f"Upgrading {tool_name}",
-            start_percent,
-            end_percent,
-            detail,
+            f"downloading/upgrading {tool_name}",
+            index,
+            len(tools),
             complete=(index == len(tools)),
         )):
             print_failure_details()
@@ -895,18 +902,17 @@ def main() -> int:
         project_dependencies = read_project_dependencies()
     except Exception as exc:
         write_error("Could not read dependencies from pyproject.toml.")
-        print(f"Details: {exc}")
+        print(f"{tr('Details:')} {tr(exc)}")
         append_log(f"ERROR: could not read project dependencies: {exc}")
         return 1
 
-    package_ready = project_package_is_ready(python_exe)
+    write_step(3, 3, "Verify PHOTO-CAT package")
+    with ActivityBar("checking photo-cat and dependency consistency"):
+        package_ready = project_package_is_ready(python_exe)
     if (package_ready):
-        write_step(3, 3, "Verify PHOTO-CAT package")
         write_note("PHOTO-CAT and its dependencies are already available.")
-        show_project_check_progress(project_dependencies)
         write_ok("PHOTO-CAT package is ready.")
     else:
-        write_step(3, 3, "Install PHOTO-CAT package")
         write_note("Installing PHOTO-CAT and dependencies from pyproject.toml.")
 
         if (not install_project_dependencies(python_exe, project_dependencies)):
@@ -921,8 +927,8 @@ def main() -> int:
 
     print()
     write_title_rule(Style.GREEN)
-    print(color("PHOTO-CAT setup is complete.", Style.BOLD + Style.GREEN))
-    print(color("The local environment is ready to use.", Style.GREEN))
+    print(color(tr("PHOTO-CAT setup is complete."), Style.BOLD + Style.GREEN))
+    print(color(tr("The local environment is ready to use."), Style.GREEN))
     write_title_rule(Style.GREEN)
     print()
     write_info_line("Detailed install log", INSTALL_LOG_FILE)

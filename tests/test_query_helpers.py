@@ -8,10 +8,14 @@ import numpy as np
 import pytest
 
 from photo_cat.query_contamination_from_index import (
+    CONTAMINATION_WEIGHTERS,
     calculate_flux_fraction_extra,
+    contamination_weights,
+    psf_aperture_metrics,
     source_id_from_internal_id,
     valid_neighbor_indices,
 )
+from photo_cat.load_config import CONTAMINATION_MODES, GAUSSIAN_FWHM_TO_SIGMA, ContaminationModelConfig
 
 
 @pytest.mark.unit
@@ -39,7 +43,128 @@ def test_calculate_flux_fraction_extra_uses_pogson_flux_ratio() -> None:
     result = calculate_flux_fraction_extra(
         target_magnitude=10.0,
         contaminant_magnitudes=np.array([11.0, 15.0]),
-        inside_field_of_view=np.array([True, False]),
+        selected_contaminants=np.array([True, False]),
     )
 
     assert result == pytest.approx((10.0 ** -0.4) * 100.0)
+
+
+@pytest.mark.unit
+def test_flux_fraction_accepts_aperture_weights() -> None:
+    """Weighted models should reduce flux contribution without changing the legacy formula."""
+    result = calculate_flux_fraction_extra(
+        target_magnitude=10.0,
+        contaminant_magnitudes=np.array([10.0, 10.0]),
+        selected_contaminants=np.array([True, True]),
+        weights=np.array([1.0, 0.25]),
+    )
+
+    assert result == pytest.approx(125.0)
+
+
+@pytest.mark.unit
+def test_gaussian_contamination_weights_decline_with_radius() -> None:
+    """The Gaussian model should be opt-in and radial."""
+    weights = contamination_weights(
+        np.array([0.0, 10.0, 20.0]),
+        ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=10.0),
+    )
+
+    assert weights[0] == pytest.approx(1.0)
+    assert weights[0] > weights[1] > weights[2]
+
+
+@pytest.mark.unit
+def test_top_hat_has_no_flux_response_outside_aperture() -> None:
+    """The compatibility top-hat model must not invent leakage in an expanded influence radius."""
+    weights = contamination_weights(
+        np.array([9.0, 11.0]),
+        ContaminationModelConfig(mode="top_hat"),
+        aperture_radius_arcsec=10.0,
+    )
+
+    assert weights.tolist() == [1.0, 0.0]
+
+
+@pytest.mark.unit
+def test_unsupported_contamination_model_is_rejected() -> None:
+    """An unknown model name must fail loudly rather than silently return no weights."""
+    with pytest.raises(ValueError, match="Unsupported contamination model"):
+        contamination_weights(
+            np.array([1.0]),
+            ContaminationModelConfig(mode="not_a_real_model"),
+        )
+
+
+@pytest.mark.unit
+def test_weighter_registry_covers_exactly_the_supported_modes() -> None:
+    """The registry must stay in sync with the modes accepted by the configuration parser."""
+    assert set(CONTAMINATION_WEIGHTERS) == set(CONTAMINATION_MODES)
+
+
+@pytest.mark.unit
+def test_psf_aperture_metrics_reports_ratio_purity_and_fraction() -> None:
+    """An equal-magnitude contaminant on the target gives C=1, P=0.5, and 1-P=0.5."""
+    model = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=5.0)
+    metrics = psf_aperture_metrics(
+        10.0,
+        np.array([10.0]),
+        np.array([True]),
+        np.array([0.0]),
+        model,
+        aperture_radius_arcsec=10.0,
+    )
+
+    assert metrics is not None
+    assert metrics["contamination_ratio"] == pytest.approx(1.0)
+    assert metrics["target_purity"] == pytest.approx(0.5)
+    assert metrics["contaminating_fraction"] == pytest.approx(0.5)
+    # The PSF width used for the metrics is reported in both forms.
+    assert metrics["fwhm_arcsec"] == pytest.approx(5.0)
+    assert metrics["sigma_arcsec"] == pytest.approx(5.0 / GAUSSIAN_FWHM_TO_SIGMA)
+
+
+@pytest.mark.unit
+def test_psf_aperture_metrics_scale_with_brightness_and_separation() -> None:
+    """A five-magnitude-fainter contaminant contributes ~1%; a distant one ~0%."""
+    model = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=5.0)
+
+    faint = psf_aperture_metrics(10.0, np.array([15.0]), np.array([True]), np.array([0.0]), model, 10.0)
+    assert faint is not None
+    assert faint["contamination_ratio"] == pytest.approx(0.01, abs=1e-6)
+    assert faint["target_purity"] == pytest.approx(1.0 / 1.01, abs=1e-6)
+
+    distant = psf_aperture_metrics(10.0, np.array([10.0]), np.array([True]), np.array([30.0]), model, 10.0)
+    assert distant is not None
+    assert distant["contamination_ratio"] == pytest.approx(0.0, abs=1e-4)
+    assert distant["target_purity"] == pytest.approx(1.0, abs=1e-4)
+
+
+@pytest.mark.unit
+def test_psf_aperture_metrics_only_apply_to_gaussian_psf_models() -> None:
+    """Non-PSF models (or no contaminants) return the expected values."""
+    top_hat = ContaminationModelConfig(mode="top_hat")
+    assert psf_aperture_metrics(10.0, np.array([10.0]), np.array([True]), np.array([0.0]), top_hat, 10.0) is None
+
+    model = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=5.0)
+    empty = psf_aperture_metrics(10.0, np.empty(0), np.empty(0, dtype=bool), np.empty(0), model, 10.0)
+    assert empty is not None
+    assert empty["contamination_ratio"] == 0.0
+    assert empty["target_purity"] == 1.0
+
+
+@pytest.mark.unit
+def test_influence_neighbor_provider_recomputes_per_target_from_the_catalogue() -> None:
+    """The provider finds neighbours out to the influence radius directly from RA/Dec."""
+    from photo_cat.query_contamination_from_index import make_influence_neighbor_provider
+
+    # Target at (0, 0); one neighbour ~36" east (0.01 deg), one ~360" east (0.1 deg).
+    ra = np.array([0.0, 0.01, 0.1])
+    dec = np.array([0.0, 0.0, 0.0])
+
+    near_only = make_influence_neighbor_provider(ra, dec, influence_radius_arcsec=60.0)
+    # internal ids are catalogue index + 1; self (index 0) is excluded.
+    assert near_only(1).tolist() == [2]
+
+    both = make_influence_neighbor_provider(ra, dec, influence_radius_arcsec=400.0)
+    assert sorted(both(1).tolist()) == [2, 3]

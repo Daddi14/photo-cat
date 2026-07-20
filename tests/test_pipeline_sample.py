@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from photo_cat import build_neighbors_index, query_contamination_from_index
+from photo_cat import __version__
 
 
 def write_pipeline_config(tmp_path: Path, sample_inputs) -> Path:
@@ -21,7 +22,6 @@ build_neighbors_index:
   io:
     input_catalog: {sample_inputs.catalog_path.as_posix()}
     out_dir: {(tmp_path / 'output').as_posix()}
-    KDTREE_FILENAME: ckdtree.pkl
     columns:
       source_id: source_id
       ra: ra
@@ -61,14 +61,25 @@ def test_sample_pipeline_builds_index_and_queries_expected_results(
     assert build_neighbors_index.main(config_path) == 0
     assert query_contamination_from_index.main(config_path) == 0
 
-    result_files = sorted((tmp_path / "output" / "output").glob("*.json"))
+    result_files = sorted((tmp_path / "output" / "results").glob("*.json"))
     assert len(result_files) == 1
 
     results = json.loads(result_files[0].read_text(encoding="utf-8"))
+    metadata_files = sorted((tmp_path / "output" / "results" / "metadata").glob("*.json"))
+    assert len(metadata_files) == 1
+    metadata = json.loads(metadata_files[0].read_text(encoding="utf-8"))
+    assert metadata["photo_cat_version"] == __version__
+    assert metadata["processed_targets"] == 2
+    assert metadata["contamination_model"]["kind"] == "catalogue_aperture_flux_ratio"
+
     assert [row["source_id"] for row in results] == ["1001", "HD 216608A"]
 
     numeric_target = results[0]
     assert numeric_target["num_contaminants"] == 1
+    assert numeric_target["num_contaminants_selected"] == 1
+    assert numeric_target["num_neighbors_in_radius"] == 1
+    assert numeric_target["flux_fraction_selected"] == pytest.approx(15.85)
+    assert numeric_target["flux_fraction_all_neighbors"] == pytest.approx(15.85)
     assert numeric_target["flux_fraction_extra"] == pytest.approx(15.85)
     assert numeric_target["contaminants"][0]["source_id"] == "1002"
     assert numeric_target["contaminants"][0]["sep_arcsec"] == pytest.approx(16.914467, rel=1e-6)

@@ -16,23 +16,41 @@ photo-cat gui
 photo-cat run
 photo-cat build-index
 photo-cat query
+photo-cat summarize
+photo-cat summary
+photo-cat export
+photo-cat plot
+photo-cat publication-plots
+photo-cat report
+photo-cat screen
+photo-cat rank
+photo-cat validate-results
+photo-cat validate
+photo-cat benchmark
+photo-cat benchmark-table
+photo-cat provenance
 photo-cat doctor
 photo-cat --version
 ```
 
 Documented command-line options, including direct runtime overrides, should retain their meaning. New options are allowed when they do not silently change existing command behaviour.
 
-Expected user input failures should return status `1` and print a concise `ERROR:` message to standard error. Normal successful commands return status `0`.
+Expected user input failures should return status `1` and print a concise `ERROR:` message to standard error in English, or `ERRORE:` when Italian is selected. Argument-parser failures retain status `2`. Normal successful commands return status `0`.
+
+`--language {en,it}` is a global option. It changes user-facing help, console messages, warnings, and expected errors, but not command/option names, machine-readable schema keys, decision enums, or scientific plot labels.
 
 ## Configuration
 
 The top-level sections in `config.yaml` are public:
 
 ```text
+interface
 build_neighbors_index
 query_contamination_from_index
 execution
 ```
+
+`interface.language` accepts `en` or `it`. An explicit CLI language takes precedence over `PHOTO_CAT_LANGUAGE`, which takes precedence over the selected configuration and the English default.
 
 Documented keys inside these sections, relative-path behaviour, and validation rules are part of the supported configuration model. Additive settings are preferred over renaming or silently reinterpreting existing settings.
 
@@ -40,7 +58,7 @@ Documented keys inside these sections, relative-path behaviour, and validation r
 
 - Relative paths stored in `config.yaml`, including catalogue, targets, build-output, and query-index paths, resolve relative to the directory containing that config file.
 - An explicit CLI `--config` path and direct CLI path overrides resolve relative to the working directory where `photo-cat` is invoked.
-- Query result files are created only under `INDEX_DIR/output`; a file occupying that path is a validation error.
+- Query result files are created only under `INDEX_DIR/results`; a file occupying that path is a validation error.
 - Index directory validation happens before numerical query execution opens index arrays or memory maps.
 - Reading or validating a configuration must not create output directories, change the caller working directory, or permanently modify `PHOTO_CAT_CONFIG`.
 - Direct CLI overrides are derived for one command only and do not rewrite the source `config.yaml`.
@@ -48,21 +66,67 @@ Documented keys inside these sections, relative-path behaviour, and validation r
 
 ## Build-index outputs
 
-A successful build writes the documented neighbour-index files inside the configured output directory. Query mode relies on that directory layout, so changes require a migration plan, compatibility handling, or a documented major-version break.
+A successful build writes the documented neighbour-index files inside the configured output directory. Format version 2 requires a completed `index_manifest.json` and safe non-object NumPy arrays. Version 1 indexes require an explicit rebuild and are never deserialized.
 
 ## Query results
 
-The query stage writes JSON files under `INDEX_DIR/output`.
+The query stage writes JSON files under `INDEX_DIR/results`.
 
 Each target result preserves the documented fields for:
 
 - target source ID;
 - target coordinates and magnitude when available;
+- `flux_fraction_selected`;
+- `flux_fraction_all_neighbors`;
 - `flux_fraction_extra`;
+- additive weighted `flux_fraction_inside_aperture`,
+  `flux_fraction_outside_aperture`, and `flux_fraction_total_weighted` metrics;
+- `num_neighbors_in_radius`;
+- influence-radius and outside-aperture neighbour counts;
+- `num_contaminants_selected`;
 - `num_contaminants`;
-- contaminant records including source ID, coordinates, magnitude, and separation.
+- contaminant records including source ID, coordinates, magnitude, and separation;
+- separately identified selected sources outside the aperture when an influence
+  radius is configured;
+- additive per-band target/contaminant magnitudes and transformed-band flux
+  dictionaries when an empirical bandpass profile is configured;
+- `bandpass_transform_status`, `bandpass_transform_profile`, and
+  `bandpass_transformed_band` provenance fields;
+- scalar `*_transformed` aliases suitable for screening and validation tools;
+- unresolved target rows when explicitly requested, with `status` set to
+  `missing_from_index` or `invalid_target_id`.
+
+Each query also writes a reproducibility sidecar under `INDEX_DIR/results/metadata/`
+with schema version `1`. The sidecar includes the PHOTO-CAT version, query
+configuration, processed target count, index manifest, result path, and explicit
+model-scope notes. The sidecar is additive and must not change the target-result
+JSON from a list into a wrapper object.
 
 Regression tests should protect field names, result ordering where documented, and numerical conventions that affect scientific interpretation.
+
+## Derived result products
+
+`photo-cat summarize` reads a target-result JSON file and emits text, JSON, or
+CSV aggregate statistics. `photo-cat export` writes flat CSV or Parquet target
+tables. `photo-cat plot` reads a target-result JSON file and writes SVG plots
+for documented plot kinds by default, with a matplotlib backend for raster and
+publication outputs. `photo-cat report` writes HTML or Markdown reports from a
+target-result JSON file. `photo-cat benchmark` writes a JSON document with
+schema version `1`, stage durations, status codes, platform metadata, PHOTO-CAT
+version, Python `tracemalloc` peak allocations, and optional psutil RSS samples.
+`photo-cat provenance` writes a schema-versioned JSON document containing
+catalogue checksum, shape/header facts, null counts, numeric ranges, duplicate
+source-ID counts, and optional ADQL/query checksum.
+
+`photo-cat screen` writes schema-versioned target rankings with explicit
+thresholds, decisions, scores, and reasons. `photo-cat validate-results` writes
+schema-versioned comparison statistics against a user-supplied reference CSV
+and can export matched residual rows.
+
+`photo-cat publication-plots` accepts one query-result JSON plus its aperture
+and writes contaminant-count, separation, area-normalized separation-density,
+and sky-map products with a checksummed manifest. Sky-map classes are encoded
+redundantly by colour, marker shape, and marker size.
 
 ## Diagnostics and launchers
 

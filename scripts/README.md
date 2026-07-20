@@ -12,7 +12,7 @@ Normal users should run only the root starter files:
 - `start_windows.ps1`, main Windows launcher logic.
 - `start_linux_macos.sh`, main macOS/Linux launcher logic.
 - `run_pipeline_windows.bat`, opens the pipeline in a separate Windows console.
-- `run_pipeline_unix.sh`, runs the pipeline from macOS/Linux after `Save + run`.
+- `run_pipeline_unix.sh`, runs the pipeline from macOS/Linux after `Save and run`.
 - `fix_console_window.ps1`, adjusts the Windows console size.
 
 ## Compatibility helpers
@@ -25,3 +25,10 @@ Normal users should run only the root starter files:
 - `run_linux_macos.sh`
 
 These are provided for advanced/manual workflows. Most users do not need them.
+
+## Runtime-helper updates
+
+The platform launchers pin the downloaded `uv` helper and verify the official
+SHA-256 digest before extraction. When updating `UV_VERSION`/`UvVersion`, update
+every platform digest from the same immutable upstream release and keep the
+launcher-security tests in sync.

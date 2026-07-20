@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import pytest
 
-import importlib.metadata
 from pathlib import Path
 
 from photo_cat import doctor

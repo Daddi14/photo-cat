@@ -36,6 +36,7 @@ $RuntimePythonDir = Join-Path $RuntimeDir "python"
 $RuntimeDownloadsDir = Join-Path $RuntimeDir "downloads"
 $RuntimeUvDir = Join-Path $RuntimeToolsDir "uv"
 $PreferredRuntimePython = "3.12"
+$UvVersion = "0.11.16"
 
 $Mode = "ALL"
 if ($ModeArg -ieq "--install-only") {
@@ -318,20 +319,30 @@ function Invoke-LoggedCommand {
     return ($exitCode -eq 0)
 }
 
-function Get-UvDownloadUrl {
+function Get-UvDownloadSpec {
     $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 
     if ($arch -eq "arm64") {
-        return "https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-pc-windows-msvc.zip"
+        return [pscustomobject]@{
+            Url = "https://github.com/astral-sh/uv/releases/download/$UvVersion/uv-aarch64-pc-windows-msvc.zip"
+            Sha256 = "e4f8e70eb21f0f4efd2eeb159ab289f9a16057d59881a4475758be4ce39bc8c5"
+        }
     }
 
-    return "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip"
+    return [pscustomobject]@{
+        Url = "https://github.com/astral-sh/uv/releases/download/$UvVersion/uv-x86_64-pc-windows-msvc.zip"
+        Sha256 = "dd9d6d6554bfab265bfa98aa8e8a406c5c3a7b97582f93de1f4d48d9154a0395"
+    }
 }
 
 function Get-LocalUv {
     $uvExe = Join-Path $RuntimeUvDir "uv.exe"
-    if (Test-Path $uvExe) {
-        return $uvExe
+    $uvVersionFile = Join-Path $RuntimeUvDir "version.txt"
+    if ((Test-Path $uvExe) -and (Test-Path $uvVersionFile)) {
+        $installedUvVersion = Get-Content -Path $uvVersionFile -Encoding UTF8 | Select-Object -First 1
+        if (($null -ne $installedUvVersion) -and ($installedUvVersion.Trim() -eq $UvVersion)) {
+            return $uvExe
+        }
     }
 
     Write-Step "Step 1 of 3 - Prepare local runtime manager"
@@ -341,7 +352,8 @@ function Get-LocalUv {
     New-Item -ItemType Directory -Force -Path $RuntimeDownloadsDir | Out-Null
     New-Item -ItemType Directory -Force -Path $RuntimeUvDir | Out-Null
 
-    $downloadUrl = Get-UvDownloadUrl
+    $downloadSpec = Get-UvDownloadSpec
+    $downloadUrl = $downloadSpec.Url
     $archivePath = Join-Path $RuntimeDownloadsDir "uv.zip"
     $extractPath = Join-Path $RuntimeDownloadsDir "uv-extract"
 
@@ -352,6 +364,11 @@ function Get-LocalUv {
     Add-SetupLog "Downloading local uv runtime helper: $downloadUrl"
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+    $actualHash = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $downloadSpec.Sha256) {
+        Remove-Item -Force $archivePath -ErrorAction SilentlyContinue
+        throw "Downloaded uv archive failed SHA-256 verification."
+    }
 
     Expand-Archive -Path $archivePath -DestinationPath $extractPath -Force
 
@@ -361,6 +378,7 @@ function Get-LocalUv {
     }
 
     Copy-Item -Force $found.FullName $uvExe
+    Set-Content -Path $uvVersionFile -Value $UvVersion -Encoding UTF8
     Write-Ok "Local runtime helper is ready."
     return $uvExe
 }
@@ -525,7 +543,7 @@ try {
 
     Configure-Tool
 
-    # The GUI handles Save + run by opening the pipeline in its own console.
+    # The GUI handles Save and run by opening the pipeline in its own console.
     # When the GUI is closed, this launcher closes too instead of asking another question.
     exit 0
 }

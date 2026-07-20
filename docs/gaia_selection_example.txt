@@ -1,0 +1,58 @@
+PHOTO-CAT catalogue-selection reproducibility template
+======================================================
+
+This file is an example/template, not a claim about the exact selections used
+in any figure. For a data release, replace the placeholders
+with the actual archive service, catalogue release, ADQL/SQL query, cross-match
+inputs, quality cuts, export command, and checksums used for the analysis.
+
+Minimum provenance to record
+----------------------------
+
+- PHOTO-CAT release: run `photo-cat --version`
+- Catalogue service and release, e.g. Gaia ESA Archive, gaiadr3.gaia_source
+- Export timestamp and output filename
+- Exact ADQL/SQL query or notebook cell
+- Quality cuts and rationale
+- Target-list or cross-match source, e.g. Bright Star Catalog version
+- SHA-256 of exported CSV
+- PHOTO-CAT `config.yaml` or exact CLI commands
+
+Example Gaia ADQL skeleton
+--------------------------
+
+SELECT
+  source_id,
+  ra,
+  dec,
+  phot_g_mean_mag
+FROM gaiadr3.gaia_source
+WHERE
+  source_id IS NOT NULL
+  AND ra IS NOT NULL
+  AND dec IS NOT NULL
+  AND phot_g_mean_mag IS NOT NULL
+  AND ra >= 0
+  AND ra < 360
+  AND dec >= -90
+  AND dec <= 90
+  -- Replace these examples with the actual selection cuts.
+  -- AND phot_g_mean_mag < 18
+  -- AND visibility_periods_used >= 8
+  -- AND astrometric_params_solved IN (31, 95)
+
+Example PHOTO-CAT command log
+-----------------------------
+
+photo-cat --version
+photo-cat build-index --config config.yaml --input-catalog data/<catalogue>.csv --out-dir output/<run_name> --max-radius-arcsec <radius>
+photo-cat query --config config.yaml --index-dir output/<run_name> --targets-input data/<targets>.csv --field-of-view-arcsec <radius> --delta-mag <delta>
+
+After running, archive these files with the analysis:
+
+- data/<catalogue>.csv, or a documented way to regenerate it
+- data/<targets>.csv, or the target-selection query/cross-match file
+- config.yaml, or the command log above
+- output/<run_name>/index_manifest.json
+- output/<run_name>/results/<result>.json
+- output/<run_name>/output/metadata/<result>_metadata.json

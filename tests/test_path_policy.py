@@ -57,7 +57,7 @@ def test_validate_index_paths_returns_named_files_for_a_complete_index(write_min
     assert paths.root == root.resolve()
     assert paths.offsets == root / "offsets.npy"
     assert paths.neighbors_ids == root / "neighbors_ids.bin"
-    assert paths.output_dir == root / "output"
+    assert paths.output_dir == root / "results"
 
 
 @pytest.mark.unit
@@ -75,8 +75,8 @@ def test_query_output_path_stays_inside_the_index_output_directory(write_minimal
         now=datetime(2026, 6, 18, 12, 34, 56),
     )
 
-    assert result_path.parent == root / "output"
-    assert result_path.name == "targets_FoV47_dmag5_20260618_1234.json"
+    assert result_path.parent == root / "results"
+    assert result_path.name == "targets_FoV47_dmag5_20260618_123456_000000.json"
 
 
 @pytest.mark.unit

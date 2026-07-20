@@ -10,6 +10,8 @@ import sys
 import threading
 import time
 
+from .i18n import tr
+
 
 class Style:
     RESET = "\033[0m"
@@ -24,7 +26,7 @@ class Style:
 
 
 def _enable_windows_ansi() -> bool:
-    if (os.name != "nt"):
+    if (sys.platform != "win32"):
         return True
 
     try:
@@ -47,7 +49,7 @@ def _supports_color() -> bool:
     if (not sys.stdout.isatty()):
         return False
 
-    if (os.name == "nt"):
+    if (sys.platform == "win32"):
         return _enable_windows_ansi()
 
     return True
@@ -64,6 +66,7 @@ def color(text: str, style: str) -> str:
 
 
 def write_progress_suffix(suffix: str) -> None:
+    suffix = tr(suffix)
     if (not suffix):
         return
 
@@ -86,6 +89,7 @@ def write_progress_suffix(suffix: str) -> None:
 
 
 def progress_bar(percent: int, detail: str = "", spinner: str = "", complete: bool = False, width: int = 34) -> None:
+    """Render determinate progress backed by a real completed/total measurement."""
     percent = max(0, min(int(percent), 100))
 
     terminal_width = shutil.get_terminal_size((88, 20)).columns
@@ -141,43 +145,87 @@ def progress_bar(percent: int, detail: str = "", spinner: str = "", complete: bo
         sys.stdout.flush()
 
 
+def _elapsed_text(seconds: float) -> str:
+    elapsed = max(0, int(seconds))
+    hours, remainder = divmod(elapsed, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+
+
+def activity_indicator(
+    frame: int,
+    detail: str,
+    elapsed_seconds: float,
+    *,
+    complete: bool = False,
+    width: int = 24,
+) -> None:
+    """Render honest indeterminate progress for work with no measurable total."""
+    width = max(10, int(width))
+    segment_width = min(5, width)
+    if (complete):
+        bar = "=" * width
+        state = tr("done")
+    else:
+        travel = max(1, width - segment_width)
+        cycle = travel * 2
+        offset = frame % cycle
+        position = offset if offset <= travel else cycle - offset
+        bar = "-" * position + "=" * segment_width + "-" * (width - position - segment_width)
+        state = tr("working")
+
+    rendered = f"    [{bar}]  {state}  {_elapsed_text(elapsed_seconds)}  {tr(detail)}"
+    terminal_width = shutil.get_terminal_size((88, 20)).columns
+    max_width = max(42, min(terminal_width - 1, 120))
+    if (len(rendered) > max_width):
+        rendered = rendered[:max(0, max_width - 1)] + "."
+    if (USE_COLOR):
+        sys.stdout.write("\r\033[2K")
+    else:
+        sys.stdout.write("\r" + (" " * max_width) + "\r")
+    sys.stdout.write(color(rendered, Style.GREEN if complete else Style.MAGENTA))
+    sys.stdout.flush()
+    if (complete):
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+
 class ActivityBar:
-    def __init__(self, detail: str, start: int = 2, stop: int = 94, interval: float = 0.12):
+    """Animate an indeterminate bar without implying a fabricated percentage."""
+
+    def __init__(self, detail: str, interval: float = 0.12):
         self.detail = detail
-        self.start = start
-        self.stop = stop
         self.interval = interval
+        self.started_at = 0.0
         self._done = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def __enter__(self):
+        self.started_at = time.monotonic()
         self._thread.start()
         return self
 
     def __exit__(self, exc_type, exc, tb):
         self._done.set()
         self._thread.join(timeout=1.0)
-        progress_bar(100, self.detail, complete=True)
+        if (exc_type is None):
+            activity_indicator(0, self.detail, time.monotonic() - self.started_at, complete=True)
+        else:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
         return False
 
     def _run(self) -> None:
-        percent = self.start
-        direction = 1
+        frame = 0
         while (not self._done.is_set()):
-            progress_bar(percent, self.detail, complete=False)
-            percent += direction
-            if (percent >= self.stop):
-                percent = self.stop
-                direction = -1
-            elif (percent <= self.start):
-                percent = self.start
-                direction = 1
+            activity_indicator(frame, self.detail, time.monotonic() - self.started_at)
+            frame += 1
             self._done.wait(self.interval)
 
 
 def tqdm_options(desc: str, total_width: int = 88) -> dict:
     return {
-        "desc": desc,
+        "desc": tr(desc),
         "ncols": None,
         "bar_format": "{desc}: {percentage:3.0f}%|{bar:24}| {n_fmt}/{total_fmt}",
         "dynamic_ncols": True,

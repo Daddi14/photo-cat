@@ -12,9 +12,9 @@
 
 **Photometric Contamination Analyzer Tool**
 
-PHOTO-CAT crea un indice dei vicini a partire da un catalogo astronomico e interroga le sorgenti vicine che possono contaminare target fotometrici selezionati.
+PHOTO-CAT crea un indice dei vicini a partire da un catalogo astronomico e valuta il rischio di contaminazione da sorgenti vicine per target fotometrici selezionati.
 
-[Download e utilizzo](docs/Download-and-usage_IT.md) · [Riga di comando](docs/Command-line_IT.md) · [Dati di input](docs/Input-data_IT.md) · [Risoluzione problemi](docs/Troubleshooting_IT.md)
+[Download e utilizzo](docs/Download-and-usage_IT.md) · [Riprodurre i risultati del paper](docs/REPRODUCE_PAPER_RESULT_IT.md) · [Riga di comando](docs/Command-line_IT.md) · [Dati di input](docs/Input-data_IT.md) · [Risoluzione problemi](docs/Troubleshooting_IT.md)
 
 ![Python](https://img.shields.io/badge/python-3.10--3.13-blue)
 ![Piattaforme](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
@@ -27,11 +27,15 @@ PHOTO-CAT crea un indice dei vicini a partire da un catalogo astronomico e inter
 
 ## Panoramica
 
-PHOTO-CAT è uno strumento Python locale per l’analisi della contaminazione fotometrica a livello di catalogo.
+PHOTO-CAT è uno strumento Python locale per la valutazione del rischio di contaminazione fotometrica a livello di catalogo e per lo screening dei target.
 
-Può creare un indice dei vicini da un catalogo di sorgenti, interrogare target selezionati e scrivere un riepilogo JSON con metriche di contaminazione e sorgenti vicine che rispettano i limiti configurati di campo di vista e magnitudine.
+Può creare un indice dei vicini da un catalogo di sorgenti, interrogare target selezionati e scrivere un riepilogo JSON con metriche di contaminazione catalogo/apertura e sorgenti vicine che rispettano i limiti configurati di campo di vista e magnitudine.
 
-PHOTO-CAT è pensato per un utilizzo locale e riproducibile. Include launcher semplici, una finestra grafica di configurazione, setup automatico delle dipendenze e gestione del runtime locale al progetto, così le installazioni Python dell’utente o del sistema non vengono modificate.
+Il modello attuale di PHOTO-CAT 2.0.0 ha un ambito volutamente definito: usa magnitudini di catalogo, un'apertura circolare e una PSF gaussiana circolare 2D opzionale, il cui flusso decade con la distanza angolare dal centro dell'apertura. Un raggio di influenza ricavato dalla larghezza della PSF può includere il leakage pesato di sorgenti vicine fuori dall'apertura. Un profilo calibrato opzionale con polinomio di colore può stimare una banda di missione con validità e provenienza. Non esegue convoluzione con PSF asimmetriche o variabili, modellazione dei pixel, luce diffusa o integrazione spettrale completa sulla banda. Considera l'output come metrica di screening/rischio salvo che input di missione calibrati supportino i modelli selezionati.
+
+PHOTO-CAT è pensato per un utilizzo locale e riproducibile. Include launcher semplici, una finestra grafica di configurazione, setup automatico delle dipendenze, gestione del runtime locale al progetto, manifest versionati dell'indice e metadata sidecar delle query con versione del pacchetto, impostazioni, manifest dell'indice e ambito del modello.
+
+> **Migrazione alla versione 2:** gli indici creati da PHOTO-CAT 1.x devono essere ricostruiti. La versione 2 usa un formato versionato e non eseguibile e rifiuta intenzionalmente i precedenti file pickle/object-array.
 
 ## Download e primo avvio
 
@@ -42,15 +46,34 @@ PHOTO-CAT è pensato per un utilizzo locale e riproducibile. Include launcher se
    - macOS/Linux: apri il Terminale nella cartella ed esegui `sh START_UNIX.sh`
 4. Seleziona il CSV del catalogo nella configurazione grafica.
 5. Controlla i nomi delle colonne rilevati.
-6. Clicca `Save + run`.
+6. Clicca `Salva e avvia la pipeline`.
 
 Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più completa.
 
 ## Funzioni
 
 - Crea un indice dei vicini da un catalogo fotometrico.
-- Interroga sorgenti potenzialmente contaminanti attorno ai target selezionati.
+- Esegue screening dei target rispetto a sorgenti di catalogo vicine che possono contaminare un'apertura circolare.
+- Riporta sia il flusso dei contaminanti selezionati sia il flusso di tutti i vicini dentro il raggio.
+- Confronta opzionalmente metriche di flusso a livello di catalogo tra bande di magnitudine salvate.
+- Applica una trasformazione empirica di colore con provenienza verso una banda di missione.
+- Usa un modello di screening della contaminazione top-hat o con PSF gaussiana circolare 2D.
+- Riassume i JSON dei risultati in statistiche text, JSON o CSV.
+- Genera plot SVG senza dipendenze aggiuntive e report HTML/Markdown.
+- Genera distribuzioni dei conteggi e delle separazioni pronte per la
+  pubblicazione, insieme a una mappa colourblind-safe con marker ridondanti.
+- Esporta tabelle di risultati target in CSV o Parquet per notebook e strumenti esterni.
+- Cattura provenance JSON del catalogo con checksum, conteggi righe, statistiche colonne e checksum ADQL opzionale.
+- Genera pacchetti riproducibili per articolo/revisione con riassunti, plot, report e checksum.
+- Unisce cataloghi supplementari di stelle brillanti prima della creazione dell'indice.
+- Ordina i target in decisioni esplicite accept/review/reject per lo screening.
+- Valida la contaminazione prevista rispetto a tabelle di missione/riferimento fornite dall'utente.
+- Esegue benchmark riproducibili con tempi e allocazioni Python di picco.
+- Converte i benchmark in tabelle Markdown o CSV pronte per l'articolo.
 - Configura le esecuzioni tramite interfaccia grafica.
+- Passa tra inglese e italiano per GUI, guida dei comandi, messaggi della console, avvisi ed errori previsti.
+- Consulta tooltip introduttivi su ogni impostazione, valore, sezione e azione della GUI, con spiegazioni pratiche dei termini astronomici.
+- Mantiene in inglese le etichette scientifiche dei grafici con entrambe le lingue dell'interfaccia, per produrre figure coerenti e pronte per la pubblicazione.
 - Esegui lo stesso workflow da una CLI per automazione e sistemi remoti, con override diretti per ogni valore di configurazione.
 - Usa un CSV di target oppure una lista manuale di source ID.
 - Valida file di input, nomi delle colonne, cartelle di output e percorsi dell’indice.
@@ -100,7 +123,24 @@ Vedi [Dati di input](docs/Input-data_IT.md) per i dettagli.
 
 PHOTO-CAT scrive i file di indice generati e i risultati delle query nella cartella di output configurata.
 
-La fase di query produce un file JSON con una voce per ogni target processato. Ogni voce include i dati del target, le metriche di contaminazione e l’elenco delle sorgenti vicine qualificate.
+La fase di query produce un file JSON con una voce per ogni target processato. Ogni voce include i dati del target, le metriche di contaminazione catalogo/apertura e l’elenco delle sorgenti vicine qualificate. Un metadata sidecar viene scritto anche in `output/metadata/` per supportare la riproducibilità.
+
+I risultati possono essere post-processati con:
+
+```bash
+photo-cat summarize output/index/results/result.json
+photo-cat export output/index/results/result.json --format csv --output output/result.csv
+photo-cat plot output/index/results/result.json --kind contaminant-counts
+photo-cat publication-plots output/index/results/result.json --aperture-arcsec 47 --output-dir output/publication_plots
+photo-cat provenance data/catalog.csv --adql-file examples/reproducibility/gaia_dr3_g17_selection.adql --output output/catalog_provenance.json
+photo-cat report output/index/results/result.json --format html
+photo-cat benchmark --config config.yaml --output output/benchmark.json
+photo-cat benchmark-table output/benchmark.json --output output/benchmark_table.md
+photo-cat reproduce --result-json output/index/results/result.json --output-dir output/reproduction
+photo-cat merge-bright-stars data/gaia.csv data/bright.csv --output data/merged_catalog.csv
+photo-cat screen output/index/results/result.json --output output/screening.csv
+photo-cat validate-results output/index/results/result.json data/reference.csv --output output/validation.json
+```
 
 Vedi [Pipeline e output](docs/Pipeline-and-output_IT.md) per i dettagli.
 
@@ -128,6 +168,7 @@ photo-cat run --config config.yaml
 photo-cat run --config config.yaml --input-catalog data/catalog.csv --ra-column RAJ2000 --dec-column DEJ2000 --mag-column Gmag --field-of-view-arcsec 60 --delta-mag 4
 photo-cat build-index --config config.yaml --input-catalog data/catalog.csv --out-dir output/index
 photo-cat query --config config.yaml --index-dir output/index --targets-input data/targets.csv --field-of-view-arcsec 47 --delta-mag 5
+photo-cat query --config config.yaml --aperture-radius-arcsec 47 --contamination-model-mode gaussian_psf --gaussian-fwhm-arcsec 20 --influence-sigma 3
 photo-cat doctor
 ```
 
@@ -156,19 +197,31 @@ Documentazione manutentori:
 
 Per problemi comuni di avvio, dipendenze, Tkinter, CSV e ambienti virtuali, vedi [Risoluzione problemi](docs/Troubleshooting_IT.md).
 
+## Riprodurre i risultati del paper
+
+PHOTO-CAT include una procedura per principianti che ricrea i prodotti coordinati del paper a partire dai dati Gaia DR3:
+
+1. scarica il catalogo Gaia G=17 usato per cercare i contaminanti vicini;
+2. scarica un campione target Gaia G=12 separato;
+3. configura ed esegui la pipeline di costruzione/query;
+4. genera distribuzione dei contaminanti, separazioni e mappa celeste tramite **Grafici da pubblicazione**;
+5. conserva query, configurazione, metadata, manifest e checksum necessari alla riproducibilità.
+
+Segui la guida completa passo per passo: **[Riprodurre i risultati del paper](docs/REPRODUCE_PAPER_RESULT_IT.md)**.
+
 ## Citazione
 
 Includi la seguente citazione e il seguente ringraziamento in qualunque pubblicazione che utilizzi PHOTO-CAT.
 
 Citazione:
 
-`<paper reference>`
+`<publication reference>`
 
 Ringraziamento:
 
-`This research made use of PHOTO-CAT, a Python package for photometric contamination analysis (<paper reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
+`This research made use of PHOTO-CAT, a Python package for catalogue-level photometric contamination risk assessment and target screening (<publication reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
 
-Sostituisci `<paper reference>` con il riferimento finale dell’articolo quando disponibile.
+Sostituisci `<publication reference>` con il riferimento finale della pubblicazione quando disponibile.
 
 ## Ringraziamenti
 

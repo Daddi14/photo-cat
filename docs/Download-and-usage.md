@@ -4,6 +4,8 @@
 
 PHOTO-CAT is distributed as a project folder with platform launchers. Normal users should start from the root folder and do not need to open `src/` or `scripts/` manually.
 
+To regenerate the Gaia catalogue, run the pipeline, and create the coordinated paper-result plots, follow [Reproduce the paper results](REPRODUCE_PAPER_RESULT.md).
+
 ## Get started
 
 1. Download the latest release archive.
@@ -13,9 +15,11 @@ PHOTO-CAT is distributed as a project folder with platform launchers. Normal use
    - macOS/Linux: open Terminal in the folder and run `sh START_UNIX.sh`
 4. Wait for PHOTO-CAT to prepare its local environment.
 5. Select your catalogue CSV in the graphical configurator.
-6. Check the detected column names.
-7. Choose the build/query options you need.
-8. Click `Save + run`.
+6. Choose English or Italian from the language selector.
+7. Pause over any setting, value, section, or action to read its tooltip; astronomy-specific fields explain the term and its practical effect.
+8. Check the detected column names.
+9. Choose the build/query options you need.
+10. Click `Save and run pipeline`.
 
 ## First run
 
@@ -41,7 +45,13 @@ On macOS, running the launcher from Terminal avoids issues caused by downloaded 
 
 ## Running the pipeline
 
-After configuring the run, click `Save + run` from the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
+After configuring the run, click `Save and run pipeline` in the GUI. PHOTO-CAT opens a pipeline console and shows the current stages, progress indicators, and output path.
+
+Each build/query step displays a startup activity bar immediately after its heading while Python imports the stage and prepares its first detailed progress output. The startup bar hands over to the child stage as soon as that stage emits output.
+
+Every command launched from a GUI tool panel also receives an animated row in the Tool output console. It shows the command name and elapsed time immediately, then remains as a completed or failed status even when the underlying command produced no intermediate messages.
+
+Determinate percentages always represent measured completed items, rows, chunks, or targets. Operations whose libraries do not expose a reliable total use a moving indeterminate bar with the current activity and elapsed time instead of a fabricated percentage. Environment creation lists its actual phases, and dependency installation identifies the package currently being downloaded or installed.
 
 ## Command-line interface
 

@@ -15,7 +15,7 @@ Dopo l'avvio
 1. Seleziona il Catalog CSV.
 2. Verifica che i nomi delle colonne corrispondano esattamente all'header del CSV.
 3. Controlla i percorsi generati per target e output.
-4. Clicca Save + run.
+4. Clicca Save and run.
 
 Note
 - I nomi delle colonne sono case-sensitive.

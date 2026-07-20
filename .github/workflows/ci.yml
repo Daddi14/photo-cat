@@ -11,13 +11,96 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Python ${{ matrix.python-version }}
+  lint:
+    name: Ruff
     runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install Ruff
+        run: python -m pip install ruff
+
+      - name: Ruff check
+        run: ruff check src tests
+
+  typecheck:
+    name: mypy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package and mypy
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+          python -m pip install mypy
+
+      - name: mypy
+        run: mypy
+
+  package:
+    name: Wheel smoke-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Check distribution metadata
+        run: twine check dist/*
+
+      - name: Install the built wheel in a clean environment and smoke-test the CLI
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/python -m pip install --upgrade pip
+          /tmp/wheel-env/bin/python -m pip install dist/*.whl
+          /tmp/wheel-env/bin/photo-cat --version
+          /tmp/wheel-env/bin/python -c "import photo_cat; print('import ok', photo_cat.__version__)"
+          /tmp/wheel-env/bin/photo-cat --help > /dev/null
+
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.13"
 
     steps:
       - name: Check out repository
@@ -35,11 +118,34 @@ jobs:
           python -m pip install .
           python -m pip install pytest pytest-cov
 
+      - name: Check version consistency
+        run: python scripts/check_version_consistency.py
+
+      # compileall takes a directory, so it behaves the same on every runner.
+      # py_compile relied on the shell expanding a glob, which PowerShell does not
+      # do for native commands, so this step failed on the Windows matrix entry.
       - name: Compile source files
-        run: python -m py_compile src/photo_cat/*.py
+        run: python -m compileall -q src/photo_cat
 
       - name: Check shell launcher syntax
+        if: runner.os != 'Windows'
         run: bash -n START_UNIX.sh scripts/*.sh
+
+      - name: Check PowerShell launcher syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "scripts/start_windows.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List
+            exit 1
+          }
 
       - name: Run tests with strict markers and coverage baseline
         run: pytest --cov=photo_cat --cov-report=term-missing

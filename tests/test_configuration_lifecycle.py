@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import io
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
@@ -137,18 +138,34 @@ def test_child_stage_environment_receives_explicit_config_without_mutating_paren
     original_cwd = Path.cwd()
     captured: dict[str, object] = {}
 
-    def fake_run(*args, **kwargs):
+    activities: list[str] = []
+
+    class FakeActivity:
+        def __init__(self, detail: str) -> None:
+            activities.append(detail)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> bool:
+            return False
+
+    def fake_popen(*args, **kwargs):
         captured["args"] = args
         captured["kwargs"] = kwargs
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(stdout=io.BytesIO(b"stage output\n"), wait=lambda: 0)
 
     monkeypatch.setenv("PHOTO_CAT_CONFIG", "parent-config.yaml")
-    monkeypatch.setattr(config_and_run.subprocess, "run", fake_run)
+    monkeypatch.setattr(config_and_run.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(config_and_run, "ActivityBar", FakeActivity)
 
     config_and_run.run_stage(config_and_run.BUILD_STAGE, 1, 1, config_path)
 
     environment = captured["kwargs"]["env"]
     assert environment["PHOTO_CAT_CONFIG"] == str(config_path)
+    assert captured["kwargs"]["stdout"] is config_and_run.subprocess.PIPE
+    assert captured["kwargs"]["stderr"] is config_and_run.subprocess.STDOUT
+    assert activities == ["starting stage: Build neighbour index"]
     assert os.environ["PHOTO_CAT_CONFIG"] == "parent-config.yaml"
     assert Path.cwd() == original_cwd
 
@@ -169,4 +186,4 @@ def test_query_runtime_validation_fails_before_creating_an_output_directory(tmp_
     with pytest.raises(FileNotFoundError, match="Query index folder was not found"):
         prepare_query_runtime(query_config)
 
-    assert not (index_dir / "output").exists()
+    assert not (index_dir / "results").exists()

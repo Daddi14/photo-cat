@@ -54,18 +54,6 @@ def test_build_config_rejects_output_directory_that_is_an_existing_file(
 
 
 @pytest.mark.unit
-def test_build_config_rejects_kdtree_filename_that_escapes_output_directory(
-    config_text: str,
-    write_config: Callable[[str | None], Path],
-) -> None:
-    """The KDTree setting is a filename contract, preventing accidental writes outside out_dir."""
-    invalid_config = config_text.replace("KDTREE_FILENAME: ckdtree.pkl", "KDTREE_FILENAME: ../tree.pkl")
-
-    with pytest.raises(ValueError, match="must be a filename only"):
-        load_config("build_neighbors_index", str(write_config(invalid_config)))
-
-
-@pytest.mark.unit
 def test_target_column_error_lists_available_headers(tmp_path: Path) -> None:
     """Target CSV validation should explain a missing configured source-ID column before reading rows."""
     targets_path = tmp_path / "targets.csv"
@@ -84,7 +72,7 @@ def test_query_output_path_rejects_file_named_output(tmp_path: Path) -> None:
     """Query results must fail clearly instead of overwriting a file named output inside an index folder."""
     index_dir = tmp_path / "index"
     index_dir.mkdir()
-    (index_dir / "output").write_text("conflict", encoding="utf-8")
+    (index_dir / "results").write_text("conflict", encoding="utf-8")
 
     with pytest.raises(ValueError, match="Query results output path must be a directory"):
         create_output_json_path(None, str(index_dir), 47.0, 5.0)

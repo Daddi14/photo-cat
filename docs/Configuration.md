@@ -8,6 +8,7 @@ The recommended way to edit this file is through the graphical configurator open
 
 The configuration controls:
 
+- interface language (`en` or `it`)
 - catalogue input path
 - target input path or manual targets
 - catalogue column mapping
@@ -16,6 +17,17 @@ The configuration controls:
 - build stage options
 - query stage options
 - execution mode
+
+## Interface language
+
+The `interface.language` value selects the user-facing language:
+
+```yaml
+interface:
+  language: en  # en or it
+```
+
+It applies to the GUI, tooltips, CLI help, console messages, warnings, and expected errors. The GUI language selector updates the interface immediately and saves the choice with the configuration. Scientific plot labels deliberately remain in English so exported figures are consistent across runs and suitable for international publication.
 
 ## Catalogue path handling
 
@@ -29,15 +41,93 @@ The build stage creates a neighbour index from the catalogue.
 
 Use this when the catalogue, coordinate columns, search radius, or output/index directory has changed.
 
+Optional multi-band magnitude columns can be stored in the index for later
+screening comparisons:
+
+```yaml
+build_neighbors_index:
+  io:
+    magnitude_columns:
+      gaia_g: phot_g_mean_mag
+      gaia_bp: phot_bp_mean_mag
+      gaia_rp: phot_rp_mean_mag
+```
+
+`gaia_g` defaults to the configured `phot_g_mean_mag` column. Additional bands
+are written as numeric arrays and recorded in `index_manifest.json`.
+
 ## Query stage
 
 The query stage reads an existing index and processes selected targets.
 
 Use this when the index already exists and you only need to query targets or adjust query options.
 
-## Save + run
+The default contamination model is `top_hat`, which preserves the historical
+catalogue/aperture estimate. A 2D circular Gaussian PSF can be selected instead,
+weighting each source by its radial flux decay:
 
-`Save + run` writes the current GUI settings to `config.yaml`, then starts the pipeline in a separate console.
+```yaml
+query_contamination_from_index:
+  settings:
+    field_of_view_arcsec: 47.0       # extraction/screening aperture
+    contamination_bands: [gaia_g, gaia_bp, gaia_rp]
+    contamination_model:
+      mode: gaussian_psf
+      gaussian_fwhm_arcsec: 2.0      # PSF full width at half maximum
+      influence_sigma: 5.0           # how many sigmas of leakage still count
+```
+
+Under `gaussian_psf` each source contributes `exp(-r^2 / 2*sigma^2)` of its flux
+at angular distance `r` from the aperture centre, with
+`sigma = gaussian_fwhm_arcsec / 2.3548`.
+
+The outer influence radius is **not configured directly**. It is derived as
+`sigma * influence_sigma`, so the search radius follows the optics rather than an
+unrelated hand-set number. With the values above, `sigma = 0.849"` and the
+influence radius is `4.25"`. It may legitimately fall below the aperture radius:
+a narrow PSF stops contributing leakage well inside a wide extraction circle. If
+it exceeds the index build radius, PHOTO-CAT recomputes neighbours directly from
+the catalogue for the queried targets, which is slower per target.
+
+`top_hat` has no PSF scale, so it searches the aperture radius only.
+
+Alongside the weights, `gaussian_psf` also reports aperture-integrated metrics
+(`effective_target_flux`, `effective_contaminating_flux`, `contamination_ratio`,
+`target_purity`), which integrate the circular Gaussian over the offset aperture.
+
+This remains a catalogue-level screening approximation unless the FWHM comes from
+an instrument-specific PSF calibration.
+
+### Empirical mission-band transformations
+
+An optional versioned YAML profile can derive one named mission magnitude from
+stored catalogue bands:
+
+```yaml
+query_contamination_from_index:
+  settings:
+    bandpass_transform_file: examples/reproducibility/bandpass_transform_example.yaml
+```
+
+The profile defines `output_band`, `base_band`, two `color_bands`, polynomial
+`coefficients`, calibrated colour/magnitude limits, an `out_of_range` policy,
+and a calibration reference. The convention is:
+
+```text
+m_output = m_base + c0 + c1*colour + c2*colour^2 + ...
+colour = m_color_band_1 - m_color_band_2
+```
+
+The required input bands must have been stored with `magnitude_columns` during
+the index build. `out_of_range: null` excludes uncalibrated values;
+`out_of_range: extrapolate` retains them but marks each affected target as
+`extrapolated`. The profile and its SHA-256 checksum are copied into query
+metadata. This is an empirical colour transformation, not passband integration
+over a spectral energy distribution.
+
+## Save and run pipeline
+
+`Save and run pipeline` writes the current GUI settings to `config.yaml`, then starts the pipeline in a separate console.
 
 The pipeline console shows progress and the final output path.
 

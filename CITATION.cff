@@ -1,14 +1,14 @@
 cff-version: 1.2.0
 message: "If you use PHOTO-CAT in published work, please cite the project and replace the placeholder paper reference when the final paper is available."
 title: "PHOTO-CAT: Photometric Contamination Analyzer Tool"
-version: "1.7.0"
+version: "2.0.0"
 date-released: "2026-06-18"
 type: software
 authors:
   - name: "PHOTO-CAT contributors"
 repository-code: "https://github.com/Daddi14/photo-cat"
 license: "GPL-3.0-only"
-abstract: "PHOTO-CAT is a Python package for photometric contamination analysis. It builds a neighbour index from an astronomical catalogue and queries nearby sources that may contaminate selected photometric targets."
+abstract: "PHOTO-CAT is a Python package for catalogue-level photometric contamination risk assessment and target screening. It builds a neighbour index from an astronomical catalogue and queries nearby sources that may contaminate selected photometric targets using an aperture-like catalogue flux-ratio model."
 keywords:
   - astronomy
   - photometry
