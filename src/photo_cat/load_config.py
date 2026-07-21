@@ -52,6 +52,8 @@ GAUSSIAN_FWHM_TO_SIGMA = 2.3548200450309493
 
 # Supported contamination weighting models, in the order the GUI offers them.
 CONTAMINATION_MODES = ("top_hat", "gaussian_psf")
+# Models defined by a PSF width, and so the only ones with an influence radius.
+PSF_MODEL_MODES = ("gaussian_psf",)
 
 
 @dataclass(frozen=True)
@@ -76,7 +78,14 @@ class ContaminationModelConfig:
         The radius is not configured directly: the user supplies a PSF FWHM and
         decides how many standard deviations of that PSF still matter, so the
         search radius follows the optics rather than an unrelated hand-set number.
+
+        Only a PSF model has an influence radius at all. top_hat ignores the FWHM
+        and sigma count entirely, so stale values left in those fields must not
+        widen its search: doing so pushed the radius past the index build radius
+        and silently forced a full-catalogue neighbour recomputation per target.
         """
+        if (self.mode not in PSF_MODEL_MODES):
+            return None
         sigma = self.sigma_arcsec
         if (sigma is None or self.influence_sigma is None):
             return None

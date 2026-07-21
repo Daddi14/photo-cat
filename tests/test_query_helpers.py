@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from photo_cat.query_contamination_from_index import (
+    make_influence_neighbor_provider,
     CONTAMINATION_WEIGHTERS,
     calculate_flux_fraction_extra,
     contamination_weights,
@@ -151,6 +152,44 @@ def test_psf_aperture_metrics_only_apply_to_gaussian_psf_models() -> None:
     assert empty is not None
     assert empty["contamination_ratio"] == 0.0
     assert empty["target_purity"] == 1.0
+
+
+@pytest.mark.regression
+def test_top_hat_ignores_stale_psf_fields_when_deriving_the_influence_radius() -> None:
+    """top_hat must not inherit an influence radius from leftover FWHM/sigma values.
+
+    Deriving one anyway pushed the radius past the index build radius, which
+    silently switched the query to a full-catalogue neighbour recomputation per
+    target: a run that takes seconds took hours.
+    """
+    stale = ContaminationModelConfig(mode="top_hat", gaussian_fwhm_arcsec=300.0, influence_sigma=3.0)
+    assert stale.influence_radius_arcsec is None
+
+    psf = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=300.0, influence_sigma=3.0)
+    assert psf.influence_radius_arcsec == pytest.approx(3.0 * 300.0 / GAUSSIAN_FWHM_TO_SIGMA)
+
+
+@pytest.mark.unit
+def test_influence_provider_matches_an_exhaustive_search() -> None:
+    """The declination-band filter must be exact, not merely close.
+
+    Separation is never smaller than the declination difference, so the band can
+    only exclude sources that are provably outside the radius.
+    """
+    from photo_cat.query_contamination_from_index import separation_arcsec
+
+    rng = np.random.default_rng(0)
+    ra = rng.uniform(0.0, 360.0, 2000)
+    dec = np.degrees(np.arcsin(rng.uniform(-1.0, 1.0, 2000)))
+    radius = 3600.0
+
+    provider = make_influence_neighbor_provider(ra, dec, radius)
+    for target in (1, 500, 1999):
+        index = target - 1
+        separations = separation_arcsec(float(ra[index]), float(dec[index]), ra, dec)
+        expected = np.flatnonzero(separations <= radius)
+        expected = expected[expected != index] + 1
+        assert np.array_equal(np.sort(provider(target)), np.sort(expected))
 
 
 @pytest.mark.unit
