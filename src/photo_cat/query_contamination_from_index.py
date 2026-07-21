@@ -150,7 +150,13 @@ from .index_manifest import (
 from .target_result import TargetResult
 from .contaminant import Contaminant
 from .logger_setup import get_logger
-from .load_config import GAUSSIAN_FWHM_TO_SIGMA, ContaminationModelConfig, QueryConfig, load_config
+from .load_config import (
+    GAUSSIAN_FWHM_TO_SIGMA,
+    PSF_MODEL_MODES,
+    ContaminationModelConfig,
+    QueryConfig,
+    load_config,
+)
 from .pipeline_display import ActivityBar, progress_bar
 from .path_policy import (
     IndexPaths,
@@ -703,7 +709,6 @@ def _gaussian_sigma_arcsec(fwhm_arcsec: float) -> float:
     return float(fwhm_arcsec) / GAUSSIAN_FWHM_TO_SIGMA
 
 
-PSF_MODEL_MODES = ("gaussian_psf",)
 
 
 def psf_aperture_metrics(
@@ -971,12 +976,28 @@ def make_influence_neighbor_provider(
     ra_all = np.asarray(ra, dtype=np.float64)
     dec_all = np.asarray(dec, dtype=np.float64)
 
+    # Sort by declination once, so each target can restrict the expensive haversine
+    # to a narrow band instead of sweeping the whole catalogue. Angular separation
+    # is never smaller than the declination difference, so any source outside the
+    # band is provably outside the radius: the filter is exact, not an approximation.
+    dec_order = np.argsort(dec_all, kind="stable")
+    dec_sorted = dec_all[dec_order]
+    radius_deg = influence_radius_arcsec / 3600.0
+
     def provider(internal_target: int) -> np.ndarray:
         target_index = internal_target - 1
-        separations = separation_arcsec(float(ra_all[target_index]), float(dec_all[target_index]), ra_all, dec_all)
-        within = np.flatnonzero(separations <= influence_radius_arcsec)
-        within = within[within != target_index]
-        return (within + 1).astype(np.int64)
+        target_ra = float(ra_all[target_index])
+        target_dec = float(dec_all[target_index])
+
+        low = np.searchsorted(dec_sorted, target_dec - radius_deg, side="left")
+        high = np.searchsorted(dec_sorted, target_dec + radius_deg, side="right")
+        candidates = dec_order[low:high]
+        if (candidates.size == 0):
+            return np.empty(0, dtype=np.int64)
+
+        separations = separation_arcsec(target_ra, target_dec, ra_all[candidates], dec_all[candidates])
+        within = candidates[separations <= influence_radius_arcsec]
+        return (within[within != target_index] + 1).astype(np.int64)
 
     return provider
 

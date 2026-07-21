@@ -1901,9 +1901,10 @@ class ConfigGui(tk.Tk):
                 messagebox.showerror(f"Invalid {field_label}", f"{field_label} must be a number.")
                 return False
 
-        # The influence radius is derived from the PSF, so it can only be checked
-        # against the build radius once both inputs are present.
-        if (fwhm_text != "" and sigma_text != ""):
+        # Only a PSF model has an influence radius. top_hat ignores these fields, so
+        # values left over from an earlier Gaussian run must not raise a warning
+        # about a radius that mode will never search.
+        if (self.contamination_mode_var.get().strip() == "gaussian_psf" and fwhm_text != "" and sigma_text != ""):
             influence_radius = (float(fwhm_text) / GAUSSIAN_FWHM_TO_SIGMA) * float(sigma_text)
             if (influence_radius > max_radius):
                 proceed = messagebox.askyesno(
