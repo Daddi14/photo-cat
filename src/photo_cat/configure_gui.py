@@ -38,6 +38,15 @@ from .i18n import (
 from .load_config import CONTAMINATION_MODES, GAUSSIAN_FWHM_TO_SIGMA
 
 
+# How long console output is batched before being written to the widget. Long
+# enough to collapse a burst of progress lines into one redraw, short enough to
+# still read as live output.
+OUTPUT_FLUSH_INTERVAL_MS = 60
+
+# Console scrollback limit. Generous enough to keep a full run's meaningful output,
+# bounded so a Tk Text widget cannot grow until it slows the whole window down.
+OUTPUT_MAX_LINES = 5000
+
 PACKAGE_DIR = Path(__file__).resolve().parent
 SRC_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = SRC_DIR.parent
@@ -397,6 +406,8 @@ class ConfigGui(tk.Tk):
         self.logo_images = {}
         self.theme_button = None
         self.output_text = None
+        self.pending_output: list[str] = []
+        self.output_flush_id = None
         self.model_dependent_entries = {}
         self._tooltips: list[ToolTip] = []
         self._tool_progress_counter = 0
@@ -820,10 +831,19 @@ class ConfigGui(tk.Tk):
         # the geometry settles, instead of reflowing on every intermediate pixel.
         state = {"scroll_id": None, "width_id": None, "applied_width": -1, "target_width": -1}
 
+        def content_fits() -> bool:
+            """Return whether the whole content is already visible in the canvas."""
+            first, last = canvas.yview()
+            return (last - first) >= 1.0
+
         def apply_scroll_region():
             state["scroll_id"] = None
             try:
                 canvas.configure(scrollregion=canvas.bbox("all"))
+                # Enlarging the window can leave the view scrolled past content that
+                # now fits, which strands the panel showing blank space below it.
+                if (content_fits()):
+                    canvas.yview_moveto(0.0)
             except tk.TclError:
                 pass
 
@@ -847,6 +867,11 @@ class ConfigGui(tk.Tk):
             state["target_width"] = event.width
             if (state["width_id"] is None):
                 state["width_id"] = canvas.after_idle(apply_content_width)
+            # Growing the canvas changes how much of the content fits, so the scroll
+            # region has to be recomputed here as well. Reacting only to content
+            # Configure events left a stale, too-tall region after the window was
+            # enlarged, which is what kept a full scrollbar scrollable.
+            update_scroll_region()
 
         content.bind("<Configure>", update_scroll_region)
         canvas.bind("<Configure>", resize_content)
@@ -856,15 +881,24 @@ class ConfigGui(tk.Tk):
         scrollbar.grid(row=0, column=1, sticky="ns")
         canvas.configure(yscrollcommand=scrollbar.set)
 
+        # Every wheel handler goes through this guard: when the content already fits,
+        # there is nothing to scroll, and scrolling anyway drags the panel away from
+        # its content. The guard reads the live view rather than trusting the scroll
+        # region, so it stays correct even if the region is momentarily stale.
+        def scroll_units(units: int) -> None:
+            if (content_fits()):
+                return
+            canvas.yview_scroll(units, "units")
+
         def on_mousewheel(event):
             if (event.delta != 0):
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                scroll_units(int(-1 * (event.delta / 120)))
 
         def on_linux_scroll_up(event):
-            canvas.yview_scroll(-3, "units")
+            scroll_units(-3)
 
         def on_linux_scroll_down(event):
-            canvas.yview_scroll(3, "units")
+            scroll_units(3)
 
         def bind_mousewheel(event):
             canvas.bind_all("<MouseWheel>", on_mousewheel)
@@ -2594,13 +2628,16 @@ class ConfigGui(tk.Tk):
                     bufsize=1,
                 )
                 for line in process.stdout:
-                    self.after(0, self.append_output, line)
+                    self.queue_output(line)
                 process.wait()
                 self.after(0, self.finish_tool_progress, progress_id, process.returncode == 0)
-                self.after(0, self.append_output, tr("[finished with exit code {code}]", code=process.returncode) + "\n\n")
+                # Queued, not scheduled directly: an after(0, append_output) would
+                # overtake lines still sitting in the batch buffer and report the
+                # exit code above the output it belongs to.
+                self.queue_output(tr("[finished with exit code {code}]", code=process.returncode) + "\n\n")
             except Exception as exc:
                 self.after(0, self.finish_tool_progress, progress_id, False)
-                self.after(0, self.append_output, tr("[error] {error}", error=exc) + "\n\n")
+                self.queue_output(tr("[error] {error}", error=exc) + "\n\n")
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2657,16 +2694,64 @@ class ConfigGui(tk.Tk):
         self.output_text.see("end")
         self.output_text.configure(state="disabled")
 
+    def queue_output(self, text: str) -> None:
+        """Buffer one output line for the next batched flush.
+
+        Scheduling a Tk callback per line floods the event queue during a long
+        run: the pipeline emits a progress line very frequently, and each
+        callback re-enabled the widget, inserted, and forced a scroll redraw via
+        see("end"). Batching collapses a burst into one insert and one redraw
+        while preserving the text and its order exactly.
+
+        Safe to call from the reader thread: list.append is atomic under the GIL,
+        and only the scheduled flush touches Tk.
+        """
+        self.pending_output.append(text)
+        if (self.output_flush_id is None):
+            self.output_flush_id = self.after(OUTPUT_FLUSH_INTERVAL_MS, self.flush_output)
+
+    def flush_output(self) -> None:
+        """Write every buffered line to the console widget in a single update."""
+        self.output_flush_id = None
+        if (not self.pending_output):
+            return
+
+        batch = "".join(self.pending_output)
+        self.pending_output.clear()
+        self.append_output(batch)
+
     def append_output(self, text: str) -> None:
         if (self.output_text is None):
             return
 
         self.output_text.configure(state="normal")
         self.output_text.insert("end", text)
+        self.trim_output()
         self.output_text.see("end")
         self.output_text.configure(state="disabled")
 
+    def trim_output(self) -> None:
+        """Drop the oldest lines once the console exceeds its scrollback limit.
+
+        A long run otherwise accumulates the whole transcript in the widget, and a
+        Tk Text slows down as it grows, so the console degrades exactly during the
+        runs that produce the most output. Caller manages the widget state.
+        """
+        if (self.output_text is None):
+            return
+
+        # index("end-1c") is "line.column"; the line number is the current line count.
+        line_count = int(str(self.output_text.index("end-1c")).split(".")[0])
+        if (line_count <= OUTPUT_MAX_LINES):
+            return
+
+        cut_to = line_count - OUTPUT_MAX_LINES + 1
+        self.output_text.delete("1.0", f"{cut_to}.0")
+
     def clear_output(self) -> None:
+        # Drop buffered lines too, so a clear cannot be undone by a pending flush.
+        self.pending_output.clear()
+
         if (self.output_text is None):
             return
 

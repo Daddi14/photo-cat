@@ -69,6 +69,11 @@ def test_every_run_cli_command_starts_and_finishes_progress(monkeypatch: pytest.
         def append_output(self, value):
             events.append(("output", value))
 
+        def queue_output(self, value):
+            # The runner buffers output rather than scheduling a callback per line;
+            # the double records it directly, since batching is tested separately.
+            events.append(("output", value))
+
         def start_tool_progress(self, label):
             events.append(("start", label))
             return 9
