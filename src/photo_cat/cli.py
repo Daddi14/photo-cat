@@ -17,6 +17,7 @@ from typing import Iterator, NoReturn
 from .cli_overrides import RuntimeConfigOverride, collect_overrides
 from .i18n import SUPPORTED_LANGUAGES, initialize_language, tr
 from .load_config import CONTAMINATION_MODES
+from .photometry.sed import SUPPORTED_CONVERSION_METHODS
 from .path_policy import resolve_user_path
 
 
@@ -383,8 +384,21 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
         help="comma-separated magnitude bands to compute; use all to query every band stored in the index",
     )
     query_group.add_argument(
-        "--bandpass-transform-file",
-        help="YAML profile for an empirical catalogue-to-mission band transformation",
+        "--output-band",
+        help="convert catalogue flux into this band (a built-in filter name, or 'custom')",
+    )
+    query_group.add_argument(
+        "--conversion-method",
+        choices=list(SUPPORTED_CONVERSION_METHODS),
+        help="SED model used to convert flux between bands",
+    )
+    query_group.add_argument(
+        "--conversion-filter-file",
+        help="transmission curve for a custom output band (two columns: wavelength transmission)",
+    )
+    query_group.add_argument(
+        "--conversion-catalog",
+        help="catalogue descriptor used for the colour and anchor bands (default gaia_dr3)",
     )
     query_group.add_argument(
         "--contamination-model-mode",

@@ -23,7 +23,9 @@ path = [
     "scripts/README.md",
     "scripts/README_IT.md",
     "src/README.md",
-    "src/README_IT.md"
+    "src/README_IT.md",
+    "src/photo_cat/filters/README.md",
+    "src/photo_cat/filters/README_IT.md"
 ]
 SPDX-FileCopyrightText = "2026 PHOTO-CAT contributors"
 SPDX-License-Identifier = "GPL-3.0-only"

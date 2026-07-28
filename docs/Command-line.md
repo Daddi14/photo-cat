@@ -59,8 +59,8 @@ result JSON and the aperture represented by that result. It writes:
 
 PNG, PDF, and SVG outputs are supported through `--format`.
 
-When a bandpass profile was used, screen or validate its mission-band estimate
-with `--metric flux_fraction_total_weighted_transformed`.
+When a photometric conversion was used, screen or validate its mission-band
+estimate with `--metric flux_fraction_total_weighted_converted`.
 
 ## Doctor diagnostics for automation
 
@@ -127,7 +127,7 @@ PHOTO-CAT command sequence is:
 photo-cat --version
 photo-cat build-index --config config.yaml --input-catalog data/my_catalog.csv --out-dir output/my_index --max-radius-arcsec 120
 photo-cat query --config config.yaml --index-dir output/my_index --targets-input data/my_targets.csv --field-of-view-arcsec 47 --delta-mag 5
-photo-cat query --config config.yaml --bandpass-transform-file examples/reproducibility/bandpass_transform_example.yaml
+photo-cat query --config config.yaml --output-band tess --conversion-method blackbody
 ```
 
 The build writes `index_manifest.json` with the catalogue SHA-256 and build
@@ -426,7 +426,10 @@ Boolean options support positive and negative forms:
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--field-of-view-arcsec VALUE` |
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--aperture-radius-arcsec VALUE` (clearer alias) |
 | `query_contamination_from_index.settings.contamination_model.influence_sigma` | `--influence-sigma VALUE` |
-| `query_contamination_from_index.settings.bandpass_transform_file` | `--bandpass-transform-file PATH` |
+| `query_contamination_from_index.settings.photometric_conversion.output_band` | `--output-band NAME` |
+| `query_contamination_from_index.settings.photometric_conversion.conversion_method` | `--conversion-method NAME` |
+| `query_contamination_from_index.settings.photometric_conversion.filter_file` | `--conversion-filter-file PATH` |
+| `query_contamination_from_index.settings.photometric_conversion.catalog` | `--conversion-catalog NAME` |
 | `query_contamination_from_index.settings.delta_mag` | `--delta-mag VALUE` |
 | `query_contamination_from_index.settings.include_missing_targets` | `--include-missing-targets` / `--no-include-missing-targets` |
 | `execution.run_build` | `--run-build` / `--no-run-build` |

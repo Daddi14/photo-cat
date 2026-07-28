@@ -44,10 +44,10 @@ Archivia insieme:
 - i metadata sidecar della query in `output/metadata/`;
 - riassunti, plot SVG e report generati.
 
-`bandpass_transform_example.yaml` documenta lo schema supportato per la
-trasformazione empirica da catalogo a banda di missione. I coefficienti sono
-segnaposto deliberatamente nulli e non rappresentano una calibrazione Mauve o
-di un'altra missione. Prima dell'uso, salva ogni banda richiesta tramite
-`build_neighbors_index.io.magnitude_columns`, sostituisci coefficienti e limiti
-di validità con valori di calibrazione citati e conserva nei metadata della
-query il checksum generato per il profilo.
+La conversione fotometrica di banda stima la contaminazione in una banda di
+missione a partire dai colori del catalogo. Salva le bande BP e RP tramite
+`build_neighbors_index.io.magnitude_columns`, poi imposta
+`query_contamination_from_index.settings.photometric_conversion` con un
+`output_band` (un filtro integrato come `tess`, o `custom` con un
+`filter_file`). Gaia, TESS, CHEOPS e MAUVE sono curve ufficiali. Vedi
+`docs/Configuration_IT.md` per la descrizione completa.

@@ -18,10 +18,10 @@ circular Gaussian PSF model weights each source by its radial flux decay and
 estimates leakage out to a PSF-derived influence radius. It does not perform
 spatially varying or asymmetric PSF
 convolution, detector-pixel modelling, scattered-light modelling, or full
-spectral/passband integration. An optional provenance-tracked empirical colour
-transformation can estimate a calibrated mission band. Treat the result as a
-contamination risk-assessment / target-screening metric unless calibrated
-mission inputs support the selected model.
+spectral/passband integration. An optional blackbody colour-to-band conversion
+can estimate contamination in a mission band from catalogue colours. Treat the
+result as a contamination risk-assessment / target-screening metric unless
+calibrated mission inputs support the selected model.
 
 Index files (produced by build_neighbors_index.py)
 --------------------------------------------------
@@ -56,7 +56,9 @@ For each target source_id (real external ID, numeric or string):
 
     - source_id            : real ID used as input
     - ra, dec              : coordinates of the target
-    - phot_g_mean_mag      : G magnitude of the target
+    - magnitude            : target magnitude in ``magnitude_band``
+    - magnitude_band       : band used for the delta-magnitude cut and primary metrics
+    - magnitude_source     : ``catalogue`` for a nominal value, otherwise ``converted``
     - flux_fraction_selected      : percentage of extra flux from neighbours
                                     inside the circular query radius that also
                                     pass the delta-magnitude cut
@@ -72,7 +74,7 @@ For each target source_id (real external ID, numeric or string):
     - contaminants         : list of Contaminant objects, each with:
                                 * source_id
                                 * ra, dec
-                                * phot_g_mean_mag
+                                * magnitude, magnitude_band, magnitude_source
                                 * sep_arcsec
 
 Inputs (from config_and_run_new)
@@ -135,12 +137,9 @@ import pandas as pd
 from scipy.stats import ncx2
 
 from . import __version__
-from .bandpass_transform import (
-    BandpassTransformProfile,
-    load_bandpass_profile,
-    transform_magnitudes,
-    transform_status_name,
-)
+from .photometry.catalogs import resolve_catalog
+from .photometry.conversion import STATUS_NAMES, build_converter
+from .photometry.library import normalized_band_key
 from .index_manifest import (
     IndexManifest,
     atomic_write_json,
@@ -168,6 +167,48 @@ from .path_policy import (
 
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class ReferenceBandContext:
+    """Describe the magnitude array that drives every primary query result.
+
+    A configured output band uses the catalogue array directly when that exact
+    band is present in the index. Only otherwise is a converted array created.
+    Keeping that choice explicit prevents the delta-magnitude cut, contaminant
+    list, and primary flux metrics from silently falling back to Gaia G.
+    """
+
+    reference_band: str
+    magnitude_key: str
+    magnitude_source: str
+    output_band: str | None
+    catalog_band: str
+    method: str | None = None
+    filter_used: dict | None = None
+    effective_temperature: np.ndarray | None = None
+    status_codes: np.ndarray | None = None
+
+    @property
+    def is_converted(self) -> bool:
+        return self.magnitude_source == "converted"
+
+
+def conversion_status_name(context: ReferenceBandContext | None, index: int) -> str | None:
+    """Return the public conversion status for one catalogue row, if converting."""
+    if (context is None or not context.is_converted or context.status_codes is None):
+        return None
+    codes = context.status_codes
+    if (index < 0 or index >= codes.shape[0]):
+        return "missing_input"
+    return STATUS_NAMES.get(int(codes[index]), "missing_input")
+
+
+def _converted_flux(magnitude: float) -> float | None:
+    """Return the relative output-band flux 10^(-0.4*m_out) for a magnitude."""
+    if (not np.isfinite(magnitude)):
+        return None
+    return round(float(10.0 ** (-0.4 * magnitude)), 12)
 
 
 def read_csv_header(csv_path: str) -> list[str]:
@@ -597,20 +638,30 @@ def empty_target_result(
     magnitude: float,
     contamination_model: ContaminationModelConfig | None = None,
     magnitude_bands: list[str] | None = None,
-    bandpass_output_band: str | None = None,
-    bandpass_profile_name: str | None = None,
-    bandpass_status: str | None = None,
+    reference: ReferenceBandContext | None = None,
+    conversion_status: str | None = None,
+    effective_temperature: float | None = None,
+    converted_target_flux: float | None = None,
     target_magnitudes_by_band: dict[str, float | None] | None = None,
     aperture_radius_arcsec: float | None = None,
 ) -> dict:
     """Create the stable no-contaminant result shape used by query output."""
     contamination_model = contamination_model or ContaminationModelConfig()
     magnitude_bands = magnitude_bands or []
+    reference = reference or ReferenceBandContext(
+        reference_band="gaia_g",
+        magnitude_key="gaia_g",
+        magnitude_source="catalogue",
+        output_band=None,
+        catalog_band="gaia_g",
+    )
     result = TargetResult(
         source_id=source_id,
         ra=ra,
         dec=dec,
-        phot_g_mean_mag=(magnitude if np.isfinite(magnitude) else None),
+        magnitude=(magnitude if np.isfinite(magnitude) else None),
+        magnitude_band=reference.reference_band,
+        magnitude_source=reference.magnitude_source,
         flux_fraction_selected=0.0,
         flux_fraction_all_neighbors=0.0,
         flux_fraction_extra=0.0,
@@ -619,6 +670,8 @@ def empty_target_result(
         num_contaminants=0,
         contaminants=[],
     ).__dict__
+    if (normalized_band_key(reference.reference_band) == "gaia_g"):
+        result["phot_g_mean_mag"] = result["magnitude"]
     result["contamination_model"] = contamination_model.mode
     result["flux_fraction_selected_by_band"] = {band: 0.0 for band in magnitude_bands}
     result["flux_fraction_all_neighbors_by_band"] = {band: 0.0 for band in magnitude_bands}
@@ -631,14 +684,19 @@ def empty_target_result(
     result["num_neighbors_outside_aperture"] = 0
     result["num_contaminants_outside_aperture"] = 0
     result["outside_aperture_contaminants"] = []
-    result["bandpass_transformed_band"] = bandpass_output_band
-    result["bandpass_transform_profile"] = bandpass_profile_name
-    result["bandpass_transform_status"] = bandpass_status
     result["target_magnitudes_by_band"] = target_magnitudes_by_band or {}
-    result["flux_fraction_selected_transformed"] = 0.0 if bandpass_output_band is not None else None
-    result["flux_fraction_all_neighbors_transformed"] = 0.0 if bandpass_output_band is not None else None
-    result["flux_fraction_outside_aperture_transformed"] = 0.0 if bandpass_output_band is not None else None
-    result["flux_fraction_total_weighted_transformed"] = 0.0 if bandpass_output_band is not None else None
+    active = reference.is_converted
+    result["catalog_band"] = reference.catalog_band
+    result["output_band"] = reference.output_band
+    result["conversion_method"] = reference.method
+    result["filter_used"] = reference.filter_used
+    result["conversion_status"] = conversion_status
+    result["effective_temperature"] = effective_temperature
+    result["converted_target_flux"] = converted_target_flux
+    result["flux_fraction_selected_converted"] = 0.0 if active else None
+    result["flux_fraction_all_neighbors_converted"] = 0.0 if active else None
+    result["flux_fraction_outside_aperture_converted"] = 0.0 if active else None
+    result["flux_fraction_total_weighted_converted"] = 0.0 if active else None
     result["psf_metrics"] = psf_aperture_metrics(
         magnitude,
         np.empty(0, dtype=np.float64),
@@ -657,7 +715,9 @@ def unresolved_target_result(source_id: str, status: str) -> dict:
         "status": status,
         "ra": None,
         "dec": None,
-        "phot_g_mean_mag": None,
+        "magnitude": None,
+        "magnitude_band": None,
+        "magnitude_source": None,
         "flux_fraction_selected": None,
         "flux_fraction_all_neighbors": None,
         "flux_fraction_extra": None,
@@ -676,14 +736,18 @@ def unresolved_target_result(source_id: str, status: str) -> dict:
         "num_neighbors_outside_aperture": None,
         "num_contaminants_outside_aperture": None,
         "outside_aperture_contaminants": [],
-        "bandpass_transformed_band": None,
-        "bandpass_transform_profile": None,
-        "bandpass_transform_status": None,
+        "catalog_band": None,
+        "output_band": None,
+        "conversion_method": None,
+        "filter_used": None,
+        "conversion_status": None,
+        "effective_temperature": None,
+        "converted_target_flux": None,
         "target_magnitudes_by_band": {},
-        "flux_fraction_selected_transformed": None,
-        "flux_fraction_all_neighbors_transformed": None,
-        "flux_fraction_outside_aperture_transformed": None,
-        "flux_fraction_total_weighted_transformed": None,
+        "flux_fraction_selected_converted": None,
+        "flux_fraction_all_neighbors_converted": None,
+        "flux_fraction_outside_aperture_converted": None,
+        "flux_fraction_total_weighted_converted": None,
         "contaminants": [],
     }
 
@@ -837,6 +901,21 @@ def manifest_magnitude_bands(manifest: IndexManifest) -> dict[str, dict[str, str
     }
 
 
+def catalogue_band_for_output(output_band: str, manifest: IndexManifest) -> str | None:
+    """Return the stored catalogue band matching an output filter, if present.
+
+    Band names are compared with the same normalization used by the filter
+    library. This lets an exact catalogue measurement take precedence over a
+    synthetic conversion even if the configured spelling differs in case or
+    separators.
+    """
+    output_key = normalized_band_key(output_band)
+    return next(
+        (band for band in manifest_magnitude_bands(manifest) if normalized_band_key(band) == output_key),
+        None,
+    )
+
+
 def resolve_requested_bands(requested_bands: list[str], manifest: IndexManifest) -> list[str]:
     """Validate requested contamination bands against the completed index manifest."""
     available = manifest_magnitude_bands(manifest)
@@ -931,9 +1010,17 @@ def build_contaminant_records(
     internal_to_special_name: dict[int, str],
     aperture_location: str | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
+    reference: ReferenceBandContext | None = None,
 ) -> list[dict]:
     """Build public contaminant records from selected catalogue positions."""
     contaminants: list[dict] = []
+    reference = reference or ReferenceBandContext(
+        reference_band="gaia_g",
+        magnitude_key="gaia_g",
+        magnitude_source="catalogue",
+        output_band=None,
+        catalog_band="gaia_g",
+    )
 
     for local_index in np.flatnonzero(selected_mask):
         catalogue_index = int(contaminant_indices[local_index])
@@ -946,9 +1033,13 @@ def build_contaminant_records(
                 ),
                 ra=float(ra[catalogue_index]),
                 dec=float(dec[catalogue_index]),
-                phot_g_mean_mag=(magnitude if np.isfinite(magnitude) else None),
+                magnitude=(magnitude if np.isfinite(magnitude) else None),
+                magnitude_band=reference.reference_band,
+                magnitude_source=reference.magnitude_source,
                 sep_arcsec=float(contaminant_separations[local_index]),
             ).__dict__
+        if (normalized_band_key(reference.reference_band) == "gaia_g"):
+            record["phot_g_mean_mag"] = record["magnitude"]
         if (aperture_location is not None):
             record["aperture_location"] = aperture_location
         if (magnitude_arrays):
@@ -956,6 +1047,20 @@ def build_contaminant_records(
                 band: (float(values[catalogue_index]) if np.isfinite(values[catalogue_index]) else None)
                 for band, values in magnitude_arrays.items()
             }
+        if (reference.is_converted and reference.effective_temperature is not None):
+            temperature = float(reference.effective_temperature[catalogue_index])
+            output_magnitude = (
+                magnitude_arrays.get(reference.magnitude_key) if magnitude_arrays else None
+            )
+            converted = (
+                _converted_flux(float(output_magnitude[catalogue_index]))
+                if output_magnitude is not None
+                else None
+            )
+            record["effective_temperature"] = (
+                round(temperature, 1) if np.isfinite(temperature) else None
+            )
+            record["converted_flux"] = converted
         contaminants.append(record)
 
     return contaminants
@@ -1017,9 +1122,7 @@ def process_target(
     contamination_model: ContaminationModelConfig | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
     influence_radius_arcsec: float | None = None,
-    bandpass_status_codes: np.ndarray | None = None,
-    bandpass_output_band: str | None = None,
-    bandpass_profile_name: str | None = None,
+    reference: ReferenceBandContext | None = None,
     neighbor_provider: Callable[[int], np.ndarray] | None = None,
 ) -> dict | None:
     """Evaluate one target while keeping numerical work separate from loop orchestration.
@@ -1030,6 +1133,13 @@ def process_target(
     """
     contamination_model = contamination_model or ContaminationModelConfig()
     magnitude_arrays = magnitude_arrays or {}
+    reference = reference or ReferenceBandContext(
+        reference_band="gaia_g",
+        magnitude_key="gaia_g",
+        magnitude_source="catalogue",
+        output_band=None,
+        catalog_band="gaia_g",
+    )
     # A PSF-derived influence radius may fall below the aperture: a narrow PSF stops
     # contributing leakage well inside a wide extraction circle. Only the aperture
     # itself bounds the selected contaminants.
@@ -1040,16 +1150,30 @@ def process_target(
         return None
 
     target_index = internal_target - 1
-    bandpass_status = (
-        None if bandpass_status_codes is None else transform_status_name(bandpass_status_codes, target_index)
-    )
+    reference_values = magnitude_arrays.get(reference.magnitude_key)
+    if (reference_values is None and reference.magnitude_key == "gaia_g"):
+        reference_values = gmag
+    if (reference_values is None):
+        raise ValueError(
+            f"Reference magnitude band {reference.reference_band} was not loaded for the contamination query."
+        )
+
+    conversion_status = conversion_status_name(reference, target_index)
+    effective_temperature = None
+    converted_target_flux = None
+    if (reference.is_converted and reference.effective_temperature is not None):
+        target_teff = float(reference.effective_temperature[target_index])
+        effective_temperature = round(target_teff, 1) if np.isfinite(target_teff) else None
+        output_values = magnitude_arrays.get(reference.magnitude_key)
+        if (output_values is not None):
+            converted_target_flux = _converted_flux(float(output_values[target_index]))
     target_magnitudes_by_band = {
         band: (float(values[target_index]) if np.isfinite(values[target_index]) else None)
         for band, values in magnitude_arrays.items()
     }
     target_ra = float(ra[target_index])
     target_dec = float(dec[target_index])
-    target_magnitude = float(gmag[target_index]) if (gmag is not None) else np.nan
+    target_magnitude = float(reference_values[target_index])
     source_id = source_id_from_internal_id(internal_target, real_ids_int, internal_to_special_name)
 
     if (neighbor_provider is not None):
@@ -1072,9 +1196,10 @@ def process_target(
             target_magnitude,
             contamination_model,
             list(magnitude_arrays),
-            bandpass_output_band,
-            bandpass_profile_name,
-            bandpass_status,
+            reference,
+            conversion_status,
+            effective_temperature,
+            converted_target_flux,
             target_magnitudes_by_band,
             aperture_radius_arcsec=field_of_view_arcsec,
         )
@@ -1090,19 +1215,17 @@ def process_target(
             target_magnitude,
             contamination_model,
             list(magnitude_arrays),
-            bandpass_output_band,
-            bandpass_profile_name,
-            bandpass_status,
+            reference,
+            conversion_status,
+            effective_temperature,
+            converted_target_flux,
             target_magnitudes_by_band,
             aperture_radius_arcsec=field_of_view_arcsec,
         )
 
     contaminant_ra = ra[contaminant_indices]
     contaminant_dec = dec[contaminant_indices]
-    if (gmag is None):
-        contaminant_magnitudes = np.full(contaminant_indices.shape, np.nan, dtype=np.float64)
-    else:
-        contaminant_magnitudes = np.asarray(gmag[contaminant_indices], dtype=np.float64)
+    contaminant_magnitudes = np.asarray(reference_values[contaminant_indices], dtype=np.float64)
 
     if (stored_separations is None):
         contaminant_separations = separation_arcsec(
@@ -1196,6 +1319,7 @@ def process_target(
         internal_to_special_name,
         "inside",
         magnitude_arrays,
+        reference,
     )
     outside_contaminants = build_contaminant_records(
         contaminant_indices,
@@ -1208,13 +1332,16 @@ def process_target(
         internal_to_special_name,
         "outside",
         magnitude_arrays,
+        reference,
     )
 
     result = TargetResult(
         source_id=source_id,
         ra=target_ra,
         dec=target_dec,
-        phot_g_mean_mag=(target_magnitude if np.isfinite(target_magnitude) else None),
+        magnitude=(target_magnitude if np.isfinite(target_magnitude) else None),
+        magnitude_band=reference.reference_band,
+        magnitude_source=reference.magnitude_source,
         flux_fraction_selected=round(flux_fraction_selected, 2),
         flux_fraction_all_neighbors=round(flux_fraction_all_neighbors, 2),
         flux_fraction_extra=round(flux_fraction_selected, 2),
@@ -1223,6 +1350,8 @@ def process_target(
         num_contaminants=len(contaminants),
         contaminants=contaminants,
     ).__dict__
+    if (normalized_band_key(reference.reference_band) == "gaia_g"):
+        result["phot_g_mean_mag"] = result["magnitude"]
     result["contamination_model"] = contamination_model.mode
     result["flux_fraction_selected_by_band"] = selected_by_band
     result["flux_fraction_all_neighbors_by_band"] = all_neighbors_by_band
@@ -1235,22 +1364,27 @@ def process_target(
     result["num_neighbors_outside_aperture"] = int(np.count_nonzero(outside_aperture))
     result["num_contaminants_outside_aperture"] = len(outside_contaminants)
     result["outside_aperture_contaminants"] = outside_contaminants
-    result["bandpass_transformed_band"] = bandpass_output_band
-    result["bandpass_transform_profile"] = bandpass_profile_name
-    result["bandpass_transform_status"] = bandpass_status
+    output_key = reference.magnitude_key if reference.is_converted else None
+    result["catalog_band"] = reference.catalog_band
+    result["output_band"] = reference.output_band
+    result["conversion_method"] = reference.method
+    result["filter_used"] = reference.filter_used
+    result["conversion_status"] = conversion_status
+    result["effective_temperature"] = effective_temperature
+    result["converted_target_flux"] = converted_target_flux
     result["psf_metrics"] = psf_metrics
     result["target_magnitudes_by_band"] = target_magnitudes_by_band
-    result["flux_fraction_selected_transformed"] = (
-        None if bandpass_output_band is None else selected_by_band.get(bandpass_output_band)
+    result["flux_fraction_selected_converted"] = (
+        None if output_key is None else selected_by_band.get(output_key)
     )
-    result["flux_fraction_all_neighbors_transformed"] = (
-        None if bandpass_output_band is None else all_neighbors_by_band.get(bandpass_output_band)
+    result["flux_fraction_all_neighbors_converted"] = (
+        None if output_key is None else all_neighbors_by_band.get(output_key)
     )
-    result["flux_fraction_outside_aperture_transformed"] = (
-        None if bandpass_output_band is None else outside_by_band.get(bandpass_output_band)
+    result["flux_fraction_outside_aperture_converted"] = (
+        None if output_key is None else outside_by_band.get(output_key)
     )
-    result["flux_fraction_total_weighted_transformed"] = (
-        None if bandpass_output_band is None else total_weighted_by_band.get(bandpass_output_band)
+    result["flux_fraction_total_weighted_converted"] = (
+        None if output_key is None else total_weighted_by_band.get(output_key)
     )
     return result
 
@@ -1270,9 +1404,7 @@ def loop_over_targets(
     contamination_model: ContaminationModelConfig | None = None,
     magnitude_arrays: dict[str, np.ndarray] | None = None,
     influence_radius_arcsec: float | None = None,
-    bandpass_status_codes: np.ndarray | None = None,
-    bandpass_output_band: str | None = None,
-    bandpass_profile_name: str | None = None,
+    reference: ReferenceBandContext | None = None,
     neighbor_provider: Callable[[int], np.ndarray] | None = None,
 ) -> list[dict]:
     """Evaluate configured targets while leaving one-target logic independently testable."""
@@ -1298,9 +1430,7 @@ def loop_over_targets(
             contamination_model,
             magnitude_arrays,
             influence_radius_arcsec,
-            bandpass_status_codes,
-            bandpass_output_band,
-            bandpass_profile_name,
+            reference,
             neighbor_provider,
         )
         if (result is not None):
@@ -1364,7 +1494,7 @@ def save_query_metadata(
     result_json_path: str | Path,
     config_path: str | Path | None,
     processed_targets: int,
-    bandpass_profile: BandpassTransformProfile | None = None,
+    conversion_metadata: dict | None = None,
 ) -> str:
     """Save a non-breaking sidecar with the settings needed to reproduce a query."""
     selected_config_path = None if (config_path is None) else str(Path(config_path).resolve())
@@ -1389,11 +1519,11 @@ def save_query_metadata(
             "not_included": [
                 "spatially varying or asymmetric instrumental PSF convolution",
                 "detector pixel response",
-                "full SED integration or synthetic photometry beyond an optional empirical colour transformation",
+                "full SED integration or synthetic photometry beyond an optional blackbody colour-to-band conversion",
                 "scattered-light or diffraction features not represented by the selected radial model",
             ],
         },
-        "bandpass_transform": None if bandpass_profile is None else bandpass_profile.metadata(),
+        "photometric_conversion": conversion_metadata,
     }
     atomic_write_json(metadata_path, payload)
     return str(metadata_path)
@@ -1447,14 +1577,25 @@ def main(config_path: str | Path | None = None) -> int:
                 shape=(total_neighbors,),
             )
 
-    bandpass_profile = None
-    if (config_query.bandpass_transform_file is not None):
-        bandpass_profile = load_bandpass_profile(config_query.bandpass_transform_file)
-        if (bandpass_profile.output_band in manifest_magnitude_bands(runtime_plan.manifest)):
-            raise ValueError(
-                f"Bandpass transformation output_band {bandpass_profile.output_band} conflicts with "
-                "a catalogue band already stored in the index. Choose a distinct mission-band name."
-            )
+    # Prefer an exact catalogue measurement for the configured output band. A
+    # converter is built only when the index does not contain that band directly.
+    conversion_config = config_query.photometric_conversion
+    converter = None
+    catalog_spec = None
+    direct_output_band = None
+    if (conversion_config is not None):
+        direct_output_band = catalogue_band_for_output(
+            conversion_config.output_band,
+            runtime_plan.manifest,
+        )
+    if (conversion_config is not None and direct_output_band is None):
+        catalog_spec = resolve_catalog(conversion_config.catalog)
+        converter = build_converter(
+            catalog_spec,
+            conversion_config.output_band,
+            conversion_config.conversion_method,
+            conversion_config.filter_file,
+        )
 
     # ---------------- LOAD CATALOG ARRAYS ----------
     (
@@ -1489,17 +1630,72 @@ def main(config_path: str | Path | None = None) -> int:
 
     requested_bands = resolve_requested_bands(config_query.contamination_bands, runtime_plan.manifest)
     bands_to_load = list(requested_bands)
-    if (bandpass_profile is not None):
-        resolve_requested_bands(list(bandpass_profile.required_bands), runtime_plan.manifest)
-        bands_to_load.extend(band for band in bandpass_profile.required_bands if band not in bands_to_load)
+    if (direct_output_band is not None and direct_output_band not in bands_to_load):
+        bands_to_load.append(direct_output_band)
+    if (catalog_spec is not None):
+        # The conversion needs the catalogue's colour and anchor bands present in
+        # the index; validate and add them so they are loaded once alongside the
+        # requested contamination bands.
+        resolve_requested_bands(list(catalog_spec.required_bands), runtime_plan.manifest)
+        bands_to_load.extend(band for band in catalog_spec.required_bands if band not in bands_to_load)
     loaded_magnitude_arrays = load_magnitude_arrays(paths.root, runtime_plan.manifest, bands_to_load)
     magnitude_arrays = {band: loaded_magnitude_arrays[band] for band in requested_bands}
-    bandpass_status_codes = None
-    if (bandpass_profile is not None):
-        transformed = transform_magnitudes(bandpass_profile, loaded_magnitude_arrays)
-        magnitude_arrays[bandpass_profile.output_band] = transformed.magnitudes
-        bandpass_status_codes = transformed.status_codes
-    
+
+    reference = ReferenceBandContext(
+        reference_band="gaia_g",
+        magnitude_key="gaia_g",
+        magnitude_source="catalogue",
+        output_band=None,
+        catalog_band="gaia_g",
+    )
+    if ("gaia_g" not in magnitude_arrays and gmag is not None):
+        magnitude_arrays["gaia_g"] = gmag
+    conversion_metadata = None
+    if (conversion_config is not None and direct_output_band is not None):
+        magnitude_arrays[direct_output_band] = loaded_magnitude_arrays[direct_output_band]
+        reference = ReferenceBandContext(
+            reference_band=direct_output_band,
+            magnitude_key=direct_output_band,
+            magnitude_source="catalogue",
+            output_band=normalized_band_key(conversion_config.output_band),
+            catalog_band=direct_output_band,
+        )
+        conversion_metadata = {
+            "catalog": conversion_config.catalog,
+            "output_band": normalized_band_key(conversion_config.output_band),
+            "catalog_band": direct_output_band,
+            "magnitude_source": "catalogue",
+            "conversion_applied": False,
+        }
+        logger.info(
+            "Using stored catalogue magnitudes for output band %s; photometric conversion is not needed.",
+            direct_output_band,
+        )
+
+    if (converter is not None and catalog_spec is not None and conversion_config is not None):
+        result = converter.convert(loaded_magnitude_arrays)
+        # Store the converted band under a dedicated key so it can never clobber a
+        # catalogue band that shares its name (for example a Gaia RP output).
+        output_key = f"converted_{normalized_band_key(conversion_config.output_band)}"
+        magnitude_arrays[output_key] = result.out_magnitudes
+        reference = ReferenceBandContext(
+            reference_band=normalized_band_key(conversion_config.output_band),
+            magnitude_key=output_key,
+            magnitude_source="converted",
+            output_band=normalized_band_key(conversion_config.output_band),
+            catalog_band=catalog_spec.anchor_band,
+            method=conversion_config.conversion_method,
+            filter_used=result.metadata["filter_used"],
+            effective_temperature=result.effective_temperature,
+            status_codes=result.status_codes,
+        )
+        conversion_metadata = {
+            **converter.metadata,
+            "magnitude_source": "converted",
+            "conversion_applied": True,
+            "status_names": STATUS_NAMES,
+        }
+
     # For targets whose influence radius exceeds the index build radius, recompute
     # their neighbours directly from the catalogue so the query is not capped by the
     # build radius. Only the requested targets are recomputed.
@@ -1532,9 +1728,7 @@ def main(config_path: str | Path | None = None) -> int:
         contamination_model=config_query.contamination_model,
         magnitude_arrays=magnitude_arrays,
         influence_radius_arcsec=config_query.effective_influence_radius_arcsec,
-        bandpass_status_codes=bandpass_status_codes,
-        bandpass_output_band=None if bandpass_profile is None else bandpass_profile.output_band,
-        bandpass_profile_name=None if bandpass_profile is None else bandpass_profile.name,
+        reference=reference,
         neighbor_provider=neighbor_provider,
     )
     if (config_query.include_missing_targets):
@@ -1549,7 +1743,7 @@ def main(config_path: str | Path | None = None) -> int:
             json_path,
             config_path,
             len(results),
-            bandpass_profile,
+            conversion_metadata,
         )
 
     evaluated_results = [r for r in results if (r.get("status", "found") == "found")]

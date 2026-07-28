@@ -68,7 +68,7 @@ This keeps filesystem rules independently testable and avoids changing the proce
 
 ## Responsibility review
 
-The v2.0.0 review applies the practical parts of SOLID without adding patterns solely for their names:
+PHOTO-CAT applies the practical parts of SOLID without adding patterns solely for their names:
 
 - **Single responsibility:** `load_config.py` now separates document loading, section parsing, and runtime-input validation; `path_policy.py` owns explicit runtime-directory creation; query setup prepares validated paths before numerical processing.
 - **Explicit dependency direction:** CLI code passes a config path into runtime modules. Pipeline code passes that path only to child-process environments, instead of depending on a parent-process environment mutation.

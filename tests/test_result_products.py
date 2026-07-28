@@ -17,12 +17,35 @@ from photo_cat.reference_validation import validate_against_reference, write_val
 from photo_cat.result_products import (
     build_report,
     build_svg_plot,
+    iter_contaminant_points,
     load_result_rows,
     summarize_results,
     write_export,
     write_matplotlib_plot,
 )
 from photo_cat.result_screening import screen_results, write_screening
+
+
+@pytest.mark.unit
+def test_result_products_use_the_selected_band_magnitude() -> None:
+    """Plot helpers must use generic output-band magnitudes instead of a stale Gaia-G value."""
+    rows = [{
+        "magnitude": 10.0,
+        "magnitude_band": "gaia_bp",
+        "phot_g_mean_mag": 8.0,
+        "contaminants": [{
+            "magnitude": 12.0,
+            "magnitude_band": "gaia_bp",
+            "phot_g_mean_mag": 9.0,
+            "sep_arcsec": 3.0,
+        }],
+    }]
+
+    point = next(iter(iter_contaminant_points(rows)))
+    assert point["target_magnitude"] == pytest.approx(10.0)
+    assert point["contaminant_magnitude"] == pytest.approx(12.0)
+    assert point["delta_mag"] == pytest.approx(2.0)
+    assert point["flux_ratio_percent"] == pytest.approx(10.0 ** -0.8 * 100.0)
 
 
 def write_result_json(tmp_path: Path) -> Path:

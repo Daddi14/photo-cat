@@ -6,15 +6,12 @@ PHOTO-CAT has two main pipeline stages.
 
 The build stage reads the catalogue, validates the configured columns, converts coordinates, and builds an index of neighbouring sources.
 
-Generated index files are written to the configured index/output directory.
-Format version 2 indexes include `index_manifest.json`, which records the
-catalogue fingerprint, build radius, source count, and completion state.
-Checkpoints and final files are published atomically so interrupted builds can
-resume without appending uncommitted records.
-
-Indexes built by PHOTO-CAT 1.x must be rebuilt. Version 2 does not load the
-legacy pickle/object-array format. The obsolete `KDTREE_FILENAME` config key is
-ignored, and the `--kdtree-filename` CLI option has been removed.
+Generated index files are written to the configured index/output directory. The
+index includes `index_manifest.json`, which records the catalogue fingerprint,
+build radius, source count, and completion state. Checkpoints and final files are
+published atomically so interrupted builds can resume without appending
+uncommitted records. The index format is safe by construction: it stores only
+non-object NumPy arrays and never loads executable pickle payloads.
 
 ## Stage 2: Query contamination
 
@@ -28,7 +25,7 @@ the same radius and magnitude selection.
 
 ## Contamination model and terminology
 
-PHOTO-CAT 2.0.0 reports catalogue-level, aperture-like contamination metrics.
+PHOTO-CAT reports catalogue-level, aperture-like contamination metrics.
 It is best interpreted as a contamination risk-assessment or target-screening
 tool unless mission-specific modelling is added downstream.
 
@@ -55,15 +52,15 @@ tool unless mission-specific modelling is added downstream.
   percentage of the target flux.
 - `flux_fraction_all_neighbors` uses every valid neighbour inside the circular
   query radius, even if it does not pass `delta_mag`.
-- `flux_fraction_extra` is retained as a backward-compatible alias of
-  `flux_fraction_selected`.
+- `flux_fraction_extra` is an alias of `flux_fraction_selected`.
 
-The optional Gaussian/tabulated weights remain circular radial models, not full
+The optional Gaussian PSF weights remain a circular radial model, not full
 instrument simulations. They can estimate leakage from sources between the
 aperture and influence radii, but do not model asymmetric or spatially varying
-PSFs, detector pixels, diffraction or scattered light. A versioned empirical
-colour-polynomial profile can estimate a mission-band magnitude, but PHOTO-CAT
-does not perform full spectral-energy-distribution or passband integration.
+PSFs, detector pixels, diffraction or scattered light. An optional blackbody
+colour-to-band conversion can estimate contamination in a mission band from
+catalogue colours, but PHOTO-CAT does not perform full spectral-energy-distribution
+integration or fit real stellar atmospheres.
 
 ## Output JSON
 
@@ -73,12 +70,13 @@ Each target result includes:
 
 - target source ID
 - target coordinates
-- target magnitude, when available
+- target `magnitude`, `magnitude_band`, and `magnitude_source`, identifying the
+  nominal or converted band used for all primary metrics and selection cuts
 - selected-contaminant flux fraction
 - all-neighbour-in-radius flux fraction
 - optional per-band selected/all-neighbour flux-fraction dictionaries
-- optional transformed mission-band metrics, target/contaminant magnitudes,
-  and per-target validity status
+- optional converted mission-band metrics, effective temperature, and per-target
+  conversion status when no exact catalogue output band is available
 - weighted inside-aperture, outside-aperture, and total flux fractions
 - outside-aperture neighbour counts and selected-source records
 - number of neighbours inside the circular radius
@@ -89,9 +87,9 @@ Each target result includes:
 For reproducibility, each query also writes a sidecar metadata JSON file under
 `INDEX_DIR/results/metadata/`. The sidecar records the PHOTO-CAT version, selected
 configuration values, target count, index manifest, catalogue SHA-256 from the
-index build, optional bandpass-profile checksum, and the model-scope notes
+index build, optional photometric-conversion filter checksum, and the model-scope notes
 above. The target-result JSON remains a
-plain list of target entries for compatibility with existing scripts.
+plain list of target entries.
 
 By default, target IDs that are invalid or absent from the index are skipped with
 warnings. Set `include_missing_targets: true` or pass `--include-missing-targets`

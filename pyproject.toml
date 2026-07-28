@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "photo-cat"
-version = "2.0.1"
+version = "3.0.0"
 description = "A GUI-assisted catalogue-level photometric contamination risk-assessment and target-screening tool."
 authors = ["Gabriele Galletta <gabriele.galletta@inaf.it>", "PHOTO-CAT contributors"]
 readme = "README.md"
@@ -20,6 +20,12 @@ classifiers = [
 ]
 packages = [
     { include = "photo_cat", from = "src" }
+]
+# The photometric conversion loads these filter curves at runtime, so they must be
+# packaged into both the sdist and the wheel, not just tracked in the repository.
+include = [
+    { path = "src/photo_cat/filters/**/*.dat", format = ["sdist", "wheel"] },
+    { path = "src/photo_cat/filters/**/*.md", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.dependencies]

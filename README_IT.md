@@ -31,11 +31,9 @@ PHOTO-CAT è uno strumento Python locale per la valutazione del rischio di conta
 
 Può creare un indice dei vicini da un catalogo di sorgenti, interrogare target selezionati e scrivere un riepilogo JSON con metriche di contaminazione catalogo/apertura e sorgenti vicine che rispettano i limiti configurati di campo di vista e magnitudine.
 
-Il modello attuale di PHOTO-CAT 2.0.0 ha un ambito volutamente definito: usa magnitudini di catalogo, un'apertura circolare e una PSF gaussiana circolare 2D opzionale, il cui flusso decade con la distanza angolare dal centro dell'apertura. Un raggio di influenza ricavato dalla larghezza della PSF può includere il leakage pesato di sorgenti vicine fuori dall'apertura. Un profilo calibrato opzionale con polinomio di colore può stimare una banda di missione con validità e provenienza. Non esegue convoluzione con PSF asimmetriche o variabili, modellazione dei pixel, luce diffusa o integrazione spettrale completa sulla banda. Considera l'output come metrica di screening/rischio salvo che input di missione calibrati supportino i modelli selezionati.
+Il modello attuale di PHOTO-CAT 3.0.0 ha un ambito volutamente definito: usa magnitudini di catalogo, un'apertura circolare e una PSF gaussiana circolare 2D opzionale, il cui flusso decade con la distanza angolare dal centro dell'apertura. Un raggio di influenza ricavato dalla larghezza della PSF può includere il leakage pesato di sorgenti vicine fuori dall'apertura. Una conversione opzionale corpo-nero colore→banda può stimare la contaminazione in una banda di missione (TESS, CHEOPS, MAUVE, Ariel o qualsiasi filtro dal servizio SVO) a partire dai colori del catalogo. Non esegue convoluzione con PSF asimmetriche o variabili, modellazione dei pixel, luce diffusa o integrazione spettrale completa sulla banda. Considera l'output come metrica di screening/rischio salvo che input di missione calibrati supportino i modelli selezionati.
 
-PHOTO-CAT è pensato per un utilizzo locale e riproducibile. Include launcher semplici, una finestra grafica di configurazione, setup automatico delle dipendenze, gestione del runtime locale al progetto, manifest versionati dell'indice e metadata sidecar delle query con versione del pacchetto, impostazioni, manifest dell'indice e ambito del modello.
-
-> **Migrazione alla versione 2:** gli indici creati da PHOTO-CAT 1.x devono essere ricostruiti. La versione 2 usa un formato versionato e non eseguibile e rifiuta intenzionalmente i precedenti file pickle/object-array.
+PHOTO-CAT è pensato per un utilizzo locale e riproducibile. Include launcher semplici, una finestra grafica di configurazione, setup automatico delle dipendenze, gestione del runtime locale al progetto, manifest versionati dell'indice e metadata sidecar delle query con versione del pacchetto, impostazioni, manifest dell'indice e ambito del modello. Il formato dell'indice è sicuro per costruzione: memorizza solo array NumPy senza oggetti e non carica mai payload pickle eseguibili.
 
 ## Download e primo avvio
 
@@ -56,7 +54,7 @@ Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più com
 - Esegue screening dei target rispetto a sorgenti di catalogo vicine che possono contaminare un'apertura circolare.
 - Riporta sia il flusso dei contaminanti selezionati sia il flusso di tutti i vicini dentro il raggio.
 - Confronta opzionalmente metriche di flusso a livello di catalogo tra bande di magnitudine salvate.
-- Applica una trasformazione empirica di colore con provenienza verso una banda di missione.
+- Converte il flusso del catalogo in una banda di missione (corpo nero colore→banda) prima del calcolo della contaminazione, con filtri integrati o scaricati dal servizio SVO nella GUI.
 - Usa un modello di screening della contaminazione top-hat o con PSF gaussiana circolare 2D.
 - Riassume i JSON dei risultati in statistiche text, JSON o CSV.
 - Genera plot SVG senza dipendenze aggiuntive e report HTML/Markdown.

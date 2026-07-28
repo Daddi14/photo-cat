@@ -100,32 +100,54 @@ Oltre ai pesi, `gaussian_psf` riporta anche metriche integrate sull'apertura
 Resta un'approssimazione a livello di catalogo per lo screening, salvo che la
 FWHM provenga da una calibrazione PSF specifica dello strumento.
 
-### Trasformazioni empiriche nella banda di missione
+### Conversione fotometrica di banda
 
-Un profilo YAML opzionale e versionato può derivare una magnitudine di missione
-da bande di catalogo memorizzate:
+Per default la contaminazione è stimata nella banda del catalogo. Una conversione
+opzionale la stima invece in una banda di missione:
 
 ```yaml
 query_contamination_from_index:
   settings:
-    bandpass_transform_file: examples/reproducibility/bandpass_transform_example.yaml
+    photometric_conversion:
+      output_band: tess          # un filtro integrato, o "custom"
+      conversion_method: blackbody
+      filter_file:               # serve solo quando output_band è custom
+      catalog: gaia_dr3
 ```
 
-Il profilo definisce `output_band`, `base_band`, due `color_bands`, i
-`coefficients` del polinomio, limiti calibrati di colore/magnitudine, una
-politica `out_of_range` e il riferimento della calibrazione. La convenzione è:
+La banda di uscita selezionata diventa la banda di riferimento per il taglio in
+differenza di magnitudine, la lista dei contaminanti, le frazioni di flusso
+principali, i conteggi e le metriche PSF. Se quella banda esatta è già presente
+nell'indice (per esempio `gaia_bp` o `gaia_rp`), PHOTO-CAT usa direttamente le
+magnitudini nominali del catalogo e non esegue alcuna conversione.
 
-```text
-m_output = m_base + c0 + c1*colore + c2*colore^2 + ...
-colore = m_color_band_1 - m_color_band_2
-```
+Altrimenti il colore (BP-RP) fornisce una temperatura equivalente di corpo nero;
+il flusso di ogni sorgente viene integrato nel filtro scelto, quindi
+`m_out = m_anchor - 2.5*log10(R)` con `R = F_out(Teff)/F_anchor(Teff)`. Poiché la
+contaminazione usa solo rapporti di flusso nella stessa banda, lo zero-point di
+uscita si cancella e si mantiene quello della banda di ancoraggio. Servono le
+bande colore del catalogo (BP, RP) memorizzate con `magnitude_columns` durante la
+build. PHOTO-CAT carica automaticamente le bande richieste: non è necessario
+ripeterle in `contamination_bands`.
 
-Le bande richieste devono essere state memorizzate tramite `magnitude_columns`
-durante la build. `out_of_range: null` esclude valori non calibrati;
-`out_of_range: extrapolate` li conserva ma marca ogni target interessato come
-`extrapolated`. Profilo e checksum SHA-256 vengono copiati nei metadata della
-query. Si tratta di una trasformazione empirica di colore, non di integrazione
-della banda su una distribuzione spettrale di energia.
+`output_band` è la chiave di un filtro integrato (`gaia_g`, `gaia_bp`, `gaia_rp`,
+`tess`, `cheops`, `mauve`, e i canali Ariel `ariel_fgs1`, `ariel_fgs2`,
+`ariel_visphot`, `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`) o `custom`
+con un `filter_file`. `conversion_method` è `blackbody` (default); `phoenix` ed
+`empirical` sono selezionabili ma richiedono dati esterni (una griglia di spettri
+modello o una relazione pubblicata) ed errano chiaramente finché non vengono forniti.
+
+I filtri integrati stanno in `photo_cat/filters/<Missione>/<banda>.dat`; aggiungere
+una missione significa solo mettere lì la sua curva di trasmissione ufficiale.
+Gaia, TESS, CHEOPS, MAUVE e i canali Ariel sono curve ufficiali. Altri filtri si
+possono scaricare dal SVO Filter Profile Service direttamente nella GUI (il
+pannello "Scarica un filtro da SVO" sceglie una facility, ne elenca i filtri e ne
+scarica uno nella libreria) o con `photo_cat.photometry.svo.download_filter`.
+
+È una stima approssimata a livello di catalogo per lo screening: le stelle reali
+non sono corpi neri e la temperatura efficace riportata è una temperatura di
+colore equivalente di corpo nero, non una Teff fisica. Il filtro di uscita e il
+suo checksum SHA-256 vengono copiati nei metadata della query.
 
 ## Salva e avvia la pipeline
 

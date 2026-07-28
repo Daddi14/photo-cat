@@ -9,11 +9,34 @@ import pytest
 from pathlib import Path
 
 from photo_cat.build_neighbors_index import (
+    _dropped_rows_message,
     calculate_neighbor_separations_arcsec,
     compute_chord_radius,
     load_star_dataframe,
     neighbor_indices_without_self,
 )
+
+
+@pytest.mark.unit
+def test_dropped_rows_message_names_fields_and_original_rows() -> None:
+    """The drop warning must name each failing field and the original catalog rows."""
+    message = _dropped_rows_message(
+        "missing or non-numeric required fields",
+        {"magnitude (phot_g_mean_mag)": 2, "RA (ra)": 1},
+        np.array([2, 5, 41]),
+    )
+    assert "Dropped 3 catalog rows" in message
+    assert "magnitude (phot_g_mean_mag): 2 rows" in message
+    assert "RA (ra): 1 row" in message  # singular
+    assert "2, 5, 41" in message
+
+
+@pytest.mark.unit
+def test_dropped_rows_message_truncates_a_long_row_list() -> None:
+    """A long list of affected rows is previewed, not dumped in full."""
+    message = _dropped_rows_message("bad", {"Dec (dec)": 15}, np.arange(1, 16))
+    assert "(+5 more)" in message
+    assert "catalog row" in message  # singular header when only... (count is 15 -> rows)
 
 
 @pytest.mark.unit

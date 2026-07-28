@@ -92,6 +92,11 @@ def _all_neighbor_flux(row: dict[str, Any]) -> float:
     return _number(row.get("flux_fraction_all_neighbors", _selected_flux(row)))
 
 
+def _primary_magnitude(row: dict[str, Any], default: float = math.nan) -> float:
+    """Read the selected-band magnitude, with legacy Gaia-G compatibility."""
+    return _number(row.get("magnitude", row.get("phot_g_mean_mag")), default)
+
+
 def iter_contaminants(rows: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
     """Yield contaminant dictionaries from all rows, ignoring malformed entries."""
     for row in rows:
@@ -105,9 +110,9 @@ def iter_contaminants(rows: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]
 def iter_contaminant_points(rows: Iterable[dict[str, Any]]) -> Iterable[dict[str, float]]:
     """Yield contaminant points with parent-target context for scatter plots."""
     for row in rows:
-        target_magnitude = _number(row.get("phot_g_mean_mag"), math.nan)
+        target_magnitude = _primary_magnitude(row)
         for contaminant in iter_contaminants([row]):
-            contaminant_magnitude = _number(contaminant.get("phot_g_mean_mag"), math.nan)
+            contaminant_magnitude = _primary_magnitude(contaminant)
             separation = _number(contaminant.get("sep_arcsec"), math.nan)
             if (not math.isfinite(target_magnitude) or not math.isfinite(contaminant_magnitude) or not math.isfinite(separation)):
                 continue
@@ -130,7 +135,14 @@ def summarize_results(rows: list[dict[str, Any]], *, source_path: str | Path | N
     transformed_fluxes = [
         value
         for row in rows
-        if (value := _optional_number(row.get("flux_fraction_total_weighted_transformed"))) is not None
+        if (
+            value := _optional_number(
+                row.get(
+                    "flux_fraction_total_weighted_converted",
+                    row.get("flux_fraction_total_weighted_transformed"),
+                )
+            )
+        ) is not None
     ]
     contaminant_counts = [_int_number(row.get("num_contaminants", row.get("num_contaminants_selected", 0))) for row in rows]
     neighbor_counts = [_int_number(row.get("num_neighbors_in_radius", count)) for row, count in zip(rows, contaminant_counts)]
@@ -476,7 +488,11 @@ def build_svg_plot(rows: list[dict[str, Any]], kind: str) -> str:
         points = [(point["separation_arcsec"], point["flux_ratio_percent"]) for point in iter_contaminant_points(rows)]
         return _scatter(points, "Contaminant flux ratio vs separation", "Separation (arcsec)", "Contaminant flux / target flux (%)", legend=[("Contaminants", "#4477AA")])
     if kind == "contamination-vs-magnitude":
-        points = [(_number(row.get("phot_g_mean_mag")), _selected_flux(row)) for row in rows if row.get("phot_g_mean_mag") is not None]
+        points = [
+            (_primary_magnitude(row), _selected_flux(row))
+            for row in rows
+            if row.get("magnitude", row.get("phot_g_mean_mag")) is not None
+        ]
         return _scatter(points, "Target contamination vs magnitude", "Target magnitude", "Selected flux fraction (%)", legend=[("Targets", "#4477AA")])
     if kind == "sky-map":
         return _sky_map(rows)
@@ -551,7 +567,11 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
         ax.set_title("Contaminant flux ratio vs separation")
         ax.legend()
     elif kind == "contamination-vs-magnitude":
-        magnitude_points = [(_number(row.get("phot_g_mean_mag")), _selected_flux(row)) for row in rows if row.get("phot_g_mean_mag") is not None]
+        magnitude_points = [
+            (_primary_magnitude(row), _selected_flux(row))
+            for row in rows
+            if row.get("magnitude", row.get("phot_g_mean_mag")) is not None
+        ]
         ax.scatter([point[0] for point in magnitude_points], [point[1] for point in magnitude_points], s=8, c="#4477AA", alpha=0.65, linewidths=0, label="targets")
         ax.set_xlabel("Target magnitude")
         ax.set_ylabel("Selected flux fraction (%)")

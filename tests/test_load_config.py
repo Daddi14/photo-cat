@@ -54,7 +54,7 @@ def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_
     assert query.delta_mag == 5.0
     # top_hat has no PSF scale, so the influence radius falls back to the aperture.
     assert query.effective_influence_radius_arcsec == 47.0
-    assert query.bandpass_transform_file is None
+    assert query.photometric_conversion is None
 
     assert isinstance(execution, ExecutionConfig)
     assert execution.run_build is True
@@ -125,21 +125,40 @@ def test_gaussian_psf_requires_both_fwhm_and_sigma_count(
 
 
 @pytest.mark.unit
-def test_query_resolves_optional_bandpass_profile_against_config_directory(
+def test_query_parses_photometric_conversion_and_resolves_custom_filter_path(
     write_config: Callable[[str | None], Path],
     config_text: str,
     tmp_path: Path,
 ) -> None:
-    """A versioned calibration profile should follow the normal config-relative path policy."""
-    profile_path = tmp_path / "profiles" / "mission.yaml"
+    """The conversion block validates its method and resolves a custom filter path."""
+    filter_path = tmp_path / "filters" / "mission.dat"
     modified = config_text.replace(
         "delta_mag: 5.0",
-        "delta_mag: 5.0\n    bandpass_transform_file: profiles/mission.yaml",
+        "delta_mag: 5.0\n    photometric_conversion:\n"
+        "      output_band: custom\n      conversion_method: blackbody\n"
+        "      filter_file: filters/mission.dat",
     )
     query = load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
 
     assert isinstance(query, QueryConfig)
-    assert query.bandpass_transform_file == str(profile_path.resolve())
+    assert query.photometric_conversion is not None
+    assert query.photometric_conversion.output_band == "custom"
+    assert query.photometric_conversion.conversion_method == "blackbody"
+    assert query.photometric_conversion.filter_file == str(filter_path.resolve())
+
+
+@pytest.mark.unit
+def test_query_rejects_unknown_conversion_method(
+    write_config: Callable[[str | None], Path],
+    config_text: str,
+) -> None:
+    """An unsupported conversion method must fail at parse time with a clear message."""
+    modified = config_text.replace(
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n    photometric_conversion:\n      output_band: tess\n      conversion_method: magic",
+    )
+    with pytest.raises(ValueError, match="conversion_method"):
+        load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
 
 
 @pytest.mark.unit

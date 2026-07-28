@@ -127,13 +127,55 @@ from .index_manifest import (
     validate_index_structure,
     write_index_manifest,
 )
-from .logger_setup import get_logger
+from .logger_setup import USE_COLOR, get_logger
 from .load_config import BuildConfig, load_config
 from .path_policy import ensure_directory, index_paths
 from .pipeline_display import ActivityBar, tqdm_options
 
 
 logger = get_logger(__name__)
+
+# Bold on / bold off. These compose with the yellow the log formatter already wraps
+# a warning in (they change intensity, not colour), so emphasis stays yellow.
+_BOLD = "\033[1m"
+_BOLD_OFF = "\033[22m"
+
+
+def _emphasis(text: str) -> str:
+    """Return ``text`` in bold when the terminal supports colour, else unchanged."""
+    return f"{_BOLD}{text}{_BOLD_OFF}" if USE_COLOR else text
+
+
+def _plural_rows(count: int) -> str:
+    """Return 'row' or 'rows' agreeing with ``count``."""
+    return "row" if (count == 1) else "rows"
+
+
+def _dropped_rows_message(
+    reason: str,
+    per_field_counts: dict[str, int],
+    catalog_row_numbers: np.ndarray,
+) -> str:
+    """Build a specific, emphasised warning naming what was dropped and where.
+
+    ``per_field_counts`` maps a human field/check label to how many rows it
+    affected (rows can fail more than one check). ``catalog_row_numbers`` are the
+    1-based data-row numbers in the original catalog (header excluded), so a user
+    can locate the offending rows regardless of any earlier cleaning.
+    """
+    dropped_rows = int(catalog_row_numbers.size)
+    lines = [f"Dropped {_emphasis(str(dropped_rows))} catalog {_plural_rows(dropped_rows)} with {reason}:"]
+    for label, count in sorted(per_field_counts.items(), key=lambda item: item[1], reverse=True):
+        lines.append(f"  - {_emphasis(label)}: {_emphasis(str(count))} {_plural_rows(count)}")
+
+    rows = catalog_row_numbers.tolist()
+    preview = ", ".join(str(row) for row in rows[:10])
+    remaining = len(rows) - 10
+    if (remaining > 0):
+        preview += f", ... (+{remaining} more)"
+    lines.append(f"  Affected catalog rows (header excluded): {_emphasis(preview)}")
+    lines.append("Fix or remove these rows in the catalog CSV, then rebuild the index.")
+    return "\n".join(lines)
 
 
 @contextmanager
@@ -363,18 +405,41 @@ def load_star_dataframe(
             + "\n\nCheck that RA, Dec, and magnitude columns contain numbers, not text."
         )
 
-    # Drop rows missing mandatory fields and normalize IDs to strings.
-    rows_before_drop = len(star_dataframe)
+    # Drop rows missing mandatory fields and normalize IDs to strings. The warning
+    # names which field failed and where, so a user can find and fix the offending
+    # rows instead of guessing.
+    mandatory_fields = {
+        "source_id": "source_id",
+        "ra": "RA (ra)",
+        "dec": "Dec (dec)",
+        "phot_g_mean_mag": "magnitude (phot_g_mean_mag)",
+    }
+    # 1-based catalog data-row numbers (header excluded), tracked across both drop
+    # stages so warnings can always point at the original CSV rows.
+    catalog_row_numbers = np.arange(1, len(star_dataframe) + 1)
+
+    missing_mask = star_dataframe[list(mandatory_fields)].isna()
+    dropped_any = missing_mask.any(axis=1).to_numpy()
+    dropped_rows = int(dropped_any.sum())
+    per_field_missing = {
+        label: int(missing_mask[column].to_numpy().sum())
+        for column, label in mandatory_fields.items()
+        if bool(missing_mask[column].to_numpy().any())
+    }
     final_star_dataframe = star_dataframe.dropna(
         subset=['source_id', 'ra', 'dec', 'phot_g_mean_mag']
     ).reset_index(drop=True)
     rows_after_drop = len(final_star_dataframe)
-    dropped_rows = rows_before_drop - rows_after_drop
+    # Original row numbers of the survivors, aligned with final_star_dataframe order.
+    surviving_row_numbers = catalog_row_numbers[~dropped_any]
 
     if (dropped_rows > 0):
         logger.warning(
-            "Dropped %s catalog rows because source_id, RA, Dec, or magnitude was empty/non-numeric.",
-            dropped_rows
+            _dropped_rows_message(
+                "missing or non-numeric required fields",
+                per_field_missing,
+                catalog_row_numbers[dropped_any],
+            )
         )
 
     if (rows_after_drop == 0):
@@ -385,21 +450,33 @@ def load_star_dataframe(
 
     final_star_dataframe['source_id'] = final_star_dataframe['source_id'].astype(str)
 
+    ra_values = final_star_dataframe["ra"].to_numpy(dtype=np.float64)
+    dec_values = final_star_dataframe["dec"].to_numpy(dtype=np.float64)
     finite_rows = np.isfinite(
         final_star_dataframe[["ra", "dec", "phot_g_mean_mag"]].to_numpy(dtype=np.float64)
     ).all(axis=1)
-    coordinate_rows = (
-        (final_star_dataframe["ra"] >= 0.0)
-        & (final_star_dataframe["ra"] < 360.0)
-        & (final_star_dataframe["dec"] >= -90.0)
-        & (final_star_dataframe["dec"] <= 90.0)
-    )
-    valid_rows = finite_rows & coordinate_rows
-    invalid_coordinate_count = int((~valid_rows).sum())
+    ra_in_range = (ra_values >= 0.0) & (ra_values < 360.0)
+    dec_in_range = (dec_values >= -90.0) & (dec_values <= 90.0)
+    valid_rows = finite_rows & ra_in_range & dec_in_range
+    invalid_mask = ~valid_rows
+    invalid_coordinate_count = int(invalid_mask.sum())
     if (invalid_coordinate_count):
+        # Break the drop down by which check failed, so the fix is obvious.
+        per_check_invalid = {
+            label: int(mask.sum())
+            for label, mask in (
+                ("non-finite RA/Dec/magnitude", ~finite_rows),
+                ("RA outside [0, 360)", finite_rows & ~ra_in_range),
+                ("Dec outside [-90, 90]", finite_rows & ~dec_in_range),
+            )
+            if bool(mask.any())
+        }
         logger.warning(
-            "Dropped %s catalog rows with non-finite or out-of-range RA/Dec/magnitude values.",
-            invalid_coordinate_count,
+            _dropped_rows_message(
+                "non-finite or out-of-range coordinates or magnitude",
+                per_check_invalid,
+                surviving_row_numbers[invalid_mask],
+            )
         )
         final_star_dataframe = final_star_dataframe.loc[valid_rows].reset_index(drop=True)
 

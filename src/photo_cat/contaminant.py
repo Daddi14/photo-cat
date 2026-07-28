@@ -12,5 +12,7 @@ class Contaminant:
     source_id: str
     ra: float
     dec: float
-    phot_g_mean_mag: float | None
+    magnitude: float | None
+    magnitude_band: str
+    magnitude_source: str
     sep_arcsec: float
