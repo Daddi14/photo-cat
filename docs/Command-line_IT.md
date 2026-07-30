@@ -59,7 +59,7 @@ singolo JSON e dall'apertura rappresentata da quel risultato. Scrive:
 Sono supportati output PNG, PDF e SVG tramite `--format`.
 
 Quando è stato usato un profilo di banda, esegui screening o validazione della
-stima di missione con `--metric flux_fraction_total_weighted_transformed`.
+stima di missione con `--metric flux_fraction_total_weighted_converted`.
 
 ## Diagnostica doctor per l'automazione
 
@@ -126,7 +126,7 @@ minima di comandi è:
 photo-cat --version
 photo-cat build-index --config config.yaml --input-catalog data/my_catalog.csv --out-dir output/my_index --max-radius-arcsec 120
 photo-cat query --config config.yaml --index-dir output/my_index --targets-input data/my_targets.csv --field-of-view-arcsec 47 --delta-mag 5
-photo-cat query --config config.yaml --bandpass-transform-file examples/reproducibility/bandpass_transform_example.yaml
+photo-cat query --config config.yaml --output-band tess --conversion-method blackbody
 ```
 
 La build scrive `index_manifest.json` con SHA-256 del catalogo e impostazioni
@@ -426,7 +426,10 @@ Le opzioni booleane supportano forma positiva e negativa:
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--field-of-view-arcsec VALUE` |
 | `query_contamination_from_index.settings.field_of_view_arcsec` | `--aperture-radius-arcsec VALUE` (alias più chiaro) |
 | `query_contamination_from_index.settings.contamination_model.influence_sigma` | `--influence-sigma VALUE` |
-| `query_contamination_from_index.settings.bandpass_transform_file` | `--bandpass-transform-file PATH` |
+| `query_contamination_from_index.settings.photometric_conversion.output_band` | `--output-band NAME` |
+| `query_contamination_from_index.settings.photometric_conversion.conversion_method` | `--conversion-method NAME` |
+| `query_contamination_from_index.settings.photometric_conversion.filter_file` | `--conversion-filter-file PATH` |
+| `query_contamination_from_index.settings.photometric_conversion.catalog` | `--conversion-catalog NAME` |
 | `query_contamination_from_index.settings.delta_mag` | `--delta-mag VALUE` |
 | `query_contamination_from_index.settings.include_missing_targets` | `--include-missing-targets` / `--no-include-missing-targets` |
 | `execution.run_build` | `--run-build` / `--no-run-build` |

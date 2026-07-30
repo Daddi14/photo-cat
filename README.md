@@ -31,11 +31,9 @@ PHOTO-CAT is a local Python tool for catalogue-level photometric contamination r
 
 It can build a neighbour index from a source catalogue, query selected targets, and write a JSON summary containing catalogue/aperture-based contamination metrics and neighbouring sources that match the configured field-of-view and magnitude limits.
 
-The current 2.0.0 model is intentionally scoped: it uses catalogue magnitudes, a circular aperture, and an optional 2D circular Gaussian PSF whose flux decays with angular distance from the aperture centre. An influence radius derived from the PSF width can include weighted leakage from nearby sources outside the aperture. An optional calibrated colour-polynomial profile can estimate a named mission band with validity tracking and provenance. It does not perform spatially varying/asymmetric PSF convolution, detector-pixel modelling, scattered-light modelling, or full spectral/passband integration. Treat PHOTO-CAT output as a screening/risk metric unless calibrated mission inputs support the selected models.
+The current 3.0.0 model is intentionally scoped: it uses catalogue magnitudes, a circular aperture, and an optional 2D circular Gaussian PSF whose flux decays with angular distance from the aperture centre. An influence radius derived from the PSF width can include weighted leakage from nearby sources outside the aperture. An optional blackbody colour-to-band conversion can estimate contamination in a mission band (TESS, CHEOPS, MAUVE, Ariel, or any filter from the SVO service) from catalogue colours. It does not perform spatially varying/asymmetric PSF convolution, detector-pixel modelling, scattered-light modelling, or full spectral/passband integration. Treat PHOTO-CAT output as a screening/risk metric unless calibrated mission inputs support the selected models.
 
-PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly launchers, a graphical configuration window, automatic dependency setup, project-local runtime handling so user/system Python installations are not modified, versioned index manifests, and query metadata sidecars that record the package version, query settings, index manifest, and model scope.
-
-> **Version 2 migration:** neighbour indexes created by PHOTO-CAT 1.x must be rebuilt. Version 2 uses a versioned, non-executable index format and intentionally refuses legacy pickle/object-array files.
+PHOTO-CAT is designed for reproducible local use. It includes beginner-friendly launchers, a graphical configuration window, automatic dependency setup, project-local runtime handling so user/system Python installations are not modified, versioned index manifests, and query metadata sidecars that record the package version, query settings, index manifest, and model scope. The index format is safe by construction: it stores only non-object NumPy arrays and never loads executable pickle payloads.
 
 ## Download and get started
 
@@ -56,7 +54,7 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Screen selected targets for nearby catalogue sources that may contaminate a circular aperture.
 - Report both selected-contaminant flux and all-neighbour-in-radius flux metrics.
 - Optionally compare catalogue-level flux metrics across stored magnitude bands.
-- Apply a provenance-tracked empirical colour transformation into a mission band.
+- Convert catalogue flux into a mission band (blackbody colour-to-band) before computing contamination, using built-in filters or any downloaded from the SVO service in the GUI.
 - Use a top-hat or 2D circular Gaussian PSF contamination screening model.
 - Summarize result JSON files into text, JSON, or CSV statistics.
 - Generate dependency-free SVG plots and HTML/Markdown reports from query results.

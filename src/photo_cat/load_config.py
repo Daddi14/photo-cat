@@ -93,6 +93,16 @@ class ContaminationModelConfig:
 
 
 @dataclass(frozen=True)
+class PhotometricConversionConfig:
+    """Validated opt-in conversion of catalogue flux into a chosen output band."""
+
+    output_band: str
+    conversion_method: str = "blackbody"
+    filter_file: str | None = None
+    catalog: str = "gaia_dr3"
+
+
+@dataclass(frozen=True)
 class QueryConfig:
     """Validated query settings with paths resolved against config.yaml."""
 
@@ -105,7 +115,7 @@ class QueryConfig:
     include_missing_targets: bool = False
     contamination_model: ContaminationModelConfig = field(default_factory=ContaminationModelConfig)
     contamination_bands: list[str] = field(default_factory=lambda: ["gaia_g"])
-    bandpass_transform_file: str | None = None
+    photometric_conversion: PhotometricConversionConfig | None = None
 
     @property
     def aperture_radius_arcsec(self) -> float:
@@ -427,6 +437,62 @@ def parse_contamination_model(settings: dict[str, Any]) -> ContaminationModelCon
     )
 
 
+def parse_photometric_conversion(
+    settings: dict[str, Any], config_dir: Path
+) -> PhotometricConversionConfig | None:
+    """Parse the opt-in catalogue-to-output-band flux conversion settings."""
+    from .photometry.catalogs import CATALOGS
+    from .photometry.library import normalized_band_key
+    from .photometry.sed import SUPPORTED_CONVERSION_METHODS
+
+    raw = settings.get("photometric_conversion")
+    if (raw is None):
+        return None
+    conversion = require_mapping(raw, f"{QUERY_SECTION}.settings.photometric_conversion")
+
+    output_band = require_text(
+        conversion.get("output_band"),
+        f"{QUERY_SECTION}.settings.photometric_conversion.output_band",
+    )
+    method = require_text(
+        conversion.get("conversion_method"),
+        f"{QUERY_SECTION}.settings.photometric_conversion.conversion_method",
+        "blackbody",
+    ).lower()
+    if (method not in SUPPORTED_CONVERSION_METHODS):
+        supported = ", ".join(SUPPORTED_CONVERSION_METHODS)
+        raise ValueError(
+            "query_contamination_from_index.settings.photometric_conversion.conversion_method "
+            f"must be one of: {supported}."
+        )
+
+    catalog = require_text(
+        conversion.get("catalog"),
+        f"{QUERY_SECTION}.settings.photometric_conversion.catalog",
+        "gaia_dr3",
+    ).lower().replace("-", "_")
+    if (catalog not in CATALOGS):
+        available = ", ".join(sorted(CATALOGS))
+        raise ValueError(
+            "query_contamination_from_index.settings.photometric_conversion.catalog "
+            f"must be one of: {available}."
+        )
+
+    filter_file = resolve_path(conversion.get("filter_file"), config_dir)
+    if (normalized_band_key(output_band) == "custom" and filter_file is None):
+        raise ValueError(
+            "query_contamination_from_index.settings.photometric_conversion.filter_file "
+            "is required when output_band is custom."
+        )
+
+    return PhotometricConversionConfig(
+        output_band=output_band,
+        conversion_method=method,
+        filter_file=filter_file,
+        catalog=catalog,
+    )
+
+
 def parse_contamination_bands(settings: dict[str, Any]) -> list[str]:
     """Parse requested result bands while keeping Gaia-G as the default metric."""
     raw_bands = settings.get("contamination_bands")
@@ -553,18 +619,21 @@ def load_query_config(section_config: dict[str, Any], config_dir: Path) -> Query
         ),
         contamination_model=parse_contamination_model(settings),
         contamination_bands=parse_contamination_bands(settings),
-        bandpass_transform_file=resolve_path(settings.get("bandpass_transform_file"), config_dir),
+        photometric_conversion=parse_photometric_conversion(settings, config_dir),
     )
 
 
 def validate_query_config_runtime(config: QueryConfig) -> QueryConfig:
     """Validate query target inputs after pure parsing and resolution succeed."""
     targets_input = require_file(config.TARGETS_INPUT, "TARGETS_INPUT")
-    bandpass_transform_file = require_file(config.bandpass_transform_file, "bandpass_transform_file")
+    conversion = config.photometric_conversion
+    if (conversion is not None and conversion.filter_file is not None):
+        filter_file = require_file(conversion.filter_file, "photometric_conversion.filter_file")
+        conversion = replace(conversion, filter_file=filter_file)
     return replace(
         config,
         TARGETS_INPUT=targets_input,
-        bandpass_transform_file=bandpass_transform_file,
+        photometric_conversion=conversion,
     )
 
 

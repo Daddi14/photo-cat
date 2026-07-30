@@ -68,7 +68,7 @@ Questo rende le regole del filesystem testabili in modo indipendente ed evita di
 
 ## Revisione delle responsabilità
 
-La revisione v2.0.0 applica le parti pratiche di SOLID senza aggiungere pattern solo per il loro nome:
+PHOTO-CAT applica le parti pratiche di SOLID senza aggiungere pattern solo per il loro nome:
 
 - **Responsabilità singola:** `load_config.py` ora separa caricamento del documento, interpretazione delle sezioni e validazione degli input runtime; `path_policy.py` gestisce la creazione esplicita delle directory runtime; la preparazione della query predispone percorsi validati prima dell'elaborazione numerica.
 - **Direzione esplicita delle dipendenze:** il codice CLI passa un percorso config ai moduli runtime. Il codice pipeline passa tale percorso solo agli ambienti dei processi figli, invece di dipendere da una modifica dell'ambiente del processo padre.

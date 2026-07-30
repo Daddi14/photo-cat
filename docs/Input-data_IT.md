@@ -50,8 +50,8 @@ Servono solo a testare il workflow. Sostituiscili con cataloghi e target reali p
 
 ## Selezioni di catalogo riproducibili
 
-PHOTO-CAT registra il digest SHA-256 del CSV catalogo nel manifest dell'indice
-versione 2, ma non può dedurre come quel CSV sia stato prodotto. Per analisi
+PHOTO-CAT registra il digest SHA-256 del CSV catalogo nel manifest dell'indice,
+ma non può dedurre come quel CSV sia stato prodotto. Per analisi
 pubblicabili o verificabili, conserva la provenienza del catalogo accanto alla
 run:
 

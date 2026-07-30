@@ -120,7 +120,7 @@ def test_check_project_context_reports_source_folder_resources(tmp_path: Path) -
     """Source-project diagnostics enumerate version, config, venv, and runtime context separately."""
     project_dir = tmp_path / "project"
     project_dir.mkdir()
-    (project_dir / "VERSION").write_text("1.7.0\n", encoding="utf-8")
+    (project_dir / "VERSION").write_text("3.0.0\n", encoding="utf-8")
     (project_dir / "config.yaml").write_text("execution: {}\n", encoding="utf-8")
     reporter = doctor.DoctorReporter("json")
 
@@ -155,6 +155,6 @@ def test_read_project_version_uses_the_source_version_file_when_available(tmp_pa
     """Project-mode diagnostics expose the release version recorded by a local checkout."""
     project_dir = tmp_path / "project"
     project_dir.mkdir()
-    (project_dir / "VERSION").write_text("1.7.0\n", encoding="utf-8")
+    (project_dir / "VERSION").write_text("3.0.0\n", encoding="utf-8")
 
-    assert doctor.read_project_version(project_dir) == "1.7.0"
+    assert doctor.read_project_version(project_dir) == "3.0.0"

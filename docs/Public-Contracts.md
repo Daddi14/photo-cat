@@ -66,7 +66,7 @@ Documented keys inside these sections, relative-path behaviour, and validation r
 
 ## Build-index outputs
 
-A successful build writes the documented neighbour-index files inside the configured output directory. Format version 2 requires a completed `index_manifest.json` and safe non-object NumPy arrays. Version 1 indexes require an explicit rebuild and are never deserialized.
+A successful build writes the documented neighbour-index files inside the configured output directory, requiring a completed `index_manifest.json` and safe non-object NumPy arrays. Unsafe object or pickle arrays are never deserialized.
 
 ## Query results
 
@@ -88,11 +88,13 @@ Each target result preserves the documented fields for:
 - contaminant records including source ID, coordinates, magnitude, and separation;
 - separately identified selected sources outside the aperture when an influence
   radius is configured;
-- additive per-band target/contaminant magnitudes and transformed-band flux
-  dictionaries when an empirical bandpass profile is configured;
-- `bandpass_transform_status`, `bandpass_transform_profile`, and
-  `bandpass_transformed_band` provenance fields;
-- scalar `*_transformed` aliases suitable for screening and validation tools;
+- additive per-band target/contaminant magnitudes, and a converted-band flux
+  dictionary when a photometric conversion is configured;
+- `catalog_band`, `output_band`, `conversion_method`, `filter_used`,
+  `conversion_status`, `effective_temperature`, and `converted_target_flux`
+  provenance fields, with per-contaminant `effective_temperature` and
+  `converted_flux`;
+- scalar `*_converted` flux fractions suitable for screening and validation tools;
 - unresolved target rows when explicitly requested, with `status` set to
   `missing_from_index` or `invalid_target_id`.
 

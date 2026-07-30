@@ -7,13 +7,12 @@ PHOTO-CAT ha due fasi principali di pipeline.
 La fase di build legge il catalogo, valida le colonne configurate, converte le coordinate e crea un indice delle sorgenti vicine.
 
 I file indice generati vengono scritti nella cartella indice/output configurata.
-Gli indici in formato versione 2 includono `index_manifest.json`, che registra
-l'impronta del catalogo, il raggio di build, il numero di sorgenti e lo stato di
-completamento. Checkpoint e file finali vengono pubblicati in modo atomico.
-
-Gli indici creati con PHOTO-CAT 1.x devono essere ricostruiti. La versione 2 non
-carica il precedente formato pickle/object-array. La chiave config obsoleta
-`KDTREE_FILENAME` viene ignorata e l'opzione CLI `--kdtree-filename` è stata rimossa.
+L'indice include `index_manifest.json`, che registra l'impronta del catalogo, il
+raggio di build, il numero di sorgenti e lo stato di completamento. Checkpoint e
+file finali vengono pubblicati in modo atomico, così le build interrotte possono
+riprendere senza aggiungere record non confermati. Il formato dell'indice è sicuro
+per costruzione: memorizza solo array NumPy senza oggetti e non carica mai payload
+pickle eseguibili.
 
 ## Fase 2: query contaminazione
 
@@ -27,7 +26,7 @@ usano gli stessi filtri di raggio e magnitudine.
 
 ## Modello di contaminazione e terminologia
 
-PHOTO-CAT 2.0.0 produce metriche di contaminazione a livello di catalogo, simili
+PHOTO-CAT produce metriche di contaminazione a livello di catalogo, simili
 a un'apertura circolare. È preferibile interpretarlo come strumento di
 valutazione del rischio di contaminazione o di screening dei target, salvo che
 un'analisi successiva aggiunga modellazione specifica della missione.
@@ -56,15 +55,15 @@ un'analisi successiva aggiunga modellazione specifica della missione.
   percentuale del flusso del target.
 - `flux_fraction_all_neighbors` usa tutti i vicini validi dentro il raggio
   circolare di query, anche se non superano `delta_mag`.
-- `flux_fraction_extra` resta come alias retrocompatibile di
-  `flux_fraction_selected`.
+- `flux_fraction_extra` è un alias di `flux_fraction_selected`.
 
-Le pesature gaussiane/tabulate opzionali restano modelli radiali circolari, non
-simulazioni complete dello strumento. Possono stimare il leakage delle sorgenti
-fra apertura e raggio di influenza, ma non modellano PSF asimmetriche o variabili,
-pixel del detector, diffrazione o luce diffusa. Un profilo empirico versionato
-con polinomio di colore può stimare una magnitudine di missione, ma PHOTO-CAT
-non integra una distribuzione spettrale di energia sulla banda strumentale.
+La pesatura gaussiana opzionale resta un modello radiale circolare, non una
+simulazione completa dello strumento. Può stimare il leakage delle sorgenti fra
+apertura e raggio di influenza, ma non modella PSF asimmetriche o variabili,
+pixel del detector, diffrazione o luce diffusa. Una conversione opzionale
+corpo-nero colore→banda può stimare la contaminazione in una banda di missione a
+partire dai colori del catalogo, ma PHOTO-CAT non integra una distribuzione
+spettrale di energia completa né fa fit di atmosfere stellari reali.
 
 ## Output JSON
 
@@ -78,8 +77,8 @@ Ogni risultato target include:
 - frazione di flusso dei contaminanti selezionati
 - frazione di flusso di tutti i vicini dentro il raggio
 - dizionari opzionali multi-banda per le frazioni di flusso selezionate/tutti i vicini
-- metriche opzionali nella banda di missione trasformata, magnitudini di
-  target/contaminanti e stato di validità per target
+- metriche opzionali nella banda di missione convertita, magnitudini di
+  target/contaminanti, temperatura efficace e stato di conversione per target
 - frazioni di flusso pesate dentro l'apertura, fuori dall'apertura e totali
 - conteggi e record delle sorgenti selezionate fuori dall'apertura
 - numero di vicini dentro il raggio circolare
@@ -91,9 +90,8 @@ Per la riproducibilità, ogni query scrive anche un metadata sidecar JSON in
 `INDEX_DIR/results/metadata/`. Il sidecar registra versione di PHOTO-CAT, valori
 di configurazione selezionati, numero di target, manifest dell'indice, SHA-256
 del catalogo usato nella build e le note sull'ambito del modello riportate sopra.
-Il sidecar include anche il checksum del profilo di trasformazione opzionale.
-Il JSON dei risultati rimane una lista semplice di target per compatibilità con
-gli script esistenti.
+Il sidecar include anche il checksum del filtro di conversione fotometrica opzionale.
+Il JSON dei risultati rimane una lista semplice di target.
 
 Per impostazione predefinita, gli ID target invalidi o assenti dall'indice
 vengono saltati con avvisi. Imposta `include_missing_targets: true` o passa

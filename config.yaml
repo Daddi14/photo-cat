@@ -23,6 +23,10 @@ build_neighbors_index:
       phot_g_mean_mag: phot_g_mean_mag
     magnitude_columns:
       gaia_g: phot_g_mean_mag
+      # BP and RP are needed for the photometric band conversion (colour -> temperature).
+      # Uncomment when your catalogue provides them.
+      # gaia_bp: phot_bp_mean_mag
+      # gaia_rp: phot_rp_mean_mag
   settings:
     use_dask: true
     calculate_separations: false
@@ -41,7 +45,19 @@ query_contamination_from_index:
     include_missing_targets: false
     contamination_bands:
     - gaia_g
-    bandpass_transform_file: null
+    # Optional: choose the reference/output band for contaminant selection and metrics.
+    # If that band is stored in the index (for example gaia_bp), its nominal values
+    # are used directly. Otherwise BP-RP converts each source into the chosen band.
+    # A conversion requires the catalogue BP and RP columns in the index.
+    # output_band: a built-in filter (gaia_g/bp/rp, tess, cheops, mauve, ariel_fgs1,
+    #   ariel_fgs2, ariel_visphot, ariel_airs_ch0/ch1, ariel_nirspec), "custom" with a
+    #   filter_file, or any filter downloaded from SVO in the GUI. conversion_method:
+    #   blackbody (phoenix and empirical need external data). Omit the block to skip.
+    photometric_conversion:
+    #   output_band: tess
+    #   conversion_method: blackbody
+    #   filter_file:
+    #   catalog: gaia_dr3
     contamination_model:
       mode: gaussian_psf
       gaussian_fwhm_arcsec: 120.0

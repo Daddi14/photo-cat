@@ -66,7 +66,7 @@ Le chiavi documentate in queste sezioni, il comportamento dei percorsi relativi 
 
 ## Output della build dell'indice
 
-Una build completata scrive i file documentati dell'indice dei vicini nella directory di output configurata. Il formato versione 2 richiede un `index_manifest.json` completo e array NumPy sicuri senza oggetti. Gli indici versione 1 devono essere ricostruiti e non vengono mai deserializzati.
+Una build completata scrive i file documentati dell'indice dei vicini nella directory di output configurata, e richiede un `index_manifest.json` completo e array NumPy sicuri senza oggetti. Gli array a oggetti o pickle non sicuri non vengono mai deserializzati.
 
 ## Risultati della query
 
@@ -88,11 +88,13 @@ Ogni risultato per target preserva i campi documentati per:
 - record dei contaminanti con ID sorgente, coordinate, magnitudine e separazione;
 - sorgenti selezionate fuori dall'apertura identificate separatamente quando è
   configurato un raggio di influenza;
-- magnitudini additive per banda di target/contaminanti e dizionari di flusso
-  nella banda trasformata quando è configurato un profilo empirico;
-- campi di provenienza `bandpass_transform_status`,
-  `bandpass_transform_profile` e `bandpass_transformed_band`;
-- alias scalari `*_transformed` utilizzabili dagli strumenti di screening e
+- magnitudini additive per banda di target/contaminanti e un dizionario di
+  flusso nella banda convertita quando è configurata una conversione fotometrica;
+- campi di provenienza `catalog_band`, `output_band`, `conversion_method`,
+  `filter_used`, `conversion_status`, `effective_temperature` e
+  `converted_target_flux`, con `effective_temperature` e `converted_flux` per
+  contaminante;
+- frazioni di flusso scalari `*_converted` utilizzabili dagli strumenti di screening e
   validazione;
 - righe target non risolte quando richieste esplicitamente, con `status` uguale
   a `missing_from_index` o `invalid_target_id`.

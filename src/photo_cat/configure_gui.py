@@ -36,6 +36,28 @@ from .i18n import (
     tr,
 )
 from .load_config import CONTAMINATION_MODES, GAUSSIAN_FWHM_TO_SIGMA
+from .photometry.catalogs import CATALOGS
+from .photometry.library import FILTERS_ROOT, available_output_bands
+from .photometry.sed import SUPPORTED_CONVERSION_METHODS
+
+# Sentinel shown in the output-band picker to mean "do not convert; use the
+# catalogue band directly". Empty output_band in the saved config maps to this.
+NO_CONVERSION_LABEL = "(none - catalogue band)"
+
+# Longest facility description kept in the picker, so one entry stays readable.
+_SVO_DESCRIPTION_MAX = 70
+
+
+def svo_facility_display(facility) -> str:
+    """Return the picker label for one SVO facility: its name plus site description.
+
+    The description (from SVO itself) is what tells a mission apart from a catalogue
+    grouping, so a user does not mistake, say, ``Misc`` for a mission.
+    """
+    description = (facility.description or "").strip()
+    if (len(description) > _SVO_DESCRIPTION_MAX):
+        description = description[: _SVO_DESCRIPTION_MAX - 1].rstrip() + "…"
+    return f"{facility.name}  —  {description}" if description else facility.name
 
 
 # How long console output is batched before being written to the widget. Long
@@ -109,7 +131,7 @@ DEFAULT_CONFIG = {
             "delta_mag": 5,
             "include_missing_targets": False,
             "contamination_bands": ["gaia_g"],
-            "bandpass_transform_file": None,
+            "photometric_conversion": None,
             "contamination_model": {
                 "mode": "top_hat",
                 "gaussian_fwhm_arcsec": None,
@@ -368,12 +390,19 @@ class ConfigGui(tk.Tk):
         self.index_dir_var = tk.StringVar()
         self.max_radius_var = tk.StringVar()
         self.field_of_view_var = tk.StringVar()
-        self.bandpass_transform_file_var = tk.StringVar()
         self.delta_mag_var = tk.StringVar()
         self.contamination_bands_var = tk.StringVar()
         self.contamination_mode_var = tk.StringVar(value="top_hat")
         self.gaussian_fwhm_var = tk.StringVar()
         self.influence_sigma_var = tk.StringVar()
+        self.conversion_output_band_var = tk.StringVar(value=NO_CONVERSION_LABEL)
+        self.conversion_method_var = tk.StringVar(value="blackbody")
+        self.conversion_filter_file_var = tk.StringVar()
+        self.conversion_catalog_var = tk.StringVar(value="gaia_dr3")
+        self.svo_facility_var = tk.StringVar()
+        self.svo_filter_var = tk.StringVar()
+        self._svo_filters_by_label: dict[str, str] = {}
+        self._svo_facility_by_display: dict[str, str] = {}
         self.include_missing_targets_var = tk.BooleanVar()
         self.chunk_size_var = tk.StringVar()
         self.buffer_flush_var = tk.StringVar()
@@ -1236,7 +1265,6 @@ class ConfigGui(tk.Tk):
         self.add_entry_row(settings_tab, 2, "Query aperture radius, arcsec", self.field_of_view_var)
         self.add_entry_row(settings_tab, 3, "Delta magnitude", self.delta_mag_var)
         self.add_entry_row(settings_tab, 4, "Contamination bands (comma-separated, or all)", self.contamination_bands_var)
-        self.add_file_row(settings_tab, 5, "Bandpass profile YAML (optional)", self.bandpass_transform_file_var, self.browse_bandpass_file)
 
         ttk.Label(
             settings_tab,
@@ -1288,8 +1316,10 @@ class ConfigGui(tk.Tk):
         for variable in (self.gaussian_fwhm_var, self.influence_sigma_var):
             variable.trace_add("write", lambda *_: self.update_derived_influence_radius())
 
+        self.build_conversion_panel(settings_tab, row=9)
+
         advanced = ttk.LabelFrame(settings_tab, text="Advanced performance settings", padding=8)
-        advanced.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        advanced.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         advanced.columnconfigure(1, weight=1)
 
         ttk.Label(
@@ -1414,6 +1444,7 @@ class ConfigGui(tk.Tk):
         execution = self.config_data["execution"]
         build_columns = self.get_catalog_columns_from_io(build_io)
         model = query_settings.get("contamination_model") or {}
+        conversion = query_settings.get("photometric_conversion") or {}
 
         self.input_catalog_var.set(str(build_io.get("input_catalog", "")))
         self.catalog_source_id_column_var.set(str(build_columns.get("source_id", "source_id")))
@@ -1426,7 +1457,11 @@ class ConfigGui(tk.Tk):
         self.index_dir_var.set(str(query_io.get("INDEX_DIR", "data/output")))
         self.max_radius_var.set(str(build_settings.get("max_radius_arcsec", 120.0)))
         self.field_of_view_var.set(str(query_settings.get("field_of_view_arcsec", 47.0)))
-        self.bandpass_transform_file_var.set(str(query_settings.get("bandpass_transform_file") or ""))
+        output_band = conversion.get("output_band")
+        self.conversion_output_band_var.set(NO_CONVERSION_LABEL if not output_band else str(output_band))
+        self.conversion_method_var.set(str(conversion.get("conversion_method") or "blackbody"))
+        self.conversion_filter_file_var.set(str(conversion.get("filter_file") or ""))
+        self.conversion_catalog_var.set(str(conversion.get("catalog") or "gaia_dr3"))
         self.delta_mag_var.set(str(query_settings.get("delta_mag", 5)))
         self.contamination_bands_var.set(", ".join(query_settings.get("contamination_bands") or ["gaia_g"]))
         self.contamination_mode_var.set(str(model.get("mode") or "top_hat"))
@@ -1485,6 +1520,246 @@ class ConfigGui(tk.Tk):
 
         for widget in self.advanced_entry_widgets:
             widget.configure(state=state)
+
+    def build_conversion_panel(self, settings_tab, row: int) -> None:
+        """Build the optional catalogue-to-output-band photometric conversion group."""
+        conversion = ttk.LabelFrame(settings_tab, text="Photometric band conversion (optional)", padding=8)
+        conversion.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        conversion.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            conversion,
+            text=(
+                "Choose the catalogue and the output band used for contamination. If that exact band "
+                "is stored in the index, PHOTO-CAT uses its nominal catalogue magnitude directly. "
+                "Otherwise BP-RP supplies the temperature used to convert each source into the chosen band."
+            ),
+            style="Muted.TLabel",
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+
+        ttk.Label(conversion, text="Catalogue").grid(row=1, column=0, sticky="w", pady=4)
+        catalog_combo = ttk.Combobox(
+            conversion,
+            textvariable=self.conversion_catalog_var,
+            values=sorted(CATALOGS),
+            state="readonly",
+            width=24,
+        )
+        catalog_combo._photocat_tooltip_key = "Catalogue"
+        catalog_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=4)
+
+        ttk.Label(conversion, text="Output band").grid(row=2, column=0, sticky="w", pady=4)
+        output_values = [NO_CONVERSION_LABEL, *available_output_bands(), "custom"]
+        output_combo = ttk.Combobox(
+            conversion,
+            textvariable=self.conversion_output_band_var,
+            values=output_values,
+            state="readonly",
+            width=24,
+        )
+        output_combo._photocat_tooltip_key = "Output band"
+        output_combo.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=4)
+        output_combo.bind("<<ComboboxSelected>>", lambda event: self.update_conversion_field_state())
+
+        ttk.Label(conversion, text="Conversion method").grid(row=3, column=0, sticky="w", pady=4)
+        method_combo = ttk.Combobox(
+            conversion,
+            textvariable=self.conversion_method_var,
+            values=list(SUPPORTED_CONVERSION_METHODS),
+            state="readonly",
+            width=24,
+        )
+        method_combo._photocat_tooltip_key = "Conversion method"
+        method_combo.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=4)
+
+        self.conversion_output_combo = output_combo
+        filter_entry = self.add_file_row(
+            conversion, 4, "Custom filter file", self.conversion_filter_file_var, self.browse_conversion_filter
+        )
+        self.conversion_dependent_entries = {"filter_file": filter_entry, "method": method_combo, "catalog": catalog_combo}
+
+        ttk.Label(
+            conversion,
+            text=(
+                "A custom filter file is required only for the custom output band. Format: two columns "
+                "'wavelength transmission', optional headers '# unit: nm|angstrom|micron' and "
+                "'# transmission: fraction|percent'."
+            ),
+            style="Muted.TLabel",
+            wraplength=880,
+            justify="left",
+        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
+        self.build_svo_download_panel(conversion, row=6)
+
+        self.conversion_output_band_var.trace_add("write", lambda *_: self.update_conversion_field_state())
+        self.update_conversion_field_state()
+
+    def build_svo_download_panel(self, parent, row: int) -> None:
+        """Build the SVO Filter Profile Service downloader inside the conversion group."""
+        svo = ttk.LabelFrame(parent, text="Download a filter from SVO", padding=8)
+        svo.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        svo.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            svo,
+            text=(
+                "Fetch any filter from the SVO Filter Profile Service. Pick a facility, list its filters, "
+                "then download one; it is saved to the filter library and selected as the output band."
+            ),
+            style="Muted.TLabel",
+            wraplength=860,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+
+        ttk.Label(svo, text="Facility").grid(row=1, column=0, sticky="w", pady=4)
+        # Seed with the bundled list so the picker works instantly and offline, then
+        # reload it live from SVO in the background so it always mirrors the site
+        # rather than a hand-maintained list.
+        # Populated live from the SVO index by refresh_svo_facilities(); starts empty
+        # and editable so a known facility can be typed before the fetch returns.
+        self.svo_facility_combo = ttk.Combobox(
+            svo, textvariable=self.svo_facility_var, values=[], width=46, height=20
+        )
+        self.svo_facility_combo._photocat_tooltip_key = "Facility"
+        self.svo_facility_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=4)
+        self.refresh_svo_facilities()
+        self.svo_list_button = ttk.Button(svo, text="List filters", command=self.list_svo_filters)
+        self.svo_list_button._photocat_tooltip_key = "List filters"
+        self.svo_list_button.grid(row=1, column=2, sticky="w", padx=(10, 0), pady=4)
+
+        ttk.Label(svo, text="Filter").grid(row=2, column=0, sticky="w", pady=4)
+        self.svo_filter_combo = ttk.Combobox(
+            svo, textvariable=self.svo_filter_var, values=[], state="readonly", width=48
+        )
+        self.svo_filter_combo._photocat_tooltip_key = "Filter"
+        self.svo_filter_combo.grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=4)
+        self.svo_download_button = ttk.Button(svo, text="Download and use", command=self.download_svo_filter, state="disabled")
+        self.svo_download_button._photocat_tooltip_key = "Download and use"
+        self.svo_download_button.grid(row=2, column=2, sticky="w", padx=(10, 0), pady=4)
+
+        self.svo_status_label = ttk.Label(svo, text="", style="Muted.TLabel", wraplength=860, justify="left")
+        self.svo_status_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
+    def update_conversion_field_state(self) -> None:
+        """Enable conversion inputs only when a band conversion is actually selected."""
+        entries = getattr(self, "conversion_dependent_entries", None)
+        if (not entries):
+            return
+
+        band = self.conversion_output_band_var.get().strip()
+        converting = band not in ("", NO_CONVERSION_LABEL)
+        entries["method"].configure(state="readonly" if converting else "disabled")
+        entries["catalog"].configure(state="readonly" if converting else "disabled")
+        # The custom filter file only matters for the custom band.
+        entries["filter_file"].configure(state="normal" if (band == "custom") else "disabled")
+
+    def refresh_svo_facilities(self) -> None:
+        """Reload the facility picker from the live SVO index in the background.
+
+        Runs automatically when the panel opens, so the dropdown always mirrors the
+        SVO site and a newly added facility appears without shipping a new tool
+        version. A network failure silently leaves the bundled list in place.
+        """
+        def worker():
+            from .photometry import svo
+            try:
+                facilities = svo.list_facilities()
+            except Exception:
+                return
+            if (facilities):
+                display_to_name = {svo_facility_display(f): f.name for f in facilities}
+                self.after(0, lambda: self._svo_facilities_ready(display_to_name))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _svo_facilities_ready(self, display_to_name: dict) -> None:
+        self._svo_facility_by_display = display_to_name
+        self.svo_facility_combo.configure(values=list(display_to_name))
+
+    def list_svo_filters(self) -> None:
+        """Fetch the filter list for the chosen facility on a background thread."""
+        selection = self.svo_facility_var.get().strip()
+        # A picked entry is "Name  —  description"; a typed one is the bare name.
+        facility = self._svo_facility_by_display.get(selection, selection)
+        if (facility == ""):
+            self.svo_status_label.configure(text=tr("Choose a facility before listing filters."))
+            return
+        self.svo_list_button.configure(state="disabled")
+        self.svo_status_label.configure(text=tr("Listing filters from SVO..."))
+
+        def worker():
+            from .photometry import svo
+            try:
+                filters = svo.list_filters(facility)
+            except svo.SvoError as error:
+                self.after(0, self._svo_list_failed, str(error))
+                return
+            labels_to_ids = {f.label(): f.filter_id for f in filters}
+            self.after(0, self._svo_list_ready, list(labels_to_ids), labels_to_ids)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _svo_list_ready(self, labels: list, labels_to_ids: dict) -> None:
+        self._svo_filters_by_label = labels_to_ids
+        self.svo_filter_combo.configure(values=labels)
+        if (labels):
+            self.svo_filter_var.set(labels[0])
+            self.svo_download_button.configure(state="normal")
+        self.svo_list_button.configure(state="normal")
+        self.svo_status_label.configure(text=tr("Found {count} filters. Choose one and download it.").format(count=len(labels)))
+
+    def _svo_list_failed(self, message: str) -> None:
+        self.svo_list_button.configure(state="normal")
+        self.svo_download_button.configure(state="disabled")
+        self.svo_filter_combo.configure(values=[])
+        self.svo_status_label.configure(text=message)
+
+    def download_svo_filter(self) -> None:
+        """Download the selected SVO filter into the library on a background thread."""
+        filter_id = self._svo_filters_by_label.get(self.svo_filter_var.get().strip())
+        if (not filter_id):
+            self.svo_status_label.configure(text=tr("Choose a filter to download."))
+            return
+        self.svo_download_button.configure(state="disabled")
+        self.svo_status_label.configure(text=tr("Downloading {filter} from SVO...").format(filter=filter_id))
+
+        def worker():
+            from .photometry import svo
+            try:
+                svo.download_filter(filter_id, FILTERS_ROOT)
+                band_key = svo.band_key_for_filter_id(filter_id)
+            except svo.SvoError as error:
+                self.after(0, self._svo_download_failed, str(error))
+                return
+            self.after(0, self._svo_download_ready, filter_id, band_key)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _svo_download_ready(self, filter_id: str, band_key: str) -> None:
+        self.refresh_output_bands()
+        self.conversion_output_band_var.set(band_key)
+        self.conversion_method_var.set(self.conversion_method_var.get().strip() or "blackbody")
+        self.svo_download_button.configure(state="normal")
+        self.update_conversion_field_state()
+        self.svo_status_label.configure(
+            text=tr("Downloaded {filter}. Output band set to {band}.").format(filter=filter_id, band=band_key)
+        )
+
+    def _svo_download_failed(self, message: str) -> None:
+        self.svo_download_button.configure(state="normal")
+        self.svo_status_label.configure(text=message)
+
+    def refresh_output_bands(self) -> None:
+        """Repopulate the output-band picker after the filter library changes."""
+        from .photometry import library
+
+        library._discover.cache_clear()
+        combo = getattr(self, "conversion_output_combo", None)
+        if (combo is not None):
+            combo.configure(values=[NO_CONVERSION_LABEL, *available_output_bands(), "custom"])
 
     def update_model_field_state(self) -> None:
         if (not self.model_dependent_entries):
@@ -1787,13 +2062,13 @@ class ConfigGui(tk.Tk):
         if (selected):
             self.targets_input_var.set(self.make_project_relative_path(selected))
 
-    def browse_bandpass_file(self) -> None:
+    def browse_conversion_filter(self) -> None:
         selected = filedialog.askopenfilename(
-            title=tr("Select bandpass profile YAML"),
-            filetypes=[(tr("YAML files"), "*.yaml *.yml"), (tr("All files"), "*.*")]
+            title=tr("Select filter transmission file"),
+            filetypes=[(tr("Filter files"), "*.dat *.txt *.csv"), (tr("All files"), "*.*")]
         )
         if (selected):
-            self.bandpass_transform_file_var.set(self.make_project_relative_path(selected))
+            self.conversion_filter_file_var.set(self.make_project_relative_path(selected))
 
     def browse_out_dir(self) -> None:
         selected = filedialog.askdirectory(title=tr("Select output/index folder"))
@@ -2074,6 +2349,19 @@ class ConfigGui(tk.Tk):
         sigma_text = self.influence_sigma_var.get().strip()
         influence_sigma = float(sigma_text) if (sigma_text != "") else None
 
+        output_band = self.conversion_output_band_var.get().strip()
+        photometric_conversion = None
+        if (output_band not in ("", NO_CONVERSION_LABEL)):
+            filter_file = self.conversion_filter_file_var.get().strip() or None
+            if (filter_file is not None):
+                filter_file = self.make_project_relative_path(filter_file)
+            photometric_conversion = {
+                "output_band": output_band,
+                "conversion_method": self.conversion_method_var.get().strip() or "blackbody",
+                "filter_file": filter_file,
+                "catalog": self.conversion_catalog_var.get().strip() or "gaia_dr3",
+            }
+
         return {
             "interface": {
                 "language": get_language(),
@@ -2116,7 +2404,7 @@ class ConfigGui(tk.Tk):
                     "delta_mag": float(self.delta_mag_var.get().strip()),
                     "include_missing_targets": bool(self.include_missing_targets_var.get()),
                     "contamination_bands": contamination_bands,
-                    "bandpass_transform_file": self.bandpass_transform_file_var.get().strip() or None,
+                    "photometric_conversion": photometric_conversion,
                     "contamination_model": {
                         "mode": mode,
                         "gaussian_fwhm_arcsec": gaussian_fwhm,

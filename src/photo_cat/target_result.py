@@ -12,7 +12,9 @@ class TargetResult:
     source_id: str
     ra: float
     dec: float
-    phot_g_mean_mag: float | None
+    magnitude: float | None
+    magnitude_band: str
+    magnitude_source: str
     flux_fraction_selected: float
     flux_fraction_all_neighbors: float
     flux_fraction_extra: float

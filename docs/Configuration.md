@@ -98,32 +98,53 @@ Alongside the weights, `gaussian_psf` also reports aperture-integrated metrics
 This remains a catalogue-level screening approximation unless the FWHM comes from
 an instrument-specific PSF calibration.
 
-### Empirical mission-band transformations
+### Photometric band conversion
 
-An optional versioned YAML profile can derive one named mission magnitude from
-stored catalogue bands:
+Contamination is estimated in the catalogue band by default. An optional
+conversion estimates it in a mission band instead:
 
 ```yaml
 query_contamination_from_index:
   settings:
-    bandpass_transform_file: examples/reproducibility/bandpass_transform_example.yaml
+    photometric_conversion:
+      output_band: tess          # a built-in filter, or "custom"
+      conversion_method: blackbody
+      filter_file:               # required only when output_band is custom
+      catalog: gaia_dr3
 ```
 
-The profile defines `output_band`, `base_band`, two `color_bands`, polynomial
-`coefficients`, calibrated colour/magnitude limits, an `out_of_range` policy,
-and a calibration reference. The convention is:
+The selected output band is the reference band for the delta-magnitude cut,
+contaminant list, primary flux fractions, counts, and PSF metrics. If that exact
+band is already stored in the index (for example `gaia_bp` or `gaia_rp`), its
+nominal catalogue magnitudes are used directly and no conversion is performed.
 
-```text
-m_output = m_base + c0 + c1*colour + c2*colour^2 + ...
-colour = m_color_band_1 - m_color_band_2
-```
+Otherwise, the colour (BP-RP) gives a blackbody-equivalent temperature; each
+source's flux is integrated through the chosen filter, so
+`m_out = m_anchor - 2.5*log10(R)` where
+`R = F_out(Teff)/F_anchor(Teff)`. Because contamination uses only flux ratios
+within one band, the output zero-point cancels and the anchor band's zero-point
+is kept. This requires the catalogue colour bands (BP, RP) to be stored with
+`magnitude_columns` during the index build. PHOTO-CAT loads those required bands
+automatically; they do not have to be repeated in `contamination_bands`.
 
-The required input bands must have been stored with `magnitude_columns` during
-the index build. `out_of_range: null` excludes uncalibrated values;
-`out_of_range: extrapolate` retains them but marks each affected target as
-`extrapolated`. The profile and its SHA-256 checksum are copied into query
-metadata. This is an empirical colour transformation, not passband integration
-over a spectral energy distribution.
+`output_band` is a built-in filter band key (`gaia_g`, `gaia_bp`, `gaia_rp`,
+`tess`, `cheops`, `mauve`, and the Ariel channels `ariel_fgs1`, `ariel_fgs2`,
+`ariel_visphot`, `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`) or `custom`
+with a `filter_file`. `conversion_method` is `blackbody` (default); `phoenix` and
+`empirical` are selectable but require external data (a model-spectrum grid, or a
+published relation) and error clearly until it is supplied.
+
+Built-in filters live under `photo_cat/filters/<Mission>/<band>.dat`; adding a
+mission is just dropping its official transmission curve there. Gaia, TESS,
+CHEOPS, MAUVE and the Ariel channels ship as official curves. More filters can be
+pulled from the SVO Filter Profile Service directly in the GUI (the "Download a
+filter from SVO" panel picks a facility, lists its filters, and downloads one into
+the library) or with `photo_cat.photometry.svo.download_filter`.
+
+This is an approximate, catalogue-level screening estimate: real stars are not
+blackbodies, and the reported effective temperature is a blackbody-equivalent
+colour temperature, not a physical Teff. The output filter and its SHA-256
+checksum are copied into query metadata.
 
 ## Save and run pipeline
 

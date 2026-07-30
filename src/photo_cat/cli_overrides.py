@@ -61,7 +61,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "delta_mag": 5.0,
             "include_missing_targets": False,
             "contamination_bands": ["gaia_g"],
-            "bandpass_transform_file": None,
+            "photometric_conversion": None,
             "contamination_model": {
                 "mode": "top_hat",
                 "gaussian_fwhm_arcsec": None,
@@ -99,7 +99,10 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "delta_mag": ("query_contamination_from_index", "settings", "delta_mag"),
     "include_missing_targets": ("query_contamination_from_index", "settings", "include_missing_targets"),
     "contamination_bands": ("query_contamination_from_index", "settings", "contamination_bands"),
-    "bandpass_transform_file": ("query_contamination_from_index", "settings", "bandpass_transform_file"),
+    "output_band": ("query_contamination_from_index", "settings", "photometric_conversion", "output_band"),
+    "conversion_method": ("query_contamination_from_index", "settings", "photometric_conversion", "conversion_method"),
+    "conversion_filter_file": ("query_contamination_from_index", "settings", "photometric_conversion", "filter_file"),
+    "conversion_catalog": ("query_contamination_from_index", "settings", "photometric_conversion", "catalog"),
     "contamination_model_mode": ("query_contamination_from_index", "settings", "contamination_model", "mode"),
     "gaussian_fwhm_arcsec": ("query_contamination_from_index", "settings", "contamination_model", "gaussian_fwhm_arcsec"),
     "influence_sigma": ("query_contamination_from_index", "settings", "contamination_model", "influence_sigma"),
@@ -114,7 +117,7 @@ PATH_OVERRIDE_NAMES = {
     "out_dir",
     "index_dir",
     "targets_input",
-    "bandpass_transform_file",
+    "conversion_filter_file",
 }
 
 
