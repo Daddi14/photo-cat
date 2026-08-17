@@ -48,6 +48,18 @@ Releases before 3.0.0 are documented in the
 - `--conversion-method` accepts the new values, and its help text and the
   configuration documentation describe when each method applies.
 
+### Fixed
+
+- Filters downloaded from SVO or added by hand are no longer stored inside the
+  installed package, where reinstalling or upgrading PHOTO-CAT (`pip install
+  --upgrade`, `pipx upgrade`, a rebuilt virtual environment) discarded them. They
+  now live in the per-user data directory: `%APPDATA%\photo-cat\filters` on
+  Windows, `~/Library/Application Support/photo-cat/filters` on macOS,
+  `$XDG_DATA_HOME/photo-cat/filters` on Linux, relocatable with
+  `PHOTO_CAT_FILTERS_DIR`. Both directories are read, so a filter already sitting
+  inside the package keeps working and no configuration changes; when a band key
+  exists in both, the user library wins.
+
 ### Removed
 
 - The `empirical` conversion method, superseded by `gaia_empirical`. It was

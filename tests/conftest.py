@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from photo_cat.index_manifest import IndexManifest, write_index_manifest
+from photo_cat.photometry.library import USER_FILTERS_DIR_ENV
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,19 @@ class SampleInputs:
 
     catalog_path: Path
     targets_path: Path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_filter_library(tmp_path_factory: pytest.TempPathFactory):
+    """Point the writable filter library at an empty temporary directory.
+
+    The library merges the shipped filters with the per-user ones, so without this
+    a developer's own downloaded curves would join the library under test and could
+    fail assertions about which bands exist or which provenance they carry.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path_factory.mktemp("user_filters")))
+        yield
 
 
 @pytest.fixture(scope="session")

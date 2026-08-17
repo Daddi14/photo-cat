@@ -13,7 +13,14 @@ import pytest
 from photo_cat.photometry.catalogs import GAIA_DR3, resolve_catalog
 from photo_cat.photometry.conversion import build_converter, convert_magnitudes
 from photo_cat.photometry.filters import load_filter
-from photo_cat.photometry.library import available_output_bands, load_library_filter
+from photo_cat.photometry.library import (
+    FILTERS_ROOT,
+    USER_FILTERS_DIR_ENV,
+    available_output_bands,
+    library_filter_path,
+    load_library_filter,
+    user_filters_root,
+)
 from photo_cat.photometry.sed import blackbody_photon_density
 
 
@@ -171,6 +178,54 @@ def test_built_in_library_ships_only_official_missions() -> None:
     assert {"gaia_g", "gaia_bp", "gaia_rp", "tess", "cheops", "mauve"} <= bands
     for band in bands:
         assert load_library_filter(band).is_nominal is False
+
+
+@pytest.mark.unit
+def test_the_user_library_lives_outside_the_installed_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Downloaded filters must survive reinstalling or upgrading the package."""
+    monkeypatch.delenv(USER_FILTERS_DIR_ENV, raising=False)
+    root = user_filters_root()
+
+    assert (root.name, root.parent.name) == ("filters", "photo-cat")
+    assert not root.is_relative_to(FILTERS_ROOT)
+
+
+@pytest.mark.regression
+def test_a_filter_added_to_the_user_library_is_discovered(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A curve outside the package is addressable exactly like a shipped one."""
+    monkeypatch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path))
+    (tmp_path / "MyMission").mkdir()
+    _write_filter(tmp_path / "MyMission" / "response.dat", 600.0, 700.0)
+
+    assert "mymission" in available_output_bands()
+    assert load_library_filter("mymission").throughput.max() == pytest.approx(1.0)
+
+
+@pytest.mark.regression
+def test_shipped_filters_stay_available_alongside_the_user_library(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The package remains a search root, so a filter left there keeps resolving."""
+    monkeypatch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path / "empty"))
+    path = library_filter_path("tess")
+
+    assert path is not None and Path(path).is_relative_to(FILTERS_ROOT)
+
+
+@pytest.mark.regression
+def test_a_user_curve_takes_precedence_over_a_shipped_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Installing a curve locally is how a shipped one is replaced without editing it."""
+    monkeypatch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path))
+    (tmp_path / "TESS").mkdir()
+    _write_filter(tmp_path / "TESS" / "response.dat", 600.0, 700.0)
+
+    path = library_filter_path("tess")
+
+    assert path is not None and Path(path).is_relative_to(tmp_path)
 
 
 @pytest.mark.regression

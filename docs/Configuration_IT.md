@@ -177,12 +177,26 @@ blackbody serve una curva di trasmissione installata per quella banda: senza,
 le sorgenti fuori dall'intervallo di colore della relazione restano non convertite
 e vengono riportate come tali.
 
-I filtri integrati stanno in `photo_cat/filters/<Missione>/<banda>.dat`; aggiungere
-una missione significa solo mettere lì la sua curva di trasmissione ufficiale.
-Gaia, TESS, CHEOPS, MAUVE e i canali Ariel sono curve ufficiali. Altri filtri si
-possono scaricare dal SVO Filter Profile Service direttamente nella GUI (il
-pannello "Scarica un filtro da SVO" sceglie una facility, ne elenca i filtri e ne
-scarica uno nella libreria) o con `photo_cat.photometry.svo.download_filter`.
+I filtri arrivano da due cartelle, lette insieme. Le curve ufficiali distribuite
+con la release (Gaia, TESS, CHEOPS, MAUVE e i canali Ariel) stanno dentro il
+package. Le curve scaricate e quelle aggiunte dall'utente stanno nella cartella
+dati dell'utente, dove un aggiornamento o una reinstallazione non può cancellarle:
+
+| Piattaforma | Libreria filtri utente |
+| --- | --- |
+| Windows | `%APPDATA%\photo-cat\filters` |
+| macOS | `~/Library/Application Support/photo-cat/filters` |
+| Linux | `$XDG_DATA_HOME/photo-cat/filters` (default `~/.local/share/photo-cat/filters`) |
+
+Imposta `PHOTO_CAT_FILTERS_DIR` per spostare la libreria utente. Aggiungere una
+missione significa solo mettere lì la sua curva ufficiale come
+`<Missione>/<banda>.dat`. Un filtro lasciato dentro il package da una versione
+precedente continua a funzionare, perché entrambe le cartelle vengono scandite; se
+la stessa chiave di banda esiste in entrambe vince la libreria utente, così una
+curva installata localmente sostituisce una distribuita. Altri filtri si possono
+scaricare dal SVO Filter Profile Service direttamente nella GUI (il pannello
+"Scarica un filtro da SVO" sceglie una facility, ne elenca i filtri e ne scarica
+uno nella libreria utente) o con `photo_cat.photometry.svo.download_filter`.
 
 Il percorso blackbody è una stima approssimata a livello di catalogo per lo
 screening: le stelle reali non sono corpi neri e la temperatura efficace riportata

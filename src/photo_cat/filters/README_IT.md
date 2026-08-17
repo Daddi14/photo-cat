@@ -76,13 +76,32 @@ così non viene mai scambiata per una risposta strumentale misurata.
 
 Altri filtri si possono scaricare dal SVO Filter Profile Service direttamente
 nella GUI (pannello "Scarica un filtro da SVO") o via codice con
-`photo_cat.photometry.svo.download_filter`. Vengono salvati in questo albero e
-diventano subito selezionabili.
+`photo_cat.photometry.svo.download_filter`. Diventano subito selezionabili.
+
+## Dove stanno i filtri
+
+Vengono letti insieme due percorsi:
+
+- **questo albero**, che contiene le curve ufficiali distribuite con la release.
+  Appartiene all'installazione e viene sostituito a ogni aggiornamento o
+  reinstallazione di PHOTO-CAT;
+- la **libreria utente** nella cartella dati dell'utente, dove finiscono le curve
+  scaricate e quelle aggiunte a mano, così un aggiornamento non può cancellarle:
+  - Windows `%APPDATA%\photo-cat\filters`
+  - macOS `~/Library/Application Support/photo-cat/filters`
+  - Linux `$XDG_DATA_HOME/photo-cat/filters` (default `~/.local/share/...`)
+
+Imposta `PHOTO_CAT_FILTERS_DIR` per spostare altrove la libreria utente. Un filtro
+rimasto in questo albero da una versione precedente continua a funzionare, perché
+entrambe le cartelle vengono lette; se la stessa chiave di banda esiste in
+entrambe vince la libreria utente, ed è così che una curva installata localmente
+sostituisce una distribuita. Il percorso effettivamente usato e il suo checksum
+SHA-256 vengono registrati nei metadata della query.
 
 ## Aggiungere una missione
 
 Scarica la curva di trasmissione ufficiale (per esempio dal SVO Filter Profile
 Service) per la banda di missione che ti serve, salvala in questo formato in
-`filters/<Missione>/<banda>.dat` e diventa subito selezionabile come
+`<libreria utente>/<Missione>/<banda>.dat` e diventa subito selezionabile come
 `output_band: <missione>` o `<missione>_<banda>`. PHOTO-CAT non include curve di
 missione inventate; usa la risposta strumentale pubblicata.

@@ -38,7 +38,7 @@ from .i18n import (
 from .load_config import CONTAMINATION_MODES, GAUSSIAN_FWHM_TO_SIGMA
 from .photometry.catalogs import CATALOGS
 from .photometry.conversion import METHOD_AUTO, METHOD_GAIA_EMPIRICAL, SUPPORTED_CONVERSION_METHODS
-from .photometry.library import FILTERS_ROOT, available_output_bands, library_filter_path
+from .photometry.library import available_output_bands, library_filter_path, user_filters_root
 from .photometry.transformations import find_transformation, supported_empirical_bands
 
 # Sentinel shown in the output-band picker to mean "do not convert; use the
@@ -107,7 +107,7 @@ def conversion_method_note(output_band: str, method: str, catalog: str) -> tuple
         if has_curve
         else (
             "outside it no fallback is possible, because no transmission curve is installed for "
-            f"'{output_band}'; add one under {FILTERS_ROOT} to enable the blackbody fallback."
+            f"'{output_band}'; add one under {user_filters_root()} to enable the blackbody fallback."
         )
     )
     return (f"auto: applies {calibrated} Within that range the relation is used; {fallback}", not has_curve)
@@ -1811,7 +1811,7 @@ class ConfigGui(tk.Tk):
         def worker():
             from .photometry import svo
             try:
-                svo.download_filter(filter_id, FILTERS_ROOT)
+                svo.download_filter(filter_id, user_filters_root())
                 band_key = svo.band_key_for_filter_id(filter_id)
             except svo.SvoError as error:
                 self.after(0, self._svo_download_failed, str(error))

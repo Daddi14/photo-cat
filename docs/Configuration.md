@@ -172,12 +172,25 @@ A band can be in both lists. `auto` needs a transmission curve installed for the
 band to have a blackbody fallback: without one, sources outside the relation's
 colour range stay unconverted and are reported as such.
 
-Built-in filters live under `photo_cat/filters/<Mission>/<band>.dat`; adding a
-mission is just dropping its official transmission curve there. Gaia, TESS,
-CHEOPS, MAUVE and the Ariel channels ship as official curves. More filters can be
+Filters come from two directories, read together. The official curves shipped with
+the release (Gaia, TESS, CHEOPS, MAUVE and the Ariel channels) live inside the
+package. Downloaded and user-added curves live in the per-user data directory,
+where an upgrade or reinstall cannot discard them:
+
+| Platform | User filter library |
+| --- | --- |
+| Windows | `%APPDATA%\photo-cat\filters` |
+| macOS | `~/Library/Application Support/photo-cat/filters` |
+| Linux | `$XDG_DATA_HOME/photo-cat/filters` (default `~/.local/share/photo-cat/filters`) |
+
+Set `PHOTO_CAT_FILTERS_DIR` to relocate the user library. Adding a mission is just
+dropping its official transmission curve there as `<Mission>/<band>.dat`. A filter
+left inside the package by an earlier version keeps working, since both
+directories are scanned; when the same band key exists in both, the user library
+wins, so a locally installed curve replaces a shipped one. More filters can be
 pulled from the SVO Filter Profile Service directly in the GUI (the "Download a
 filter from SVO" panel picks a facility, lists its filters, and downloads one into
-the library) or with `photo_cat.photometry.svo.download_filter`.
+the user library) or with `photo_cat.photometry.svo.download_filter`.
 
 The blackbody path is an approximate, catalogue-level screening estimate: real
 stars are not blackbodies, and the reported effective temperature is a
