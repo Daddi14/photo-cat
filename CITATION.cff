@@ -46,7 +46,45 @@ contact:
     orcid: "https://orcid.org/0009-0005-1725-5223"
 repository-code: "https://github.com/Daddi14/photo-cat"
 license: "GPL-3.0-only"
-abstract: "High-precision photometric missions are sensitive to flux contamination from neighboring stars, which can bias light curves, dilute transit depths, and compromise photometric precision. PHOTO-CAT is a catalog-driven, mission-agnostic tool for quantifying stellar flux contamination in wide-field photometric observations. The pipeline builds a three-dimensional Euclidean representation of the sky from a user-provided astrometric catalog, indexes it with a memory-optimized KDTree for rapid neighbor searches, and computes per-target contamination metrics from angular separation, relative fluxes, and configurable aperture models (top-hat or circular Gaussian PSF), optionally converted into an arbitrary instrumental bandpass. A streaming, CSR-style storage format with compact internal identifiers enables scalable processing of catalogs with tens to hundreds of millions of sources at minimal memory overhead. Outputs include per-target contaminating flux, contamination ratios, target purity, number of neighboring sources, and their angular separations, supporting target screening and field-selection decisions ahead of observations. Although developed for the Mauve satellite, PHOTO-CAT is mission-agnostic and readily applicable to TESS, PLATO, Ariel, and other wide-field surveys."
+abstract: >-
+  PHOTO-CAT is a catalog-driven, mission-agnostic tool for quantifying stellar flux
+  contamination in wide-field photometric observations. High-precision photometric
+  missions are sensitive to flux from neighboring stars, which can bias light curves,
+  dilute transit depths, and degrade photometric precision; PHOTO-CAT screens targets
+  for that risk directly from an astrometric catalog, before an observation is planned.
+
+  The pipeline builds a three-dimensional Euclidean representation of the sky from a
+  user-provided catalog and indexes it with a memory-optimized KDTree for rapid
+  neighbor searches. A streaming, CSR-style storage format with compact internal
+  identifiers keeps memory overhead low enough to process catalogs with tens to
+  hundreds of millions of sources. Per-target contamination is then computed from
+  angular separations, relative fluxes, and a configurable aperture model: a top-hat,
+  or a circular Gaussian PSF that weights each neighbor by its radial flux decay out
+  to a PSF-derived influence radius.
+
+  Catalog flux can optionally be converted into another photometric band before
+  contamination is computed, either by integrating a blackbody spectrum through the
+  band's transmission curve, which works for any mission passband including filters
+  pulled from the SVO Filter Profile Service, or by applying a published Gaia
+  empirical colour transformation, for the photometric systems and colour ranges those
+  relations are calibrated on. Official transmission curves for Gaia, TESS, CHEOPS,
+  MAUVE and the six Ariel channels ship with the package.
+
+  Outputs include per-target contaminating flux, contamination ratios, target purity,
+  the number of neighboring sources and their angular separations, written as JSON
+  alongside reproducibility metadata recording the package version, the query
+  configuration, the index manifest and the explicit scope of the model. The tool runs
+  from a graphical configurator or from a command-line interface. Results are
+  catalog-level screening estimates, meant to support target selection and
+  field-geometry decisions ahead of observations rather than to correct measured
+  photometry.
+
+  The method and its application to the Ariel Mission Candidate Sample are described
+  in G. Galletta et al. (2026), "PHOTO-CAT - Photometric Contamination Analyzer Tool:
+  A High-Performance Framework for Photometric Contamination Assessment"; this
+  reference is updated with its DOI once the article is published. Although developed
+  for the Mauve satellite, PHOTO-CAT is mission-agnostic and readily applicable to
+  TESS, PLATO, Ariel and other wide-field surveys.
 keywords:
   - astronomy
   - photometry
