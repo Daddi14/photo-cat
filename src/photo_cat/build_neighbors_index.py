@@ -112,7 +112,7 @@ from typing import BinaryIO, Iterator
 
 import numpy as np
 import pandas as pd
-from scipy.spatial import cKDTree
+from scipy.spatial import cKDTree  # pyright: ignore[reportAttributeAccessIssue]
 from tqdm import tqdm
 from numpy.typing import NDArray
 
@@ -418,13 +418,15 @@ def load_star_dataframe(
     # stages so warnings can always point at the original CSV rows.
     catalog_row_numbers = np.arange(1, len(star_dataframe) + 1)
 
+    # The pandas stubs type these reductions as returning a scalar rather than the
+    # Series they return at runtime, so the .to_numpy() calls below are flagged.
     missing_mask = star_dataframe[list(mandatory_fields)].isna()
-    dropped_any = missing_mask.any(axis=1).to_numpy()
+    dropped_any = missing_mask.any(axis=1).to_numpy()  # pyright: ignore[reportAttributeAccessIssue]
     dropped_rows = int(dropped_any.sum())
     per_field_missing = {
-        label: int(missing_mask[column].to_numpy().sum())
+        label: int(missing_mask[column].to_numpy().sum())  # pyright: ignore[reportAttributeAccessIssue]
         for column, label in mandatory_fields.items()
-        if bool(missing_mask[column].to_numpy().any())
+        if bool(missing_mask[column].to_numpy().any())  # pyright: ignore[reportAttributeAccessIssue]
     }
     final_star_dataframe = star_dataframe.dropna(
         subset=['source_id', 'ra', 'dec', 'phot_g_mean_mag']

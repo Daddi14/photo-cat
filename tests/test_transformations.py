@@ -153,6 +153,7 @@ def test_auto_falls_back_to_blackbody_when_no_relation_covers_the_band() -> None
     converter = build_converter(GAIA_DR3, "tess", METHOD_AUTO, None)
 
     assert converter.method == "blackbody"
+    assert converter.output_filter is not None
     assert converter.output_filter.name == "tess"
 
 

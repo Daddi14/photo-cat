@@ -63,7 +63,7 @@ def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_
 
 @pytest.mark.unit
 def test_load_config_parses_multiband_and_contamination_model(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """New model settings should be validated while preserving Gaia-G defaults."""
@@ -91,7 +91,7 @@ def test_load_config_parses_multiband_and_contamination_model(
 
 @pytest.mark.unit
 def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """The outer radius follows the optics: sigma = FWHM / 2.3548, times the sigma count."""
@@ -103,6 +103,7 @@ def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
 
     query = load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
 
+    assert isinstance(query, QueryConfig)
     assert query.contamination_model.sigma_arcsec == pytest.approx(2.0 / GAUSSIAN_FWHM_TO_SIGMA)
     assert query.effective_influence_radius_arcsec == pytest.approx(5.0 * 2.0 / GAUSSIAN_FWHM_TO_SIGMA)
     # A narrow PSF legitimately stops contributing well inside a wide aperture.
@@ -111,7 +112,7 @@ def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
 
 @pytest.mark.unit
 def test_gaussian_psf_requires_both_fwhm_and_sigma_count(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """A Gaussian PSF without its sigma count has no derivable influence radius."""
@@ -126,7 +127,7 @@ def test_gaussian_psf_requires_both_fwhm_and_sigma_count(
 
 @pytest.mark.unit
 def test_query_parses_photometric_conversion_and_resolves_custom_filter_path(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
     tmp_path: Path,
 ) -> None:
@@ -149,7 +150,7 @@ def test_query_parses_photometric_conversion_and_resolves_custom_filter_path(
 
 @pytest.mark.unit
 def test_query_accepts_the_empirical_and_auto_conversion_methods(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """Both new methods parse, and a band with a published relation is accepted."""
@@ -168,7 +169,7 @@ def test_query_accepts_the_empirical_and_auto_conversion_methods(
 
 @pytest.mark.unit
 def test_query_rejects_an_empirical_band_without_a_published_relation(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """A mission passband has no Gaia relation, and that fails before the run starts."""
@@ -184,7 +185,7 @@ def test_query_rejects_an_empirical_band_without_a_published_relation(
 
 @pytest.mark.unit
 def test_query_rejects_unknown_conversion_method(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """An unsupported conversion method must fail at parse time with a clear message."""
@@ -216,7 +217,7 @@ def test_load_config_rejects_unknown_section(write_config: Callable[[], Path]) -
 )
 @pytest.mark.unit
 def test_load_config_rejects_invalid_setting_types_and_ranges(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
     replacement: str,
     message: str,

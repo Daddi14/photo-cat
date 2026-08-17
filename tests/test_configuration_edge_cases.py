@@ -25,7 +25,7 @@ def test_invalid_yaml_is_reported_as_a_configuration_error(tmp_path: Path) -> No
 @pytest.mark.unit
 def test_build_config_rejects_non_finite_radius(
     config_text: str,
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
 ) -> None:
     """A NaN radius would make spatial-index behaviour undefined and must be rejected at parsing time."""
     invalid_config = config_text.replace("max_radius_arcsec: 120.0", "max_radius_arcsec: .nan")
@@ -37,7 +37,7 @@ def test_build_config_rejects_non_finite_radius(
 @pytest.mark.unit
 def test_build_config_rejects_duplicate_catalog_column_names(
     config_text: str,
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
 ) -> None:
     """A duplicate logical column mapping would silently overwrite data during catalogue normalization."""
     invalid_config = config_text.replace("dec: dec", "dec: ra")
@@ -49,7 +49,7 @@ def test_build_config_rejects_duplicate_catalog_column_names(
 @pytest.mark.unit
 def test_query_config_rejects_non_list_manual_targets(
     config_text: str,
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
 ) -> None:
     """Manual targets remain a typed list so IDs are not split or coerced unpredictably."""
     invalid_config = config_text.replace("targets: []", "targets: 1001")

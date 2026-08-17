@@ -132,7 +132,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional, Dict
+from typing import Any, Callable, Dict, Literal, Optional, overload
 
 import numpy as np
 import pandas as pd
@@ -434,13 +434,45 @@ def target_id_preview(values: list[str]) -> str:
 
 
 # --- Load catalog and targets (low-memory path) --------------------------------
+# The loader returns one extra element when the caller asks for the resolved target
+# requests. The two shapes are declared as overloads keyed on that flag, so callers
+# unpacking seven values are checked against the seven-element form rather than
+# against the union of both. The array slots stay Any: they are memory-mapped
+# NumPy arrays whose stubs do not describe the dtype we actually load.
+_CatalogArrays = tuple[Any, Any, Any | None, Any, dict[int, str], list[int]]
+_CatalogArraysWithRequests = tuple[
+    Any, Any, Any | None, Any, dict[int, str], list[int], list[TargetRequest]
+]
+
+
+@overload
 def load_catalog_arrays(
-    INDEX_DIR: str | IndexPaths,
+    INDEX_DIR: str | Path | IndexPaths,
+    TARGETS_INPUT: Optional[str] = ...,
+    targets: Optional[list] = ...,
+    target_source_id_column: str = ...,
+    return_target_requests: Literal[False] = ...,
+) -> _CatalogArrays: ...
+
+
+@overload
+def load_catalog_arrays(
+    INDEX_DIR: str | Path | IndexPaths,
+    TARGETS_INPUT: Optional[str] = ...,
+    targets: Optional[list] = ...,
+    target_source_id_column: str = ...,
+    *,
+    return_target_requests: Literal[True],
+) -> _CatalogArraysWithRequests: ...
+
+
+def load_catalog_arrays(
+    INDEX_DIR: str | Path | IndexPaths,
     TARGETS_INPUT: Optional[str] = None,
     targets: Optional[list] = None,
     target_source_id_column: str = "source_id",
     return_target_requests: bool = False,
-):
+) -> _CatalogArrays | _CatalogArraysWithRequests:
     """
     Low-memory loader for index arrays and target IDs.
 

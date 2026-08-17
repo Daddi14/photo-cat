@@ -96,7 +96,7 @@ execution:
 
 
 @pytest.fixture
-def write_config(tmp_path: Path, config_text: str) -> Callable[[str | None], Path]:
+def write_config(tmp_path: Path, config_text: str) -> Callable[..., Path]:
     """Return a helper that writes a config and the minimal input CSV files it references."""
     def _write_config(text: str | None = None) -> Path:
         (tmp_path / "catalog.csv").write_text(

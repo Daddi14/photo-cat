@@ -146,6 +146,7 @@ def test_custom_output_band_requires_a_filter_file(tmp_path: Path) -> None:
 
     custom = _write_filter(tmp_path / "mine.dat", 600.0, 700.0)
     converter = build_converter(GAIA_DR3, "custom", "blackbody", str(custom))
+    assert converter.output_filter is not None
     assert converter.output_filter.name == "custom"
 
 

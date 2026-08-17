@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Tests for animated progress shown by GUI-launched tools."""
 
+# run_cli is called unbound against a FakeGui, so the progress behaviour can be tested
+# without a Tk window. The fake is deliberately not a ConfigGui.
+# pyright: reportArgumentType=false
+
 from __future__ import annotations
 
 from types import SimpleNamespace

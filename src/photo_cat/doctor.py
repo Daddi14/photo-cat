@@ -12,7 +12,7 @@ import os
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from .i18n import initialize_language, tr
 
@@ -67,7 +67,7 @@ class DoctorReporter:
     def info(self, name: str, label: str, detail: str = "") -> None:
         self.add(name, "info", label, detail)
 
-    def payload(self) -> dict[str, object]:
+    def payload(self) -> dict[str, Any]:
         summary = {
             "passed": sum(check.status == "pass" for check in self.checks),
             "warnings": sum(check.status == "warn" for check in self.checks),

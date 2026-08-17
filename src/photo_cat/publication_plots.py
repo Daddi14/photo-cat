@@ -191,6 +191,9 @@ def _sky_class(count: int) -> int:
 def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: int) -> str:
     """Generate the RA/Dec contamination sky map."""
     plt = _matplotlib_pyplot()
+    # Imported here rather than at module level so the optional dependency is only
+    # required when a plot is actually drawn, matching _matplotlib_pyplot above.
+    from matplotlib.lines import Line2D
     ra_values: list[float] = []
     dec_values: list[float] = []
     point_colors: list[str] = []
@@ -229,7 +232,7 @@ def _contamination_sky_map(rows: list[dict[str, Any]], destination: Path, dpi: i
     # A single-pass scatter has no per-class labels, so build the colour legend
     # from proxy handles.
     legend_handles = [
-        plt.Line2D([], [], marker="o", linestyle="", color=str(style["color"]), markersize=6, label=str(style["label"]))
+        Line2D([], [], marker="o", linestyle="", color=str(style["color"]), markersize=6, label=str(style["label"]))
         for style in SKY_MAP_CLASSES
     ]
     ax.legend(handles=legend_handles, loc="upper right", fontsize=PLOT_TYPOGRAPHY["contamination_sky_map"]["legend"])
