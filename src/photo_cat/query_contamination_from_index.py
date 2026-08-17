@@ -18,8 +18,10 @@ circular Gaussian PSF model weights each source by its radial flux decay and
 estimates leakage out to a PSF-derived influence radius. It does not perform
 spatially varying or asymmetric PSF
 convolution, detector-pixel modelling, scattered-light modelling, or full
-spectral/passband integration. An optional blackbody colour-to-band conversion
-can estimate contamination in a mission band from catalogue colours. Treat the
+spectral/passband integration. An optional band conversion can estimate
+contamination in another band from catalogue colours, either by integrating a
+blackbody through the band's filter or by applying a published Gaia empirical
+relation where one is calibrated for that band. Treat the
 result as a contamination risk-assessment / target-screening metric unless
 calibrated mission inputs support the selected model.
 
@@ -188,6 +190,7 @@ class ReferenceBandContext:
     filter_used: dict | None = None
     effective_temperature: np.ndarray | None = None
     status_codes: np.ndarray | None = None
+    colour_values: np.ndarray | None = None
 
     @property
     def is_converted(self) -> bool:
@@ -202,6 +205,21 @@ def conversion_status_name(context: ReferenceBandContext | None, index: int) -> 
     if (index < 0 or index >= codes.shape[0]):
         return "missing_input"
     return STATUS_NAMES.get(int(codes[index]), "missing_input")
+
+
+def conversion_colour_used(context: ReferenceBandContext | None, index: int) -> float | None:
+    """Return the catalogue colour that drove one row's conversion, if converting.
+
+    Recorded per source because it is what every method keys on: without it a
+    status such as ``colour_outside_valid_range`` cannot be checked from the result.
+    """
+    if (context is None or not context.is_converted or context.colour_values is None):
+        return None
+    colours = context.colour_values
+    if (index < 0 or index >= colours.shape[0]):
+        return None
+    colour = float(colours[index])
+    return round(colour, 6) if np.isfinite(colour) else None
 
 
 def _converted_flux(magnitude: float) -> float | None:
@@ -644,6 +662,7 @@ def empty_target_result(
     converted_target_flux: float | None = None,
     target_magnitudes_by_band: dict[str, float | None] | None = None,
     aperture_radius_arcsec: float | None = None,
+    colour_used: float | None = None,
 ) -> dict:
     """Create the stable no-contaminant result shape used by query output."""
     contamination_model = contamination_model or ContaminationModelConfig()
@@ -693,6 +712,7 @@ def empty_target_result(
     result["conversion_status"] = conversion_status
     result["effective_temperature"] = effective_temperature
     result["converted_target_flux"] = converted_target_flux
+    result["colour_used"] = colour_used
     result["flux_fraction_selected_converted"] = 0.0 if active else None
     result["flux_fraction_all_neighbors_converted"] = 0.0 if active else None
     result["flux_fraction_outside_aperture_converted"] = 0.0 if active else None
@@ -743,6 +763,7 @@ def unresolved_target_result(source_id: str, status: str) -> dict:
         "conversion_status": None,
         "effective_temperature": None,
         "converted_target_flux": None,
+        "colour_used": None,
         "target_magnitudes_by_band": {},
         "flux_fraction_selected_converted": None,
         "flux_fraction_all_neighbors_converted": None,
@@ -1061,6 +1082,7 @@ def build_contaminant_records(
                 round(temperature, 1) if np.isfinite(temperature) else None
             )
             record["converted_flux"] = converted
+            record["colour_used"] = conversion_colour_used(reference, catalogue_index)
         contaminants.append(record)
 
     return contaminants
@@ -1202,6 +1224,7 @@ def process_target(
             converted_target_flux,
             target_magnitudes_by_band,
             aperture_radius_arcsec=field_of_view_arcsec,
+            colour_used=conversion_colour_used(reference, target_index),
         )
 
     candidate_indices = neighbor_internal_ids - 1
@@ -1221,6 +1244,7 @@ def process_target(
             converted_target_flux,
             target_magnitudes_by_band,
             aperture_radius_arcsec=field_of_view_arcsec,
+            colour_used=conversion_colour_used(reference, target_index),
         )
 
     contaminant_ra = ra[contaminant_indices]
@@ -1372,6 +1396,7 @@ def process_target(
     result["conversion_status"] = conversion_status
     result["effective_temperature"] = effective_temperature
     result["converted_target_flux"] = converted_target_flux
+    result["colour_used"] = conversion_colour_used(reference, target_index)
     result["psf_metrics"] = psf_metrics
     result["target_magnitudes_by_band"] = target_magnitudes_by_band
     result["flux_fraction_selected_converted"] = (
@@ -1519,7 +1544,8 @@ def save_query_metadata(
             "not_included": [
                 "spatially varying or asymmetric instrumental PSF convolution",
                 "detector pixel response",
-                "full SED integration or synthetic photometry beyond an optional blackbody colour-to-band conversion",
+                "full SED integration or synthetic photometry beyond an optional colour-to-band "
+                "conversion (blackbody through the band filter, or a published Gaia empirical relation)",
                 "scattered-light or diffraction features not represented by the selected radial model",
             ],
         },
@@ -1685,15 +1711,22 @@ def main(config_path: str | Path | None = None) -> int:
             output_band=normalized_band_key(conversion_config.output_band),
             catalog_band=catalog_spec.anchor_band,
             method=conversion_config.conversion_method,
-            filter_used=result.metadata["filter_used"],
+            filter_used=result.metadata.get("filter_used"),
             effective_temperature=result.effective_temperature,
             status_codes=result.status_codes,
+            colour_values=(
+                loaded_magnitude_arrays[catalog_spec.colour_band_1]
+                - loaded_magnitude_arrays[catalog_spec.colour_band_2]
+            ),
         )
         conversion_metadata = {
             **converter.metadata,
             "magnitude_source": "converted",
             "conversion_applied": True,
             "status_names": STATUS_NAMES,
+            # How many sources each method actually converted, and why the rest were
+            # not: the result cannot be judged from the per-target records alone.
+            "summary": result.summary,
         }
 
     # For targets whose influence radius exceeds the index build radius, recompute

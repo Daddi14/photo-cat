@@ -91,9 +91,12 @@ Ogni risultato per target preserva i campi documentati per:
 - magnitudini additive per banda di target/contaminanti e un dizionario di
   flusso nella banda convertita quando è configurata una conversione fotometrica;
 - campi di provenienza `catalog_band`, `output_band`, `conversion_method`,
-  `filter_used`, `conversion_status`, `effective_temperature` e
-  `converted_target_flux`, con `effective_temperature` e `converted_flux` per
-  contaminante;
+  `filter_used`, `conversion_status`, `effective_temperature`, `colour_used` e
+  `converted_target_flux`, con `effective_temperature`, `colour_used` e
+  `converted_flux` per contaminante. `conversion_status` vale `valid`,
+  `missing_input`, `colour_out_of_grid`, `colour_outside_valid_range` oppure
+  `converted_by_fallback_method`; `effective_temperature` è null per i metodi che
+  non derivano alcuna temperatura;
 - frazioni di flusso scalari `*_converted` utilizzabili dagli strumenti di screening e
   validazione;
 - righe target non risolte quando richieste esplicitamente, con `status` uguale

@@ -148,6 +148,41 @@ def test_query_parses_photometric_conversion_and_resolves_custom_filter_path(
 
 
 @pytest.mark.unit
+def test_query_accepts_the_empirical_and_auto_conversion_methods(
+    write_config: Callable[[str | None], Path],
+    config_text: str,
+) -> None:
+    """Both new methods parse, and a band with a published relation is accepted."""
+    for method in ("gaia_empirical", "auto"):
+        modified = config_text.replace(
+            "delta_mag: 5.0",
+            "delta_mag: 5.0\n    photometric_conversion:\n"
+            f"      output_band: johnson_v\n      conversion_method: {method}",
+        )
+        query = load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
+
+        assert isinstance(query, QueryConfig)
+        assert query.photometric_conversion is not None
+        assert query.photometric_conversion.conversion_method == method
+
+
+@pytest.mark.unit
+def test_query_rejects_an_empirical_band_without_a_published_relation(
+    write_config: Callable[[str | None], Path],
+    config_text: str,
+) -> None:
+    """A mission passband has no Gaia relation, and that fails before the run starts."""
+    modified = config_text.replace(
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n    photometric_conversion:\n"
+        "      output_band: ariel_fgs1\n      conversion_method: gaia_empirical",
+    )
+
+    with pytest.raises(ValueError, match="No calibrated Gaia empirical transformation"):
+        load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
+
+
+@pytest.mark.unit
 def test_query_rejects_unknown_conversion_method(
     write_config: Callable[[str | None], Path],
     config_text: str,

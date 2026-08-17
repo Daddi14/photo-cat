@@ -91,9 +91,12 @@ Each target result preserves the documented fields for:
 - additive per-band target/contaminant magnitudes, and a converted-band flux
   dictionary when a photometric conversion is configured;
 - `catalog_band`, `output_band`, `conversion_method`, `filter_used`,
-  `conversion_status`, `effective_temperature`, and `converted_target_flux`
-  provenance fields, with per-contaminant `effective_temperature` and
-  `converted_flux`;
+  `conversion_status`, `effective_temperature`, `colour_used`, and
+  `converted_target_flux` provenance fields, with per-contaminant
+  `effective_temperature`, `colour_used`, and `converted_flux`. `conversion_status`
+  is one of `valid`, `missing_input`, `colour_out_of_grid`,
+  `colour_outside_valid_range`, or `converted_by_fallback_method`;
+  `effective_temperature` is null for methods that derive no temperature;
 - scalar `*_converted` flux fractions suitable for screening and validation tools;
 - unresolved target rows when explicitly requested, with `status` set to
   `missing_from_index` or `invalid_target_id`.

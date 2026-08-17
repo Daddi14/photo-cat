@@ -37,8 +37,9 @@ from .i18n import (
 )
 from .load_config import CONTAMINATION_MODES, GAUSSIAN_FWHM_TO_SIGMA
 from .photometry.catalogs import CATALOGS
-from .photometry.library import FILTERS_ROOT, available_output_bands
-from .photometry.sed import SUPPORTED_CONVERSION_METHODS
+from .photometry.conversion import METHOD_AUTO, METHOD_GAIA_EMPIRICAL, SUPPORTED_CONVERSION_METHODS
+from .photometry.library import FILTERS_ROOT, available_output_bands, library_filter_path
+from .photometry.transformations import find_transformation, supported_empirical_bands
 
 # Sentinel shown in the output-band picker to mean "do not convert; use the
 # catalogue band directly". Empty output_band in the saved config maps to this.
@@ -46,6 +47,70 @@ NO_CONVERSION_LABEL = "(none - catalogue band)"
 
 # Longest facility description kept in the picker, so one entry stays readable.
 _SVO_DESCRIPTION_MAX = 70
+
+
+def conversion_output_band_values() -> list[str]:
+    """Return the output bands offered by the picker.
+
+    Two kinds of band are selectable and they do not overlap: those with an
+    installed transmission curve, which any SED method can convert into, and those
+    with a published Gaia relation, which need no curve at all. Listing both keeps
+    a band such as johnson_v reachable even though no filter file ships for it.
+    """
+    installed = available_output_bands()
+    empirical = [band for band in supported_empirical_bands() if band not in installed]
+    return [NO_CONVERSION_LABEL, *installed, *empirical, "custom"]
+
+
+def conversion_method_note(output_band: str, method: str, catalog: str) -> tuple[str, bool]:
+    """Return the explanation shown under the method picker, and whether it warns.
+
+    Which relation actually runs depends on the band, the method, and the catalogue
+    together, so the pairing is resolved here and stated in words rather than left
+    for the user to infer from three separate dropdowns.
+    """
+    if (output_band in ("", NO_CONVERSION_LABEL)):
+        return ("", False)
+    if (method not in (METHOD_GAIA_EMPIRICAL, METHOD_AUTO)):
+        return ("", False)
+
+    transformation = find_transformation(output_band, catalog)
+    supported = ", ".join(supported_empirical_bands())
+    if (transformation is None):
+        if (method == METHOD_AUTO):
+            return (
+                f"auto: no published Gaia relation covers '{output_band}', so the blackbody "
+                "conversion through its transmission curve is used for every source.",
+                False,
+            )
+        return (
+            f"No calibrated Gaia empirical transformation is available for '{output_band}'. "
+            f"Relations exist only for: {supported}. Use blackbody or auto instead.",
+            True,
+        )
+
+    calibrated = (
+        f"{transformation.relation} ({transformation.system}), calibrated for "
+        f"{transformation.colour_min:g} <= {transformation.colour_name} <= {transformation.colour_max:g}, "
+        f"published scatter {transformation.scatter_mag:g} mag. Needs {catalog} G, BP and RP in the index."
+    )
+    if (method == METHOD_GAIA_EMPIRICAL):
+        return (
+            f"Applies {calibrated} Sources outside that colour range are reported as "
+            "uncalibrated and left unconverted.",
+            False,
+        )
+
+    has_curve = library_filter_path(output_band) is not None
+    fallback = (
+        "outside it the blackbody conversion takes over."
+        if has_curve
+        else (
+            "outside it no fallback is possible, because no transmission curve is installed for "
+            f"'{output_band}'; add one under {FILTERS_ROOT} to enable the blackbody fallback."
+        )
+    )
+    return (f"auto: applies {calibrated} Within that range the relation is used; {fallback}", not has_curve)
 
 
 def svo_facility_display(facility) -> str:
@@ -1551,11 +1616,10 @@ class ConfigGui(tk.Tk):
         catalog_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=4)
 
         ttk.Label(conversion, text="Output band").grid(row=2, column=0, sticky="w", pady=4)
-        output_values = [NO_CONVERSION_LABEL, *available_output_bands(), "custom"]
         output_combo = ttk.Combobox(
             conversion,
             textvariable=self.conversion_output_band_var,
-            values=output_values,
+            values=conversion_output_band_values(),
             state="readonly",
             width=24,
         )
@@ -1580,6 +1644,13 @@ class ConfigGui(tk.Tk):
         )
         self.conversion_dependent_entries = {"filter_file": filter_entry, "method": method_combo, "catalog": catalog_combo}
 
+        # Says which relation will run for the current band and method, or why none
+        # can, so an unsupported pairing is visible before the run rather than after.
+        self.conversion_method_note = ttk.Label(
+            conversion, text="", style="Muted.TLabel", wraplength=880, justify="left"
+        )
+        self.conversion_method_note.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
         ttk.Label(
             conversion,
             text=(
@@ -1590,11 +1661,13 @@ class ConfigGui(tk.Tk):
             style="Muted.TLabel",
             wraplength=880,
             justify="left",
-        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
-        self.build_svo_download_panel(conversion, row=6)
+        self.build_svo_download_panel(conversion, row=7)
 
         self.conversion_output_band_var.trace_add("write", lambda *_: self.update_conversion_field_state())
+        self.conversion_method_var.trace_add("write", lambda *_: self.update_conversion_field_state())
+        self.conversion_catalog_var.trace_add("write", lambda *_: self.update_conversion_field_state())
         self.update_conversion_field_state()
 
     def build_svo_download_panel(self, parent, row: int) -> None:
@@ -1655,6 +1728,15 @@ class ConfigGui(tk.Tk):
         entries["catalog"].configure(state="readonly" if converting else "disabled")
         # The custom filter file only matters for the custom band.
         entries["filter_file"].configure(state="normal" if (band == "custom") else "disabled")
+
+        note = getattr(self, "conversion_method_note", None)
+        if (note is not None):
+            text, warns = conversion_method_note(
+                band,
+                self.conversion_method_var.get().strip(),
+                self.conversion_catalog_var.get().strip() or "gaia_dr3",
+            )
+            note.configure(text=tr(text) if text else "", style="Warning.TLabel" if warns else "Muted.TLabel")
 
     def refresh_svo_facilities(self) -> None:
         """Reload the facility picker from the live SVO index in the background.

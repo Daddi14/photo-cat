@@ -143,15 +143,25 @@ def test_custom_output_band_requires_a_filter_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_phoenix_and_empirical_are_selectable_but_unavailable() -> None:
-    """Unimplemented methods are accepted for selection but fail with guidance."""
-    for method in ("phoenix", "empirical"):
-        with pytest.raises(ValueError, match=method):
-            convert_magnitudes(
-                {"gaia_g": np.array([12.0]), "gaia_bp": np.array([12.4]), "gaia_rp": np.array([11.6])},
-                "gaia_rp",
-                method,
-            )
+def test_phoenix_is_selectable_but_unavailable() -> None:
+    """An unimplemented SED model is accepted for selection but fails with guidance."""
+    with pytest.raises(ValueError, match="phoenix"):
+        convert_magnitudes(
+            {"gaia_g": np.array([12.0]), "gaia_bp": np.array([12.4]), "gaia_rp": np.array([11.6])},
+            "gaia_rp",
+            "phoenix",
+        )
+
+
+@pytest.mark.unit
+def test_an_unknown_conversion_method_lists_the_supported_ones() -> None:
+    """A misspelled method names its alternatives instead of failing obscurely."""
+    with pytest.raises(ValueError, match="gaia_empirical"):
+        convert_magnitudes(
+            {"gaia_g": np.array([12.0]), "gaia_bp": np.array([12.4]), "gaia_rp": np.array([11.6])},
+            "gaia_rp",
+            "not_a_method",
+        )
 
 
 @pytest.mark.regression

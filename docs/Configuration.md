@@ -107,8 +107,10 @@ conversion estimates it in a mission band instead:
 query_contamination_from_index:
   settings:
     photometric_conversion:
-      output_band: tess          # a built-in filter, or "custom"
-      conversion_method: blackbody
+      output_band: tess          # a built-in filter, a band with a published
+                                 # Gaia relation (johnson_v, 2mass_ks, ...),
+                                 # or "custom"
+      conversion_method: blackbody   # blackbody | gaia_empirical | auto | phoenix
       filter_file:               # required only when output_band is custom
       catalog: gaia_dr3
 ```
@@ -118,21 +120,57 @@ contaminant list, primary flux fractions, counts, and PSF metrics. If that exact
 band is already stored in the index (for example `gaia_bp` or `gaia_rp`), its
 nominal catalogue magnitudes are used directly and no conversion is performed.
 
-Otherwise, the colour (BP-RP) gives a blackbody-equivalent temperature; each
-source's flux is integrated through the chosen filter, so
-`m_out = m_anchor - 2.5*log10(R)` where
+Otherwise the conversion runs. Either way it needs the catalogue colour bands
+(BP, RP) stored with `magnitude_columns` during the index build. PHOTO-CAT loads
+those required bands automatically; they do not have to be repeated in
+`contamination_bands`.
+
+#### Conversion methods
+
+| `conversion_method` | What it does | Use it for |
+| --- | --- | --- |
+| `blackbody` (default) | Approximate SED-based conversion: the colour BP-RP gives a blackbody-equivalent temperature, and that spectrum is integrated through the band's transmission curve. | Any band with a transmission curve, including mission passbands and user-supplied filter profiles. |
+| `gaia_empirical` | Empirical colour-based transformation calibrated on Gaia photometry for a specific published photometric system. No spectral model is assumed. | The photometric systems Gaia publishes relations for, within their calibrated colour range. |
+| `auto` | Uses the empirical Gaia transformation when a calibrated relation exists and the source lies within its validity range; otherwise falls back to the blackbody conversion. | Mixed catalogues, where some sources fall outside the calibrated colour range. |
+| `phoenix` | Selectable but requires an external model-spectrum grid; errors clearly until it is supplied. | Not yet available. |
+
+With `blackbody`, `m_out = m_anchor - 2.5*log10(R)` where
 `R = F_out(Teff)/F_anchor(Teff)`. Because contamination uses only flux ratios
 within one band, the output zero-point cancels and the anchor band's zero-point
-is kept. This requires the catalogue colour bands (BP, RP) to be stored with
-`magnitude_columns` during the index build. PHOTO-CAT loads those required bands
-automatically; they do not have to be repeated in `contamination_bands`.
+is kept.
 
-`output_band` is a built-in filter band key (`gaia_g`, `gaia_bp`, `gaia_rp`,
-`tess`, `cheops`, `mauve`, and the Ariel channels `ariel_fgs1`, `ariel_fgs2`,
-`ariel_visphot`, `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`) or `custom`
-with a `filter_file`. `conversion_method` is `blackbody` (default); `phoenix` and
-`empirical` are selectable but require external data (a model-spectrum grid, or a
-published relation) and error clearly until it is supplied.
+With `gaia_empirical`, the published polynomial `G - X = sum(c_n * (BP-RP)^n)` is
+evaluated directly, so `X = G - polynomial(BP-RP)`. The relations, their colour
+validity ranges and their published scatter are from the Gaia DR3 documentation,
+Sect. 5.5.1, Tables 5.9-5.10 (Riello et al. 2021, A&A 649, A3). Nothing is
+extrapolated: a source whose colour lies outside the published range is reported
+with `conversion_status: colour_outside_valid_range` and left unconverted, and a
+band with no published relation is refused at config time.
+
+There is no Gaia relation to any mission passband. Ariel, MAUVE, TESS, CHEOPS and
+SVO filters are converted with `blackbody` (or `auto`, which selects it for them
+automatically); `gaia_empirical` on such a band is an error, not a nearest-match
+guess.
+
+#### Output bands
+
+`output_band` is one of:
+
+- a built-in filter band key: `gaia_g`, `gaia_bp`, `gaia_rp`, `tess`, `cheops`,
+  `mauve`, and the Ariel channels `ariel_fgs1`, `ariel_fgs2`, `ariel_visphot`,
+  `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`;
+- a band with a published Gaia relation: `johnson_b`, `johnson_v`, `johnson_r`,
+  `cousins_i` (Johnson-Cousins), `2mass_j`, `2mass_h`, `2mass_ks` (2MASS),
+  `sdss_g`, `sdss_r`, `sdss_i`, `sdss_z` (SDSS12), `hipparcos_hp` (Hipparcos),
+  `tycho_bt`, `tycho_vt` (Tycho-2). The short spellings `b`, `v`, `r`, `i`, `j`,
+  `h`, `ks`, `z`, `hp`, `bt`, `vt` are accepted; `r` and `i` mean the
+  Johnson-Cousins bands, and the SDSS bands keep their prefix because a bare `g`
+  would read as Gaia G;
+- `custom` with a `filter_file`.
+
+A band can be in both lists. `auto` needs a transmission curve installed for the
+band to have a blackbody fallback: without one, sources outside the relation's
+colour range stay unconverted and are reported as such.
 
 Built-in filters live under `photo_cat/filters/<Mission>/<band>.dat`; adding a
 mission is just dropping its official transmission curve there. Gaia, TESS,
@@ -141,10 +179,13 @@ pulled from the SVO Filter Profile Service directly in the GUI (the "Download a
 filter from SVO" panel picks a facility, lists its filters, and downloads one into
 the library) or with `photo_cat.photometry.svo.download_filter`.
 
-This is an approximate, catalogue-level screening estimate: real stars are not
-blackbodies, and the reported effective temperature is a blackbody-equivalent
-colour temperature, not a physical Teff. The output filter and its SHA-256
-checksum are copied into query metadata.
+The blackbody path is an approximate, catalogue-level screening estimate: real
+stars are not blackbodies, and the reported effective temperature is a
+blackbody-equivalent colour temperature, not a physical Teff. The empirical path
+reports no temperature at all, because it derives none. The output filter and its
+SHA-256 checksum, the relation used with its coefficients and published scatter,
+and per-run counts of how many sources each method converted are all copied into
+query metadata.
 
 ## Save and run pipeline
 

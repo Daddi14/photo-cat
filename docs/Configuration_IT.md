@@ -109,8 +109,10 @@ opzionale la stima invece in una banda di missione:
 query_contamination_from_index:
   settings:
     photometric_conversion:
-      output_band: tess          # un filtro integrato, o "custom"
-      conversion_method: blackbody
+      output_band: tess          # un filtro integrato, una banda con relazione
+                                 # Gaia pubblicata (johnson_v, 2mass_ks, ...),
+                                 # o "custom"
+      conversion_method: blackbody   # blackbody | gaia_empirical | auto | phoenix
       filter_file:               # serve solo quando output_band è custom
       catalog: gaia_dr3
 ```
@@ -121,21 +123,59 @@ principali, i conteggi e le metriche PSF. Se quella banda esatta è già present
 nell'indice (per esempio `gaia_bp` o `gaia_rp`), PHOTO-CAT usa direttamente le
 magnitudini nominali del catalogo e non esegue alcuna conversione.
 
-Altrimenti il colore (BP-RP) fornisce una temperatura equivalente di corpo nero;
-il flusso di ogni sorgente viene integrato nel filtro scelto, quindi
-`m_out = m_anchor - 2.5*log10(R)` con `R = F_out(Teff)/F_anchor(Teff)`. Poiché la
-contaminazione usa solo rapporti di flusso nella stessa banda, lo zero-point di
-uscita si cancella e si mantiene quello della banda di ancoraggio. Servono le
-bande colore del catalogo (BP, RP) memorizzate con `magnitude_columns` durante la
-build. PHOTO-CAT carica automaticamente le bande richieste: non è necessario
-ripeterle in `contamination_bands`.
+Altrimenti la conversione viene eseguita. In entrambi i casi servono le bande
+colore del catalogo (BP, RP) memorizzate con `magnitude_columns` durante la build.
+PHOTO-CAT carica automaticamente le bande richieste: non è necessario ripeterle in
+`contamination_bands`.
 
-`output_band` è la chiave di un filtro integrato (`gaia_g`, `gaia_bp`, `gaia_rp`,
-`tess`, `cheops`, `mauve`, e i canali Ariel `ariel_fgs1`, `ariel_fgs2`,
-`ariel_visphot`, `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`) o `custom`
-con un `filter_file`. `conversion_method` è `blackbody` (default); `phoenix` ed
-`empirical` sono selezionabili ma richiedono dati esterni (una griglia di spettri
-modello o una relazione pubblicata) ed errano chiaramente finché non vengono forniti.
+#### Metodi di conversione
+
+| `conversion_method` | Cosa fa | Quando usarlo |
+| --- | --- | --- |
+| `blackbody` (default) | Conversione approssimata basata sulla SED: il colore BP-RP fornisce una temperatura equivalente di corpo nero e quello spettro viene integrato nella curva di trasmissione della banda. | Qualsiasi banda con una curva di trasmissione, comprese le bande di missione e i profili forniti dall'utente. |
+| `gaia_empirical` | Trasformazione empirica basata sul colore, calibrata sulla fotometria Gaia per uno specifico sistema fotometrico pubblicato. Non assume alcun modello spettrale. | I sistemi fotometrici per cui Gaia pubblica relazioni, entro il loro intervallo di colore calibrato. |
+| `auto` | Usa la trasformazione empirica Gaia quando esiste una relazione calibrata e la sorgente rientra nel suo intervallo di validità; altrimenti ricade sulla conversione blackbody. | Cataloghi misti, in cui alcune sorgenti cadono fuori dall'intervallo di colore calibrato. |
+| `phoenix` | Selezionabile ma richiede una griglia esterna di spettri modello; erra chiaramente finché non viene fornita. | Non ancora disponibile. |
+
+Con `blackbody`, `m_out = m_anchor - 2.5*log10(R)` con
+`R = F_out(Teff)/F_anchor(Teff)`. Poiché la contaminazione usa solo rapporti di
+flusso nella stessa banda, lo zero-point di uscita si cancella e si mantiene
+quello della banda di ancoraggio.
+
+Con `gaia_empirical` si valuta direttamente il polinomio pubblicato
+`G - X = sum(c_n * (BP-RP)^n)`, quindi `X = G - polinomio(BP-RP)`. Le relazioni,
+i loro intervalli di validità in colore e la dispersione pubblicata provengono
+dalla documentazione Gaia DR3, Sez. 5.5.1, Tabelle 5.9-5.10 (Riello et al. 2021,
+A&A 649, A3). Nulla viene estrapolato: una sorgente il cui colore cade fuori
+dall'intervallo pubblicato viene riportata con
+`conversion_status: colour_outside_valid_range` e lasciata non convertita, e una
+banda senza relazione pubblicata viene rifiutata già in fase di configurazione.
+
+Non esiste alcuna relazione Gaia verso le bande di missione. Ariel, MAUVE, TESS,
+CHEOPS e i filtri SVO si convertono con `blackbody` (o con `auto`, che lo
+seleziona automaticamente per loro); `gaia_empirical` su una banda simile è un
+errore, non una scelta della relazione più vicina.
+
+#### Bande di uscita
+
+`output_band` può essere:
+
+- la chiave di un filtro integrato: `gaia_g`, `gaia_bp`, `gaia_rp`, `tess`,
+  `cheops`, `mauve` e i canali Ariel `ariel_fgs1`, `ariel_fgs2`, `ariel_visphot`,
+  `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`;
+- una banda con relazione Gaia pubblicata: `johnson_b`, `johnson_v`, `johnson_r`,
+  `cousins_i` (Johnson-Cousins), `2mass_j`, `2mass_h`, `2mass_ks` (2MASS),
+  `sdss_g`, `sdss_r`, `sdss_i`, `sdss_z` (SDSS12), `hipparcos_hp` (Hipparcos),
+  `tycho_bt`, `tycho_vt` (Tycho-2). Sono accettate anche le forme brevi `b`, `v`,
+  `r`, `i`, `j`, `h`, `ks`, `z`, `hp`, `bt`, `vt`; `r` e `i` indicano le bande
+  Johnson-Cousins e le bande SDSS mantengono il prefisso perché una `g` isolata
+  si leggerebbe come la G di Gaia;
+- `custom` con un `filter_file`.
+
+Una banda può comparire in entrambi gli elenchi. Perché `auto` abbia un fallback
+blackbody serve una curva di trasmissione installata per quella banda: senza,
+le sorgenti fuori dall'intervallo di colore della relazione restano non convertite
+e vengono riportate come tali.
 
 I filtri integrati stanno in `photo_cat/filters/<Missione>/<banda>.dat`; aggiungere
 una missione significa solo mettere lì la sua curva di trasmissione ufficiale.
@@ -144,10 +184,13 @@ possono scaricare dal SVO Filter Profile Service direttamente nella GUI (il
 pannello "Scarica un filtro da SVO" sceglie una facility, ne elenca i filtri e ne
 scarica uno nella libreria) o con `photo_cat.photometry.svo.download_filter`.
 
-È una stima approssimata a livello di catalogo per lo screening: le stelle reali
-non sono corpi neri e la temperatura efficace riportata è una temperatura di
-colore equivalente di corpo nero, non una Teff fisica. Il filtro di uscita e il
-suo checksum SHA-256 vengono copiati nei metadata della query.
+Il percorso blackbody è una stima approssimata a livello di catalogo per lo
+screening: le stelle reali non sono corpi neri e la temperatura efficace riportata
+è una temperatura di colore equivalente di corpo nero, non una Teff fisica. Il
+percorso empirico non riporta alcuna temperatura, perché non ne deriva nessuna.
+Il filtro di uscita con il suo checksum SHA-256, la relazione usata con i suoi
+coefficienti e la dispersione pubblicata, e i conteggi per run di quante sorgenti
+ha convertito ciascun metodo finiscono tutti nei metadata della query.
 
 ## Salva e avvia la pipeline
 

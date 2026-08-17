@@ -50,9 +50,15 @@ query_contamination_from_index:
     # are used directly. Otherwise BP-RP converts each source into the chosen band.
     # A conversion requires the catalogue BP and RP columns in the index.
     # output_band: a built-in filter (gaia_g/bp/rp, tess, cheops, mauve, ariel_fgs1,
-    #   ariel_fgs2, ariel_visphot, ariel_airs_ch0/ch1, ariel_nirspec), "custom" with a
-    #   filter_file, or any filter downloaded from SVO in the GUI. conversion_method:
-    #   blackbody (phoenix and empirical need external data). Omit the block to skip.
+    #   ariel_fgs2, ariel_visphot, ariel_airs_ch0/ch1, ariel_nirspec), a band with a
+    #   published Gaia relation (johnson_b/v/r, cousins_i, 2mass_j/h/ks, sdss_g/r/i/z,
+    #   hipparcos_hp, tycho_bt/vt), "custom" with a filter_file, or any filter
+    #   downloaded from SVO in the GUI.
+    # conversion_method: blackbody integrates a spectrum through the band's filter and
+    #   works for any curve; gaia_empirical applies the published Gaia colour relation,
+    #   only for the bands and colour ranges it was calibrated on; auto uses that
+    #   relation where it applies and blackbody elsewhere. phoenix needs external data.
+    # Omit the block to skip the conversion entirely.
     photometric_conversion:
     #   output_band: tess
     #   conversion_method: blackbody

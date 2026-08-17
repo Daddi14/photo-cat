@@ -10,9 +10,13 @@ The models are photon-count spectral densities, because the detectors these band
 describe (Gaia, TESS, CHEOPS, ...) count photons rather than integrate energy.
 
 Adding a model is a single registry entry. ``blackbody`` is implemented now;
-``phoenix`` and ``empirical`` are selectable but require external data (a model
-spectrum grid, or a published colour-band relation) and raise a clear error until
-that data is supplied, so wiring them in later needs no change elsewhere.
+``phoenix`` is selectable but requires external data (a model spectrum grid) and
+raises a clear error until that data is supplied, so wiring it in later needs no
+change elsewhere.
+
+These are the SED-based methods only. Conversion by published empirical relation
+needs no spectral model at all and lives in ``transformations``; the full list of
+selectable methods is ``conversion.SUPPORTED_CONVERSION_METHODS``.
 """
 
 from __future__ import annotations
@@ -59,13 +63,12 @@ def _unavailable_model(name: str, requirement: str) -> Callable[[np.ndarray, flo
     return model
 
 
-# Registry of SED models keyed by conversion-method name. blackbody is ready; the
-# others are honest placeholders so the method can be selected and validated now,
+# Registry of SED models keyed by conversion-method name. blackbody is ready;
+# phoenix is an honest placeholder so the method can be selected and validated now,
 # and filled in later by replacing the entry with no change to the engine.
 SED_MODELS: dict[str, Callable[[np.ndarray, float], np.ndarray]] = {
     "blackbody": blackbody_photon_density,
     "phoenix": _unavailable_model("phoenix", "a grid of PHOENIX model spectra"),
-    "empirical": _unavailable_model("empirical", "a published colour-to-band relation file"),
 }
 
-SUPPORTED_CONVERSION_METHODS = tuple(SED_MODELS)
+SED_CONVERSION_METHODS = tuple(SED_MODELS)

@@ -442,8 +442,9 @@ def parse_photometric_conversion(
 ) -> PhotometricConversionConfig | None:
     """Parse the opt-in catalogue-to-output-band flux conversion settings."""
     from .photometry.catalogs import CATALOGS
+    from .photometry.conversion import METHOD_GAIA_EMPIRICAL, SUPPORTED_CONVERSION_METHODS
     from .photometry.library import normalized_band_key
-    from .photometry.sed import SUPPORTED_CONVERSION_METHODS
+    from .photometry.transformations import require_transformation
 
     raw = settings.get("photometric_conversion")
     if (raw is None):
@@ -484,6 +485,11 @@ def parse_photometric_conversion(
             "query_contamination_from_index.settings.photometric_conversion.filter_file "
             "is required when output_band is custom."
         )
+
+    # Fail here rather than after the index is loaded: whether a published relation
+    # covers the requested band is known from the config alone.
+    if (method == METHOD_GAIA_EMPIRICAL):
+        require_transformation(output_band, catalog)
 
     return PhotometricConversionConfig(
         output_band=output_band,

@@ -17,7 +17,7 @@ from typing import Iterator, NoReturn
 from .cli_overrides import RuntimeConfigOverride, collect_overrides
 from .i18n import SUPPORTED_LANGUAGES, initialize_language, tr
 from .load_config import CONTAMINATION_MODES
-from .photometry.sed import SUPPORTED_CONVERSION_METHODS
+from .photometry.conversion import SUPPORTED_CONVERSION_METHODS
 from .path_policy import resolve_user_path
 
 
@@ -385,12 +385,19 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
     )
     query_group.add_argument(
         "--output-band",
-        help="convert catalogue flux into this band (a built-in filter name, or 'custom')",
+        help=(
+            "convert catalogue flux into this band (a built-in filter name, a band with a "
+            "published Gaia relation such as johnson_v or 2mass_ks, or 'custom')"
+        ),
     )
     query_group.add_argument(
         "--conversion-method",
         choices=list(SUPPORTED_CONVERSION_METHODS),
-        help="SED model used to convert flux between bands",
+        help=(
+            "how flux is converted between bands: blackbody integrates an SED through the "
+            "filter, gaia_empirical applies a published Gaia colour relation, auto picks "
+            "the relation where it is calibrated and blackbody elsewhere"
+        ),
     )
     query_group.add_argument(
         "--conversion-filter-file",

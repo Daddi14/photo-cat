@@ -15,7 +15,10 @@ modular and separate from the contamination algorithm, which never changes:
 - ``library``   discover built-in mission filters under ``photo_cat/filters``.
 - ``catalogs``  declare a catalogue's bands, colour, and flux anchor band.
 - ``sed``       spectral energy distribution models (blackbody now; slots for more).
-- ``conversion`` the engine: colour -> Teff -> output/input flux ratio -> magnitude.
+- ``transformations`` published empirical colour relations, with their calibrated
+  ranges, for the photometric systems Gaia provides them for.
+- ``conversion`` the engine and method dispatch: SED integration, empirical
+  relation, or ``auto`` picking between them per source.
 
 Because contamination uses only flux *ratios* within one band, the absolute
 zero-point of the output band cancels. The conversion keeps the catalogue band's
@@ -29,16 +32,31 @@ temperature is a blackbody-equivalent colour temperature, not a physical Teff.
 from __future__ import annotations
 
 from .catalogs import CATALOGS, CatalogSpec, resolve_catalog
-from .conversion import ConversionResult, PhotometricConverter, convert_magnitudes
+from .conversion import (
+    SUPPORTED_CONVERSION_METHODS,
+    AutoConverter,
+    ConversionResult,
+    EmpiricalConverter,
+    PhotometricConverter,
+    convert_magnitudes,
+)
 from .filters import FilterCurve, load_filter
 from .library import available_output_bands, resolve_output_filter
-from .sed import SED_MODELS, SUPPORTED_CONVERSION_METHODS
+from .sed import SED_MODELS
+from .transformations import (
+    GAIA_EMPIRICAL_TRANSFORMATIONS,
+    ColourTransformation,
+    find_transformation,
+    supported_empirical_bands,
+)
 
 __all__ = [
     "CATALOGS",
     "CatalogSpec",
     "resolve_catalog",
+    "AutoConverter",
     "ConversionResult",
+    "EmpiricalConverter",
     "PhotometricConverter",
     "convert_magnitudes",
     "FilterCurve",
@@ -47,4 +65,8 @@ __all__ = [
     "resolve_output_filter",
     "SED_MODELS",
     "SUPPORTED_CONVERSION_METHODS",
+    "GAIA_EMPIRICAL_TRANSFORMATIONS",
+    "ColourTransformation",
+    "find_transformation",
+    "supported_empirical_bands",
 ]

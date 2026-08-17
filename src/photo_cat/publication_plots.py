@@ -314,4 +314,5 @@ def generate_publication_plots(
     manifest_path = destination / "publication_plots_manifest.json"
     atomic_write_json(manifest_path, payload)
     payload["manifest_path"] = str(manifest_path)
+    payload["inputs"]["manifest_sha256"] = sha256_file(manifest_path)
     return payload
