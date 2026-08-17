@@ -5,6 +5,7 @@ path = [
     ".github/**",
     ".gitattributes",
     ".gitignore",
+    ".zenodo.json",
     "CHANGELOG.md",
     "CITATION.cff",
     "CODE_OF_CONDUCT.md",

@@ -1,0 +1,79 @@
+{
+  "upload_type": "software",
+  "title": "PHOTO-CAT: Photometric Contamination Analyzer Tool",
+  "version": "3.1.0",
+  "license": "gpl-3.0-only",
+  "access_right": "open",
+  "language": "eng",
+  "description": "High-precision photometric missions are sensitive to flux contamination from neighboring stars, which can bias light curves, dilute transit depths, and compromise photometric precision. PHOTO-CAT is a catalog-driven, mission-agnostic tool for quantifying stellar flux contamination in wide-field photometric observations. The pipeline builds a three-dimensional Euclidean representation of the sky from a user-provided astrometric catalog, indexes it with a memory-optimized KDTree for rapid neighbor searches, and computes per-target contamination metrics from angular separation, relative fluxes, and configurable aperture models (top-hat or circular Gaussian PSF), optionally converted into an arbitrary instrumental bandpass. A streaming, CSR-style storage format with compact internal identifiers enables scalable processing of catalogs with tens to hundreds of millions of sources at minimal memory overhead. Outputs include per-target contaminating flux, contamination ratios, target purity, number of neighboring sources, and their angular separations, supporting target screening and field-selection decisions ahead of observations. Although developed for the Mauve satellite, PHOTO-CAT is mission-agnostic and readily applicable to TESS, PLATO, Ariel, and other wide-field surveys.",
+  "creators": [
+    {
+      "name": "Galletta, Gabriele",
+      "affiliation": "National Institute for Astrophysics",
+      "orcid": "0009-0002-4054-0813"
+    },
+    {
+      "name": "Favata, Fabio",
+      "affiliation": "Imperial College London",
+      "orcid": "0009-0001-8144-2526"
+    },
+    {
+      "name": "Bradley, Lawrence",
+      "affiliation": "Blue Skies Space Ltd."
+    },
+    {
+      "name": "Saba, Arianna",
+      "affiliation": "King's College London",
+      "orcid": "0000-0002-1437-4228"
+    },
+    {
+      "name": "Grant, Rachel",
+      "affiliation": "Blue Skies Space Ltd."
+    },
+    {
+      "name": "McLaren, James",
+      "affiliation": "Blue Skies Space Ltd."
+    },
+    {
+      "name": "Harvey, Sarah",
+      "affiliation": "Blue Skies Space Ltd."
+    },
+    {
+      "name": "Drago, Enrico",
+      "orcid": "0009-0005-1725-5223"
+    },
+    {
+      "name": "Tessenyi, Marcell",
+      "affiliation": "Blue Skies Space Ltd.",
+      "orcid": "0000-0002-3905-5944"
+    },
+    {
+      "name": "Micela, Giuseppina",
+      "affiliation": "National Institute for Astrophysics",
+      "orcid": "0000-0002-9900-4751"
+    }
+  ],
+  "keywords": [
+    "astronomy",
+    "photometry",
+    "contamination",
+    "crowding",
+    "catalogue",
+    "target selection",
+    "transit photometry",
+    "exoplanets",
+    "Gaia",
+    "Mauve",
+    "Ariel",
+    "TESS",
+    "PLATO",
+    "Python"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.21488163",
+      "relation": "isSourceOf",
+      "resource_type": "dataset"
+    }
+  ]
+}

@@ -5,13 +5,60 @@ version: "3.1.0"
 date-released: "2026-08-17"
 type: software
 authors:
-  - name: "PHOTO-CAT contributors"
+  - family-names: "Galletta"
+    given-names: "Gabriele"
+    affiliation: "National Institute for Astrophysics"
+    orcid: "https://orcid.org/0009-0002-4054-0813"
+  - family-names: "Favata"
+    given-names: "Fabio"
+    affiliation: "Imperial College London"
+    orcid: "https://orcid.org/0009-0001-8144-2526"
+  - family-names: "Bradley"
+    given-names: "Lawrence"
+    affiliation: "Blue Skies Space Ltd."
+  - family-names: "Saba"
+    given-names: "Arianna"
+    affiliation: "King's College London"
+    orcid: "https://orcid.org/0000-0002-1437-4228"
+  - family-names: "Grant"
+    given-names: "Rachel"
+    affiliation: "Blue Skies Space Ltd."
+  - family-names: "McLaren"
+    given-names: "James"
+    affiliation: "Blue Skies Space Ltd."
+  - family-names: "Harvey"
+    given-names: "Sarah"
+    affiliation: "Blue Skies Space Ltd."
+  - family-names: "Drago"
+    given-names: "Enrico"
+    orcid: "https://orcid.org/0009-0005-1725-5223"
+  - family-names: "Tessenyi"
+    given-names: "Marcell"
+    affiliation: "Blue Skies Space Ltd."
+    orcid: "https://orcid.org/0000-0002-3905-5944"
+  - family-names: "Micela"
+    given-names: "Giuseppina"
+    affiliation: "National Institute for Astrophysics"
+    orcid: "https://orcid.org/0000-0002-9900-4751"
+contact:
+  - family-names: "Drago"
+    given-names: "Enrico"
+    orcid: "https://orcid.org/0009-0005-1725-5223"
 repository-code: "https://github.com/Daddi14/photo-cat"
 license: "GPL-3.0-only"
-abstract: "PHOTO-CAT is a Python package for catalogue-level photometric contamination risk assessment and target screening. It builds a neighbour index from an astronomical catalogue and queries nearby sources that may contaminate selected photometric targets using an aperture-like catalogue flux-ratio model."
+abstract: "High-precision photometric missions are sensitive to flux contamination from neighboring stars, which can bias light curves, dilute transit depths, and compromise photometric precision. PHOTO-CAT is a catalog-driven, mission-agnostic tool for quantifying stellar flux contamination in wide-field photometric observations. The pipeline builds a three-dimensional Euclidean representation of the sky from a user-provided astrometric catalog, indexes it with a memory-optimized KDTree for rapid neighbor searches, and computes per-target contamination metrics from angular separation, relative fluxes, and configurable aperture models (top-hat or circular Gaussian PSF), optionally converted into an arbitrary instrumental bandpass. A streaming, CSR-style storage format with compact internal identifiers enables scalable processing of catalogs with tens to hundreds of millions of sources at minimal memory overhead. Outputs include per-target contaminating flux, contamination ratios, target purity, number of neighboring sources, and their angular separations, supporting target screening and field-selection decisions ahead of observations. Although developed for the Mauve satellite, PHOTO-CAT is mission-agnostic and readily applicable to TESS, PLATO, Ariel, and other wide-field surveys."
 keywords:
   - astronomy
   - photometry
   - contamination
+  - crowding
   - catalogue
+  - target selection
+  - transit photometry
+  - exoplanets
+  - Gaia
+  - Mauve
+  - Ariel
+  - TESS
+  - PLATO
   - Python
