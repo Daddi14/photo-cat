@@ -452,7 +452,8 @@ def load_catalog_arrays(
     targets: Optional[list] = ...,
     target_source_id_column: str = ...,
     return_target_requests: Literal[False] = ...,
-) -> _CatalogArrays: ...
+) -> _CatalogArrays:
+    """Return the six catalogue arrays, without the resolved target requests."""
 
 
 @overload
@@ -463,7 +464,8 @@ def load_catalog_arrays(
     target_source_id_column: str = ...,
     *,
     return_target_requests: Literal[True],
-) -> _CatalogArraysWithRequests: ...
+) -> _CatalogArraysWithRequests:
+    """Return the six catalogue arrays followed by the resolved target requests."""
 
 
 def load_catalog_arrays(
