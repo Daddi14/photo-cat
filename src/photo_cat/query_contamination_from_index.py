@@ -132,7 +132,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional, Dict
+from typing import Any, Callable, Optional, Dict
 
 import numpy as np
 import pandas as pd
@@ -187,7 +187,7 @@ class ReferenceBandContext:
     output_band: str | None
     catalog_band: str
     method: str | None = None
-    filter_used: dict | None = None
+    filter_used: dict[str, Any] | None = None
     effective_temperature: np.ndarray | None = None
     status_codes: np.ndarray | None = None
     colour_values: np.ndarray | None = None
@@ -1485,7 +1485,7 @@ def merge_unresolved_target_results(
     return merged
 
 # --- Save results to JSON ------------------------------------------------------
-def save_results_to_json(results: list, json_path: str) -> str:
+def save_results_to_json(results: list[dict[str, Any]], json_path: str) -> str:
     """
     Save the list of TargetResult dicts to the specified JSON file.
 
@@ -1519,7 +1519,7 @@ def save_query_metadata(
     result_json_path: str | Path,
     config_path: str | Path | None,
     processed_targets: int,
-    conversion_metadata: dict | None = None,
+    conversion_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Save a non-breaking sidecar with the settings needed to reproduce a query."""
     selected_config_path = None if (config_path is None) else str(Path(config_path).resolve())
