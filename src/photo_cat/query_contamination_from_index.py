@@ -1544,7 +1544,7 @@ def save_query_metadata(
             "not_included": [
                 "spatially varying or asymmetric instrumental PSF convolution",
                 "detector pixel response",
-                "full SED integration or synthetic photometry beyond an optional colour-to-band "
+                "full SED integration or synthetic photometry beyond an optional colour-to-band ",
                 "conversion (blackbody through the band filter, or a published Gaia empirical relation)",
                 "scattered-light or diffraction features not represented by the selected radial model",
             ],
