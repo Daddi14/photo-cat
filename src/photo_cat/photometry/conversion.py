@@ -454,6 +454,20 @@ def build_converter(
         fallback = None
         if (_output_band_has_filter(output_band, filter_file)):
             fallback = _build_sed_converter(catalog, output_band, "blackbody", filter_file)
+        else:
+            # Say this now rather than after the run: whether the fallback can exist
+            # is known from the installed filters alone, and a source left
+            # unconverted late in a long run is expensive to discover.
+            warnings.warn(
+                f"Output band '{output_band}' has a published Gaia relation "
+                f"({transformation.relation}, calibrated for {transformation.colour_min:g} <= "
+                f"{transformation.colour_name} <= {transformation.colour_max:g}) but no installed "
+                "transmission curve, so 'auto' has no blackbody fallback: sources outside that "
+                "colour range will be left unconverted and their contamination in this band "
+                "reported as unknown. Install the band's curve to convert them instead - the "
+                "configurator's SVO downloader saves it under the matching band key.",
+                stacklevel=2,
+            )
         return AutoConverter(EmpiricalConverter(catalog, output_band, transformation), fallback)
 
     return _build_sed_converter(catalog, output_band, conversion_method, filter_file)

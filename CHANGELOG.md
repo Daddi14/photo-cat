@@ -50,6 +50,16 @@ Releases before 3.0.0 are documented in the
 
 ### Fixed
 
+- A target that could not be converted into the output band reported its flux
+  fractions as `0.0`, which a screening caller cannot tell apart from a target
+  that was measured and found clean. Those metrics are now null, per band, so an
+  unknown target reads as unknown. `target_purity` already behaved this way.
+- `auto` now says so when the output band has a published Gaia relation but no
+  installed transmission curve: once when the converter is built, because that is
+  knowable before any source is read, and again at the end of the run with the
+  number of sources left unconverted and the reason. Installing the band's curve,
+  which the configurator's SVO downloader saves under the matching band key,
+  enables the blackbody fallback for exactly those sources.
 - Filters downloaded from SVO or added by hand are no longer stored inside the
   installed package, where reinstalling or upgrading PHOTO-CAT (`pip install
   --upgrade`, `pipx upgrade`, a rebuilt virtual environment) discarded them. They

@@ -230,6 +230,30 @@ def test_a_user_curve_takes_precedence_over_a_shipped_one(
 
 
 @pytest.mark.regression
+def test_an_unconverted_target_reports_unknown_contamination_not_zero() -> None:
+    """A target with no reference magnitude must not read as a clean target.
+
+    Its flux ratios are undefined, and 0.0 is the value a measured, uncontaminated
+    target would carry. For a screening tool the two must not look the same.
+    """
+    from photo_cat.query_contamination_from_index import flux_fraction_by_band
+
+    magnitudes = {
+        "gaia_g": np.array([10.0, 12.0]),
+        "converted_band": np.array([np.nan, 11.0]),
+    }
+
+    metrics = flux_fraction_by_band(
+        0, np.array([1]), np.array([True]), magnitudes, np.array([1.0])
+    )
+
+    # The catalogue band is still measured for this target, so it stays a number.
+    catalogue_metric = metrics["gaia_g"]
+    assert catalogue_metric is not None and catalogue_metric > 0.0
+    assert metrics["converted_band"] is None
+
+
+@pytest.mark.regression
 def test_nominal_custom_filter_warns_at_build_time(tmp_path: Path) -> None:
     """A user filter declaring nominal provenance must raise a visible warning."""
     nominal = tmp_path / "nominal.dat"

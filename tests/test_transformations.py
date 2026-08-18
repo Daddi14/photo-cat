@@ -195,7 +195,11 @@ def test_auto_without_an_installed_curve_cannot_fall_back_and_says_so() -> None:
     transformation = GAIA_EMPIRICAL_TRANSFORMATIONS["2mass_ks"]
     magnitudes = _magnitudes([1.0, transformation.colour_max + 1.0])
 
-    result = build_converter(GAIA_DR3, "2mass_ks", METHOD_AUTO, None).convert(magnitudes)
+    # The gap is knowable before any source is read, so it is announced at build time
+    # rather than discovered at the end of a long run.
+    with pytest.warns(UserWarning, match="no blackbody fallback"):
+        converter = build_converter(GAIA_DR3, "2mass_ks", METHOD_AUTO, None)
+    result = converter.convert(magnitudes)
 
     assert [_status(result, index) for index in (0, 1)] == ["valid", "colour_outside_valid_range"]
     assert result.summary["fallback_available"] is False

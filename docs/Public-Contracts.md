@@ -80,7 +80,12 @@ Each target result preserves the documented fields for:
 - `flux_fraction_all_neighbors`;
 - `flux_fraction_extra`;
 - additive weighted `flux_fraction_inside_aperture`,
-  `flux_fraction_outside_aperture`, and `flux_fraction_total_weighted` metrics;
+  `flux_fraction_outside_aperture`, and `flux_fraction_total_weighted` metrics.
+  Every flux fraction is null, not `0.0`, when the target has no magnitude in the
+  band it is measured against: the ratio is undefined rather than zero, and a
+  screening caller must be able to tell an unknown target from a clean one. The
+  per-band dictionaries follow the same rule entry by entry, so a valid catalogue
+  band can sit beside an unknown converted band in the same record;
 - `num_neighbors_in_radius`;
 - influence-radius and outside-aperture neighbour counts;
 - `num_contaminants_selected`;

@@ -759,6 +759,8 @@ def empty_target_result(
         contamination_model,
         aperture_radius_arcsec,
     )
+    if (not np.isfinite(magnitude)):
+        _mark_reference_band_undefined(result)
     return result
 
 
@@ -1003,6 +1005,68 @@ def load_magnitude_arrays(index_dir: str | Path, manifest: IndexManifest, reques
     return arrays
 
 
+# Metrics that are a flux ratio against the target's own magnitude in the reference
+# band. When that magnitude is missing they are undefined, not zero.
+_REFERENCE_BAND_METRICS = (
+    "flux_fraction_selected",
+    "flux_fraction_extra",
+    "flux_fraction_all_neighbors",
+    "flux_fraction_inside_aperture",
+    "flux_fraction_outside_aperture",
+    "flux_fraction_total_weighted",
+    "flux_fraction_selected_converted",
+    "flux_fraction_all_neighbors_converted",
+    "flux_fraction_outside_aperture_converted",
+    "flux_fraction_total_weighted_converted",
+)
+
+
+def _warn_about_unconverted_sources(result, output_band: str) -> None:
+    """Report sources the conversion could not cover, and how to cover them.
+
+    The per-target records carry a status each, but nobody reads eight hundred of
+    them to discover that a slice of the catalogue was never converted. The counts
+    are already in the summary, so state them once, with the reason and the action
+    that would fix it.
+    """
+    uncovered = int(result.summary.get("status_counts", {}).get("colour_outside_valid_range", 0))
+    if (uncovered == 0):
+        return
+
+    total = int(result.summary.get("sources", 0))
+    relation = (result.metadata.get("transformation") or {}).get("relation", "the published relation")
+    detail = (
+        f"{uncovered} of {total} sources fall outside the calibrated colour range of "
+        f"{relation}, so they were not converted to {output_band}: their contamination in "
+        "that band is reported as unknown rather than zero."
+    )
+    if (result.summary.get("fallback_available")):
+        logger.warning("%s", detail)
+        return
+    logger.warning(
+        "%s Install a transmission curve for %s to convert them with the blackbody "
+        "method instead - the configurator's SVO downloader saves it under the "
+        "matching band key, after which 'auto' covers these sources automatically.",
+        detail,
+        output_band,
+    )
+
+
+def _mark_reference_band_undefined(result: dict[str, Any]) -> None:
+    """Blank the metrics that cannot be computed without a reference magnitude.
+
+    A target whose reference-band magnitude is missing -- an unconverted source,
+    or one absent from the catalogue band -- has no flux ratio to report. Leaving
+    these at 0.0 would make it indistinguishable from a target that was measured
+    and found clean, which is the opposite of the truth for a screening tool. The
+    per-band dictionaries are untouched: each band is computed against the target's
+    own magnitude in that band, so the ones that do have a magnitude stay valid.
+    """
+    for metric in _REFERENCE_BAND_METRICS:
+        if (metric in result):
+            result[metric] = None
+
+
 def calculate_flux_fraction_extra(
     target_magnitude: float,
     contaminant_magnitudes: np.ndarray,
@@ -1036,11 +1100,20 @@ def flux_fraction_by_band(
     selected_mask: np.ndarray,
     magnitude_arrays: dict[str, np.ndarray],
     weights: np.ndarray,
-) -> dict[str, float]:
-    """Compute flux contamination metrics for every requested magnitude band."""
-    metrics: dict[str, float] = {}
+) -> dict[str, float | None]:
+    """Compute flux contamination metrics for every requested magnitude band.
+
+    A band in which the target itself has no magnitude yields None rather than 0.0,
+    for the same reason the reference-band scalars do: the ratio is undefined, not
+    zero. Bands where the target is measured are unaffected, so a run can report a
+    valid catalogue-band figure next to an unknown converted-band one.
+    """
+    metrics: dict[str, float | None] = {}
     for band, magnitudes in magnitude_arrays.items():
         target_magnitude = float(magnitudes[target_index])
+        if (not np.isfinite(target_magnitude)):
+            metrics[band] = None
+            continue
         contaminant_magnitudes = np.asarray(magnitudes[contaminant_indices], dtype=np.float64)
         metrics[band] = round(
             calculate_flux_fraction_extra(
@@ -1445,6 +1518,8 @@ def process_target(
     result["flux_fraction_total_weighted_converted"] = (
         None if output_key is None else total_weighted_by_band.get(output_key)
     )
+    if (not np.isfinite(target_magnitude)):
+        _mark_reference_band_undefined(result)
     return result
 
 
@@ -1762,6 +1837,7 @@ def main(config_path: str | Path | None = None) -> int:
             # not: the result cannot be judged from the per-target records alone.
             "summary": result.summary,
         }
+        _warn_about_unconverted_sources(result, conversion_config.output_band)
 
     # For targets whose influence radius exceeds the index build radius, recompute
     # their neighbours directly from the catalogue so the query is not capped by the

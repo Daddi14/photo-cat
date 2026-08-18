@@ -80,7 +80,7 @@ Ogni risultato per target preserva i campi documentati per:
 - `flux_fraction_all_neighbors`;
 - `flux_fraction_extra`;
 - metriche pesate additive `flux_fraction_inside_aperture`,
-  `flux_fraction_outside_aperture` e `flux_fraction_total_weighted`;
+  `flux_fraction_outside_aperture` e `flux_fraction_total_weighted`. Ogni frazione di flusso vale null, non `0.0`, quando il target non ha magnitudine nella banda rispetto a cui viene misurato: il rapporto e' indefinito, non nullo, e chi fa screening deve poter distinguere un target ignoto da uno pulito. I dizionari per banda seguono la stessa regola voce per voce, cosi' una banda di catalogo valida puo' convivere con una banda convertita ignota nello stesso record;
 - `num_neighbors_in_radius`;
 - conteggi dei vicini nel raggio di influenza e fuori dall'apertura;
 - `num_contaminants_selected`;
