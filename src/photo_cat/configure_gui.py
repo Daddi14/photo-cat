@@ -71,6 +71,13 @@ def conversion_method_note(output_band: str, method: str, catalog: str) -> tuple
     """
     if (output_band in ("", NO_CONVERSION_LABEL)):
         return ("", False)
+    if (method == "phoenix"):
+        return (
+            "PHOENIX: interpolate the local grid in Teff/logg/[M/H], normalize on Gaia G, "
+            "then use the selected output filter. Configure the grid path and stellar parameter columns; "
+            "BP/RP enable the blackbody fallback.",
+            False,
+        )
     if (method not in (METHOD_GAIA_EMPIRICAL, METHOD_AUTO)):
         return ("", False)
 
@@ -464,6 +471,9 @@ class ConfigGui(tk.Tk):
         self.conversion_method_var = tk.StringVar(value="blackbody")
         self.conversion_filter_file_var = tk.StringVar()
         self.conversion_catalog_var = tk.StringVar(value="gaia_dr3")
+        self.phoenix_grid_path_var = tk.StringVar()
+        self.phoenix_apply_extinction_var = tk.BooleanVar(value=False)
+        self.phoenix_extinction_rv_var = tk.StringVar(value="3.1")
         self.svo_facility_var = tk.StringVar()
         self.svo_filter_var = tk.StringVar()
         self._svo_filters_by_label: dict[str, str] = {}
@@ -484,6 +494,7 @@ class ConfigGui(tk.Tk):
         self.pipeline_sessions = []
         self.targets_text = None
         self.magnitude_columns_text = None
+        self.stellar_parameter_columns_text = None
         self.catalog_entry = None
         self._applying_catalog_defaults = False
         self._catalog_auto_update_after_id = None
@@ -1278,10 +1289,26 @@ class ConfigGui(tk.Tk):
         self.magnitude_columns_text._photocat_tooltip_key = "Magnitude bands (optional extra bands)"
         self.magnitude_columns_text.grid(row=1, column=0, sticky="ew")
 
-        self.add_file_row(files_tab, 4, "Targets CSV", self.targets_input_var, self.browse_targets)
+        stellar_parameters = ttk.LabelFrame(files_tab, text="Stellar parameters (optional, PHOENIX)", padding=8)
+        stellar_parameters.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        stellar_parameters.columnconfigure(0, weight=1)
+        ttk.Label(
+            stellar_parameters,
+            text=(
+                "One parameter=catalog_column per line, for example "
+                "teff_gspphot_phoenix=teff_gspphot_phoenix. Missing row values use the recorded fallback."
+            ),
+            style="Muted.TLabel",
+            wraplength=880,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.stellar_parameter_columns_text = self.make_text_widget(stellar_parameters, height=4)
+        self.stellar_parameter_columns_text.grid(row=1, column=0, sticky="ew")
+
+        self.add_file_row(files_tab, 5, "Targets CSV", self.targets_input_var, self.browse_targets)
 
         target_columns = ttk.LabelFrame(files_tab, text="Targets column name", padding=8)
-        target_columns.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        target_columns.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         target_columns.columnconfigure(1, weight=1)
 
         ttk.Label(
@@ -1297,8 +1324,8 @@ class ConfigGui(tk.Tk):
 
         self.add_entry_row(target_columns, 1, "Targets Source ID column", self.targets_source_id_column_var)
 
-        self.add_folder_row(files_tab, 6, "Output/index folder", self.out_dir_var, self.browse_out_dir)
-        self.add_folder_row(files_tab, 7, "Query index folder", self.index_dir_var, self.browse_index_dir)
+        self.add_folder_row(files_tab, 7, "Output/index folder", self.out_dir_var, self.browse_out_dir)
+        self.add_folder_row(files_tab, 8, "Query index folder", self.index_dir_var, self.browse_index_dir)
 
         manual_targets = ttk.LabelFrame(files_tab, text="Manual targets", padding=8)
         manual_targets.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 0))
@@ -1527,6 +1554,9 @@ class ConfigGui(tk.Tk):
         self.conversion_method_var.set(str(conversion.get("conversion_method") or "blackbody"))
         self.conversion_filter_file_var.set(str(conversion.get("filter_file") or ""))
         self.conversion_catalog_var.set(str(conversion.get("catalog") or "gaia_dr3"))
+        self.phoenix_grid_path_var.set(str(conversion.get("phoenix_grid_path") or ""))
+        self.phoenix_apply_extinction_var.set(bool(conversion.get("apply_extinction", False)))
+        self.phoenix_extinction_rv_var.set(str(conversion.get("extinction_rv", 3.1)))
         self.delta_mag_var.set(str(query_settings.get("delta_mag", 5)))
         self.contamination_bands_var.set(", ".join(query_settings.get("contamination_bands") or ["gaia_g"]))
         self.contamination_mode_var.set(str(model.get("mode") or "top_hat"))
@@ -1543,6 +1573,7 @@ class ConfigGui(tk.Tk):
         self.advanced_settings_var.set(False)
         self.set_manual_targets_text(query_io.get("targets", []) or [])
         self.set_magnitude_columns_text(build_io.get("magnitude_columns", {}) or {}, build_columns.get("phot_g_mean_mag", "phot_g_mean_mag"))
+        self.set_stellar_parameter_columns_text(build_io.get("stellar_parameter_columns", {}) or {})
         self.set_advanced_widgets_state()
         self.update_model_field_state()
 
@@ -1579,6 +1610,16 @@ class ConfigGui(tk.Tk):
         self.magnitude_columns_text.delete("1.0", "end")
         if (lines):
             self.magnitude_columns_text.insert("1.0", "\n".join(lines))
+
+    def set_stellar_parameter_columns_text(self, parameter_columns: dict) -> None:
+        """Populate the optional PHOENIX parameter-to-catalogue mapping."""
+        if self.stellar_parameter_columns_text is None:
+            return
+        self.stellar_parameter_columns_text.delete("1.0", "end")
+        if parameter_columns:
+            self.stellar_parameter_columns_text.insert(
+                "1.0", "\n".join(f"{key}={value}" for key, value in parameter_columns.items())
+            )
 
     def set_advanced_widgets_state(self) -> None:
         state = "normal" if (self.advanced_settings_var.get()) else "disabled"
@@ -1642,14 +1683,33 @@ class ConfigGui(tk.Tk):
         filter_entry = self.add_file_row(
             conversion, 4, "Custom filter file", self.conversion_filter_file_var, self.browse_conversion_filter
         )
-        self.conversion_dependent_entries = {"filter_file": filter_entry, "method": method_combo, "catalog": catalog_combo}
+        phoenix_grid_entry = self.add_entry_row(
+            conversion, 5, "PHOENIX grid path", self.phoenix_grid_path_var
+        )
+        extinction_check = ttk.Checkbutton(
+            conversion,
+            text="Apply PHOENIX extinction from azero_gspphot_phoenix",
+            variable=self.phoenix_apply_extinction_var,
+        )
+        extinction_check.grid(row=6, column=0, columnspan=3, sticky="w", pady=4)
+        extinction_rv_entry = self.add_entry_row(
+            conversion, 7, "Extinction R_V", self.phoenix_extinction_rv_var
+        )
+        self.conversion_dependent_entries = {
+            "filter_file": filter_entry,
+            "method": method_combo,
+            "catalog": catalog_combo,
+            "phoenix_grid": phoenix_grid_entry,
+            "apply_extinction": extinction_check,
+            "extinction_rv": extinction_rv_entry,
+        }
 
         # Says which relation will run for the current band and method, or why none
         # can, so an unsupported pairing is visible before the run rather than after.
         self.conversion_method_note = ttk.Label(
             conversion, text="", style="Muted.TLabel", wraplength=880, justify="left"
         )
-        self.conversion_method_note.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self.conversion_method_note.grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
         ttk.Label(
             conversion,
@@ -1661,9 +1721,9 @@ class ConfigGui(tk.Tk):
             style="Muted.TLabel",
             wraplength=880,
             justify="left",
-        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ).grid(row=9, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
-        self.build_svo_download_panel(conversion, row=7)
+        self.build_svo_download_panel(conversion, row=10)
 
         self.conversion_output_band_var.trace_add("write", lambda *_: self.update_conversion_field_state())
         self.conversion_method_var.trace_add("write", lambda *_: self.update_conversion_field_state())
@@ -1728,6 +1788,10 @@ class ConfigGui(tk.Tk):
         entries["catalog"].configure(state="readonly" if converting else "disabled")
         # The custom filter file only matters for the custom band.
         entries["filter_file"].configure(state="normal" if (band == "custom") else "disabled")
+        phoenix_enabled = converting and self.conversion_method_var.get().strip() == "phoenix"
+        entries["phoenix_grid"].configure(state="normal" if phoenix_enabled else "disabled")
+        entries["apply_extinction"].configure(state="normal" if phoenix_enabled else "disabled")
+        entries["extinction_rv"].configure(state="normal" if phoenix_enabled else "disabled")
 
         note = getattr(self, "conversion_method_note", None)
         if (note is not None):
@@ -2223,6 +2287,29 @@ class ConfigGui(tk.Tk):
 
         return parsed
 
+    def parse_stellar_parameter_columns(self) -> dict:
+        """Parse optional parameter=catalog_column lines for PHOENIX."""
+        if self.stellar_parameter_columns_text is None:
+            return {}
+        raw_text = self.stellar_parameter_columns_text.get("1.0", "end").strip()
+        parsed: dict[str, str] = {}
+        for line in raw_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if "=" not in line:
+                raise ValueError(
+                    f'Invalid stellar parameter line: "{line}".\n\n'
+                    "Use parameter=catalog_column."
+                )
+            parameter, column = (part.strip() for part in line.split("=", 1))
+            if not parameter or not column:
+                raise ValueError(
+                    f'Invalid stellar parameter line: "{line}". Parameter and column cannot be empty.'
+                )
+            parsed[parameter] = column
+        return parsed
+
     def parse_contamination_bands(self) -> list[str]:
         raw = self.contamination_bands_var.get().strip()
         if (raw == ""):
@@ -2422,6 +2509,7 @@ class ConfigGui(tk.Tk):
 
         magnitude_columns = {"gaia_g": catalog_mag_column}
         magnitude_columns.update(self.parse_magnitude_columns())
+        stellar_parameter_columns = self.parse_stellar_parameter_columns()
 
         contamination_bands = self.parse_contamination_bands()
 
@@ -2437,11 +2525,17 @@ class ConfigGui(tk.Tk):
             filter_file = self.conversion_filter_file_var.get().strip() or None
             if (filter_file is not None):
                 filter_file = self.make_project_relative_path(filter_file)
+            phoenix_grid_path = self.phoenix_grid_path_var.get().strip() or None
+            if phoenix_grid_path is not None:
+                phoenix_grid_path = self.make_project_relative_path(phoenix_grid_path)
             photometric_conversion = {
                 "output_band": output_band,
                 "conversion_method": self.conversion_method_var.get().strip() or "blackbody",
                 "filter_file": filter_file,
                 "catalog": self.conversion_catalog_var.get().strip() or "gaia_dr3",
+                "phoenix_grid_path": phoenix_grid_path,
+                "apply_extinction": bool(self.phoenix_apply_extinction_var.get()),
+                "extinction_rv": float(self.phoenix_extinction_rv_var.get().strip() or "3.1"),
             }
 
         return {
@@ -2465,6 +2559,7 @@ class ConfigGui(tk.Tk):
                         "phot_g_mean_mag": catalog_mag_column,
                     },
                     "magnitude_columns": magnitude_columns,
+                    "stellar_parameter_columns": stellar_parameter_columns,
                 },
                 "settings": {
                     "use_dask": bool(self.use_dask_var.get()),

@@ -356,6 +356,13 @@ def add_build_overrides(parser: argparse.ArgumentParser) -> None:
         "--magnitude-columns",
         help="optional comma-separated band=column magnitude map, e.g. gaia_bp=phot_bp_mean_mag,gaia_rp=phot_rp_mean_mag",
     )
+    build_group.add_argument(
+        "--stellar-parameter-columns",
+        help=(
+            "optional comma-separated parameter=column map for PHOENIX, e.g. "
+            "teff_gspphot_phoenix=teff_gspphot_phoenix"
+        ),
+    )
     build_group.add_argument("--use-dask", dest="use_dask", action=argparse.BooleanOptionalAction, default=None, help="enable or disable Dask catalogue loading")
     build_group.add_argument("--calculate-separations", dest="calculate_separations", action=argparse.BooleanOptionalAction, default=None, help="write neighbour separations during index building")
     build_group.add_argument("--max-radius-arcsec", type=float, help="maximum neighbour search radius in arcseconds")
@@ -396,7 +403,8 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
         help=(
             "how flux is converted between bands: blackbody integrates an SED through the "
             "filter, gaia_empirical applies a published Gaia colour relation, auto picks "
-            "the relation where it is calibrated and blackbody elsewhere"
+            "the relation where it is calibrated and blackbody elsewhere, phoenix uses "
+            "a configured local atmosphere grid"
         ),
     )
     query_group.add_argument(
@@ -406,6 +414,22 @@ def add_query_overrides(parser: argparse.ArgumentParser) -> None:
     query_group.add_argument(
         "--conversion-catalog",
         help="catalogue descriptor used for the colour and anchor bands (default gaia_dr3)",
+    )
+    query_group.add_argument(
+        "--phoenix-grid-path",
+        help="local PHOENIX grid directory containing grid_index.csv (or the CSV path)",
+    )
+    query_group.add_argument(
+        "--apply-extinction",
+        dest="apply_extinction",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="apply azero_gspphot_phoenix to PHOENIX spectra",
+    )
+    query_group.add_argument(
+        "--extinction-rv",
+        type=float,
+        help="CCM89 R_V used by optional PHOENIX extinction (default 3.1)",
     )
     query_group.add_argument(
         "--contamination-model-mode",

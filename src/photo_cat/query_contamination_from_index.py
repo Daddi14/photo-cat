@@ -191,6 +191,7 @@ class ReferenceBandContext:
     effective_temperature: np.ndarray | None = None
     status_codes: np.ndarray | None = None
     colour_values: np.ndarray | None = None
+    diagnostics: dict[str, np.ndarray] | None = None
 
     @property
     def is_converted(self) -> bool:
@@ -220,6 +221,26 @@ def conversion_colour_used(context: ReferenceBandContext | None, index: int) -> 
         return None
     colour = float(colours[index])
     return round(colour, 6) if np.isfinite(colour) else None
+
+
+def conversion_diagnostics(context: ReferenceBandContext | None, index: int) -> dict[str, Any]:
+    """Return JSON-safe per-source PHOENIX/model provenance when available."""
+    if context is None or not context.is_converted or not context.diagnostics:
+        return {}
+    converted: dict[str, Any] = {}
+    for key, values in context.diagnostics.items():
+        if index < 0 or index >= values.shape[0]:
+            continue
+        value = values[index]
+        if isinstance(value, (np.bool_, bool)):
+            converted[key] = bool(value)
+        elif isinstance(value, (np.floating, float, np.integer, int)):
+            numeric = float(value)
+            converted[key] = numeric if np.isfinite(numeric) else None
+        else:
+            text = str(value)
+            converted[key] = text if text else None
+    return converted
 
 
 def _converted_flux(magnitude: float) -> float | None:
@@ -697,6 +718,7 @@ def empty_target_result(
     target_magnitudes_by_band: dict[str, float | None] | None = None,
     aperture_radius_arcsec: float | None = None,
     colour_used: float | None = None,
+    model_diagnostics: dict[str, Any] | None = None,
 ) -> dict:
     """Create the stable no-contaminant result shape used by query output."""
     contamination_model = contamination_model or ContaminationModelConfig()
@@ -747,6 +769,7 @@ def empty_target_result(
     result["effective_temperature"] = effective_temperature
     result["converted_target_flux"] = converted_target_flux
     result["colour_used"] = colour_used
+    result.update(model_diagnostics or {})
     result["flux_fraction_selected_converted"] = 0.0 if active else None
     result["flux_fraction_all_neighbors_converted"] = 0.0 if active else None
     result["flux_fraction_outside_aperture_converted"] = 0.0 if active else None
@@ -1005,6 +1028,28 @@ def load_magnitude_arrays(index_dir: str | Path, manifest: IndexManifest, reques
     return arrays
 
 
+def load_stellar_parameter_arrays(
+    index_dir: str | Path,
+    manifest: IndexManifest,
+    requested_parameters: tuple[str, ...],
+) -> dict[str, np.ndarray]:
+    """Open whichever optional atmospheric arrays are present in the index."""
+    available = manifest.stellar_parameters or {}
+    arrays: dict[str, np.ndarray] = {}
+    for parameter in requested_parameters:
+        metadata = available.get(parameter)
+        if metadata is None:
+            continue
+        array_path = Path(index_dir) / metadata["array_file"]
+        try:
+            arrays[parameter] = np.load(array_path, mmap_mode="r", allow_pickle=False)
+        except (OSError, ValueError) as error:
+            raise ValueError(f"Could not load stellar parameter {parameter}: {array_path}") from error
+        if arrays[parameter].ndim != 1 or arrays[parameter].shape[0] != manifest.number_of_sources:
+            raise ValueError(f"Stellar parameter {parameter} does not match the completed index size.")
+    return arrays
+
+
 # Metrics that are a flux ratio against the target's own magnitude in the reference
 # band. When that magnitude is missing they are undefined, not zero.
 _REFERENCE_BAND_METRICS = (
@@ -1190,6 +1235,7 @@ def build_contaminant_records(
             )
             record["converted_flux"] = converted
             record["colour_used"] = conversion_colour_used(reference, catalogue_index)
+        record.update(conversion_diagnostics(reference, catalogue_index))
         contaminants.append(record)
 
     return contaminants
@@ -1332,6 +1378,7 @@ def process_target(
             target_magnitudes_by_band,
             aperture_radius_arcsec=field_of_view_arcsec,
             colour_used=conversion_colour_used(reference, target_index),
+            model_diagnostics=conversion_diagnostics(reference, target_index),
         )
 
     candidate_indices = neighbor_internal_ids - 1
@@ -1352,6 +1399,7 @@ def process_target(
             target_magnitudes_by_band,
             aperture_radius_arcsec=field_of_view_arcsec,
             colour_used=conversion_colour_used(reference, target_index),
+            model_diagnostics=conversion_diagnostics(reference, target_index),
         )
 
     contaminant_ra = ra[contaminant_indices]
@@ -1504,6 +1552,7 @@ def process_target(
     result["effective_temperature"] = effective_temperature
     result["converted_target_flux"] = converted_target_flux
     result["colour_used"] = conversion_colour_used(reference, target_index)
+    result.update(conversion_diagnostics(reference, target_index))
     result["psf_metrics"] = psf_metrics
     result["target_magnitudes_by_band"] = target_magnitudes_by_band
     result["flux_fraction_selected_converted"] = (
@@ -1730,6 +1779,9 @@ def main(config_path: str | Path | None = None) -> int:
             conversion_config.output_band,
             conversion_config.conversion_method,
             conversion_config.filter_file,
+            conversion_config.phoenix_grid_path,
+            conversion_config.apply_extinction,
+            conversion_config.extinction_rv,
         )
 
     # ---------------- LOAD CATALOG ARRAYS ----------
@@ -1768,12 +1820,28 @@ def main(config_path: str | Path | None = None) -> int:
     if (direct_output_band is not None and direct_output_band not in bands_to_load):
         bands_to_load.append(direct_output_band)
     if (catalog_spec is not None):
-        # The conversion needs the catalogue's colour and anchor bands present in
-        # the index; validate and add them so they are loaded once alongside the
-        # requested contamination bands.
-        resolve_requested_bands(list(catalog_spec.required_bands), runtime_plan.manifest)
-        bands_to_load.extend(band for band in catalog_spec.required_bands if band not in bands_to_load)
+        # PHOENIX needs only Gaia G for normalization; BP/RP are optional inputs
+        # for its final parameter/blackbody fallback. Other converters still
+        # declare BP/RP as required.
+        required_conversion_bands = tuple(getattr(converter, "required_magnitude_bands", catalog_spec.required_bands))
+        resolve_requested_bands(list(required_conversion_bands), runtime_plan.manifest)
+        bands_to_load.extend(band for band in required_conversion_bands if band not in bands_to_load)
+        available_bands = manifest_magnitude_bands(runtime_plan.manifest)
+        optional_conversion_bands = tuple(getattr(converter, "optional_magnitude_bands", ()))
+        bands_to_load.extend(
+            band for band in optional_conversion_bands
+            if band in available_bands and band not in bands_to_load
+        )
     loaded_magnitude_arrays = load_magnitude_arrays(paths.root, runtime_plan.manifest, bands_to_load)
+    stellar_parameter_arrays = (
+        load_stellar_parameter_arrays(
+            paths.root,
+            runtime_plan.manifest,
+            tuple(getattr(converter, "required_stellar_parameters", ())),
+        )
+        if converter is not None
+        else {}
+    )
     magnitude_arrays = {band: loaded_magnitude_arrays[band] for band in requested_bands}
 
     reference = ReferenceBandContext(
@@ -1808,7 +1876,8 @@ def main(config_path: str | Path | None = None) -> int:
         )
 
     if (converter is not None and catalog_spec is not None and conversion_config is not None):
-        result = converter.convert(loaded_magnitude_arrays)
+        conversion_inputs = {**loaded_magnitude_arrays, **stellar_parameter_arrays}
+        result = converter.convert(conversion_inputs)
         # Store the converted band under a dedicated key so it can never clobber a
         # catalogue band that shares its name (for example a Gaia RP output).
         output_key = f"converted_{normalized_band_key(conversion_config.output_band)}"
@@ -1826,7 +1895,13 @@ def main(config_path: str | Path | None = None) -> int:
             colour_values=(
                 loaded_magnitude_arrays[catalog_spec.colour_band_1]
                 - loaded_magnitude_arrays[catalog_spec.colour_band_2]
+                if (
+                    catalog_spec.colour_band_1 in loaded_magnitude_arrays
+                    and catalog_spec.colour_band_2 in loaded_magnitude_arrays
+                )
+                else None
             ),
+            diagnostics=result.diagnostics,
         )
         conversion_metadata = {
             **converter.metadata,

@@ -57,6 +57,31 @@ build_neighbors_index:
 configurata. Le bande aggiuntive vengono scritte come array numerici e
 registrate in `index_manifest.json`.
 
+I parametri atmosferici per PHOENIX vengono conservati separatamente dalle
+magnitudini. Mappa tutte le colonne Gaia disponibili nell'input; i singoli valori
+possono essere mancanti perché la conversione applica e registra il fallback per
+ogni sorgente:
+
+```yaml
+build_neighbors_index:
+  io:
+    stellar_parameter_columns:
+      teff_gspphot_phoenix: teff_gspphot_phoenix
+      logg_gspphot_phoenix: logg_gspphot_phoenix
+      mh_gspphot_phoenix: mh_gspphot_phoenix
+      teff_gspphot_phoenix_lower: teff_gspphot_phoenix_lower
+      teff_gspphot_phoenix_upper: teff_gspphot_phoenix_upper
+      logg_gspphot_phoenix_lower: logg_gspphot_phoenix_lower
+      logg_gspphot_phoenix_upper: logg_gspphot_phoenix_upper
+      mh_gspphot_phoenix_lower: mh_gspphot_phoenix_lower
+      mh_gspphot_phoenix_upper: mh_gspphot_phoenix_upper
+      azero_gspphot_phoenix: azero_gspphot_phoenix
+```
+
+Le colonne opzionali GSP-Spec (`teff_gspspec`, `logg_gspspec`, `mh_gspspec`),
+GSP-Phot best library (`teff_gspphot`, `logg_gspphot`, `mh_gspphot`) e FLAME
+(`mass_flame`, `radius_flame`) usano la stessa sintassi chiave-colonna.
+
 ## Fase di query
 
 La fase di query legge un indice esistente e processa i target selezionati.
@@ -115,6 +140,9 @@ query_contamination_from_index:
       conversion_method: blackbody   # blackbody | gaia_empirical | auto | phoenix
       filter_file:               # serve solo quando output_band è custom
       catalog: gaia_dr3
+      phoenix_grid_path: data/phoenix_grid  # obbligatorio per phoenix
+      apply_extinction: false
+      extinction_rv: 3.1
 ```
 
 La banda di uscita selezionata diventa la banda di riferimento per il taglio in
@@ -123,10 +151,12 @@ principali, i conteggi e le metriche PSF. Se quella banda esatta è già present
 nell'indice (per esempio `gaia_bp` o `gaia_rp`), PHOTO-CAT usa direttamente le
 magnitudini nominali del catalogo e non esegue alcuna conversione.
 
-Altrimenti la conversione viene eseguita. In entrambi i casi servono le bande
-colore del catalogo (BP, RP) memorizzate con `magnitude_columns` durante la build.
-PHOTO-CAT carica automaticamente le bande richieste: non è necessario ripeterle in
-`contamination_bands`.
+Altrimenti la conversione viene eseguita. Blackbody e conversione empirica
+richiedono le bande colore del catalogo (BP, RP) memorizzate con
+`magnitude_columns` durante la build. PHOENIX richiede solo Gaia G e una terna
+atmosferica completa; BP/RP sono opzionali e abilitano il fallback di temperatura
+e il fallback finale blackbody. PHOTO-CAT carica automaticamente questi input:
+non è necessario ripeterli in `contamination_bands`.
 
 #### Metodi di conversione
 
@@ -135,7 +165,7 @@ PHOTO-CAT carica automaticamente le bande richieste: non è necessario ripeterle
 | `blackbody` (default) | Conversione approssimata basata sulla SED: il colore BP-RP fornisce una temperatura equivalente di corpo nero e quello spettro viene integrato nella curva di trasmissione della banda. | Qualsiasi banda con una curva di trasmissione, comprese le bande di missione e i profili forniti dall'utente. |
 | `gaia_empirical` | Trasformazione empirica basata sul colore, calibrata sulla fotometria Gaia per uno specifico sistema fotometrico pubblicato. Non assume alcun modello spettrale. | I sistemi fotometrici per cui Gaia pubblica relazioni, entro il loro intervallo di colore calibrato. |
 | `auto` | Usa la trasformazione empirica Gaia quando esiste una relazione calibrata e la sorgente rientra nel suo intervallo di validità; altrimenti ricade sulla conversione blackbody. | Cataloghi misti, in cui alcune sorgenti cadono fuori dall'intervallo di colore calibrato. |
-| `phoenix` | Selezionabile ma richiede una griglia esterna di spettri modello; erra chiaramente finché non viene fornita. | Non ancora disponibile. |
+| `phoenix` | Interpola uno spettro PHOENIX/BT-Settl locale in Teff/logg/[M/H], applica opzionalmente l'estinzione, lo normalizza su Gaia G e integra il filtro target esistente. | Conversione SED fisica per sorgenti con parametri atmosferici; applica per sorgente il fallback blackbody esistente. |
 
 Con `blackbody`, `m_out = m_anchor - 2.5*log10(R)` con
 `R = F_out(Teff)/F_anchor(Teff)`. Poiché la contaminazione usa solo rapporti di
@@ -155,6 +185,36 @@ Non esiste alcuna relazione Gaia verso le bande di missione. Ariel, MAUVE, TESS,
 CHEOPS e i filtri SVO si convertono con `blackbody` (o con `auto`, che lo
 seleziona automaticamente per loro); `gaia_empirical` su una banda simile è un
 errore, non una scelta della relazione più vicina.
+
+#### Griglia PHOENIX locale
+
+`phoenix_grid_path` indica una cartella contenente `grid_index.csv` (oppure il CSV
+stesso). L'indice richiede queste colonne:
+
+```text
+teff,logg,mh,filename
+```
+
+Ogni filename è relativo all'indice e identifica uno spettro a due colonne
+lunghezza d'onda/flusso. Le colonne opzionali `wavelength_unit` (`nm`, `angstrom`,
+`micron`) e `flux_kind` (`energy`, il valore predefinito per F-lambda PHOENIX,
+oppure `photon`) rendono esplicita la preparazione della griglia. PHOTO-CAT carica
+gli spettri su richiesta e li mantiene in cache; non interroga SVO durante la query.
+
+L'interpolazione usa Teff, logg e [M/H]. Una cella è valida solo se esistono tutti
+i vertici necessari all'interpolazione trilineare, evitando di attraversare buchi
+di una griglia BT-Settl irregolare. I parametri vengono scelti nell'ordine:
+terna Gaia GSP-Phot PHOENIX, terna GSP-Spec, terna GSP-Phot best library, poi i
+fallback per parametro ([M/H] solare, massa/raggio FLAME per logg, temperatura da
+BP-RP). Se la terna resta incompleta, è fuori griglia o produce fotometria
+sintetica non valida, viene usata la conversione blackbody esistente quando BP/RP
+sono disponibili.
+
+L'estinzione opzionale usa `azero_gspphot_phoenix` e una legge CCM89 con
+`extinction_rv` configurabile. Gli output conservano `sed_model`, Teff/logg/[M/H]
+e le loro provenienze, `normalization_factor`, `quality` e `fallback_reason`. Gli
+intervalli lower/upper PHOENIX configurati vengono conservati per una futura
+propagazione delle incertezze; questa versione calcola solo il valore nominale.
 
 #### Bande di uscita
 

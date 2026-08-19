@@ -9,10 +9,10 @@ by another, so any constant scale factor on the SED cancels.
 The models are photon-count spectral densities, because the detectors these bands
 describe (Gaia, TESS, CHEOPS, ...) count photons rather than integrate energy.
 
-Adding a model is a single registry entry. ``blackbody`` is implemented now;
-``phoenix`` is selectable but requires external data (a model spectrum grid) and
-raises a clear error until that data is supplied, so wiring it in later needs no
-change elsewhere.
+``blackbody`` is a temperature-only callable in this registry. ``phoenix`` needs
+three atmospheric coordinates plus a local grid, so it is implemented by
+``conversion.PhoenixConverter``; its registry entry remains a dispatch sentinel
+and explains that requirement if called as a temperature-only model.
 
 These are the SED-based methods only. Conversion by published empirical relation
 needs no spectral model at all and lives in ``transformations``; the full list of
@@ -55,20 +55,21 @@ def _unavailable_model(name: str, requirement: str) -> Callable[[np.ndarray, flo
 
     def model(wavelength_nm: np.ndarray, teff_kelvin: float) -> np.ndarray:
         raise ValueError(
-            f"The '{name}' conversion method is selectable but not yet available: it "
-            f"requires {requirement}. Use conversion_method: blackbody, or supply the "
-            "required data."
+            f"The '{name}' model cannot be evaluated from temperature alone: it "
+            f"requires {requirement}. Build it through photometry.build_converter "
+            "with the required data."
         )
 
     return model
 
 
-# Registry of SED models keyed by conversion-method name. blackbody is ready;
-# phoenix is an honest placeholder so the method can be selected and validated now,
-# and filled in later by replacing the entry with no change to the engine.
+# Registry of SED method names. PHOENIX is dispatched to its three-dimensional
+# grid converter before this temperature-only callable can be reached.
 SED_MODELS: dict[str, Callable[[np.ndarray, float], np.ndarray]] = {
     "blackbody": blackbody_photon_density,
-    "phoenix": _unavailable_model("phoenix", "a grid of PHOENIX model spectra"),
+    "phoenix": _unavailable_model(
+        "phoenix", "a local PHOENIX grid plus Teff, logg, and [M/H]"
+    ),
 }
 
 SED_CONVERSION_METHODS = tuple(SED_MODELS)

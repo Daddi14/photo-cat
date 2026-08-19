@@ -168,6 +168,43 @@ def test_query_accepts_the_empirical_and_auto_conversion_methods(
 
 
 @pytest.mark.unit
+def test_phoenix_config_parses_grid_extinction_and_stellar_columns(
+    write_config: Callable[..., Path],
+    config_text: str,
+    tmp_path: Path,
+) -> None:
+    """PHOENIX paths, extinction, and indexed parameter mappings remain typed and resolved."""
+    modified = config_text.replace(
+        "      phot_g_mean_mag: phot_g_mean_mag\n  settings:",
+        "      phot_g_mean_mag: phot_g_mean_mag\n"
+        "    stellar_parameter_columns:\n"
+        "      teff_gspphot_phoenix: teff_phx\n"
+        "      logg_gspphot_phoenix: logg_phx\n"
+        "      mh_gspphot_phoenix: mh_phx\n"
+        "  settings:",
+        1,
+    ).replace(
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n"
+        "    photometric_conversion:\n"
+        "      output_band: tess\n"
+        "      conversion_method: phoenix\n"
+        "      phoenix_grid_path: models/phoenix\n"
+        "      apply_extinction: true\n"
+        "      extinction_rv: 3.2",
+    )
+    config_path = write_config(modified)
+    build = load_config("build_neighbors_index", str(config_path), validate_runtime=False)
+    query = load_config("query_contamination_from_index", str(config_path), validate_runtime=False)
+
+    assert build.stellar_parameter_columns["teff_gspphot_phoenix"] == "teff_phx"
+    assert query.photometric_conversion is not None
+    assert query.photometric_conversion.phoenix_grid_path == str((tmp_path / "models" / "phoenix").resolve())
+    assert query.photometric_conversion.apply_extinction is True
+    assert query.photometric_conversion.extinction_rv == pytest.approx(3.2)
+
+
+@pytest.mark.unit
 def test_query_rejects_an_empirical_band_without_a_published_relation(
     write_config: Callable[..., Path],
     config_text: str,

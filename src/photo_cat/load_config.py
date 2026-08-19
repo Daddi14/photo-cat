@@ -45,6 +45,7 @@ class BuildConfig:
     dec_column: str
     phot_g_mean_mag_column: str
     magnitude_columns: dict[str, str] = field(default_factory=dict)
+    stellar_parameter_columns: dict[str, str] = field(default_factory=dict)
 
 
 # Full-width-half-maximum to standard-deviation conversion factor, 2 * sqrt(2 * ln 2).
@@ -100,6 +101,9 @@ class PhotometricConversionConfig:
     conversion_method: str = "blackbody"
     filter_file: str | None = None
     catalog: str = "gaia_dr3"
+    phoenix_grid_path: str | None = None
+    apply_extinction: bool = False
+    extinction_rv: float = 3.1
 
 
 @dataclass(frozen=True)
@@ -491,11 +495,32 @@ def parse_photometric_conversion(
     if (method == METHOD_GAIA_EMPIRICAL):
         require_transformation(output_band, catalog)
 
+    grid_value = conversion.get("phoenix_grid_path")
+    if grid_value is None:
+        # Accept concise spellings used by early development configurations.
+        grid_value = conversion.get("phoenix_grid", conversion.get("grid_path"))
+    phoenix_grid_path = resolve_path(grid_value, config_dir)
+    apply_extinction = parse_bool(
+        conversion.get("apply_extinction"),
+        f"{QUERY_SECTION}.settings.photometric_conversion.apply_extinction",
+        False,
+    )
+    extinction_rv = parse_float(
+        conversion.get("extinction_rv"),
+        f"{QUERY_SECTION}.settings.photometric_conversion.extinction_rv",
+        3.1,
+        minimum=0.0,
+        exclusive_minimum=True,
+    )
+
     return PhotometricConversionConfig(
         output_band=output_band,
         conversion_method=method,
         filter_file=filter_file,
         catalog=catalog,
+        phoenix_grid_path=phoenix_grid_path,
+        apply_extinction=apply_extinction,
+        extinction_rv=extinction_rv,
     )
 
 
@@ -529,6 +554,10 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
     magnitude_columns = normalize_magnitude_columns(
         parse_text_mapping(io.get("magnitude_columns"), f"{BUILD_SECTION}.io.magnitude_columns"),
         phot_g_mean_mag_column,
+    )
+    stellar_parameter_columns = parse_text_mapping(
+        io.get("stellar_parameter_columns", io.get("phoenix_parameter_columns")),
+        f"{BUILD_SECTION}.io.stellar_parameter_columns",
     )
     usecolumns = [source_id_column, ra_column, dec_column, phot_g_mean_mag_column]
     validate_columns(usecolumns)
@@ -566,6 +595,7 @@ def load_build_config(section_config: dict[str, Any], config_dir: Path) -> Build
         dec_column=dec_column,
         phot_g_mean_mag_column=phot_g_mean_mag_column,
         magnitude_columns=magnitude_columns,
+        stellar_parameter_columns=stellar_parameter_columns,
     )
 
 

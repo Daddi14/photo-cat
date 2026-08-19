@@ -102,6 +102,10 @@ Each target result preserves the documented fields for:
   is one of `valid`, `missing_input`, `colour_out_of_grid`,
   `colour_outside_valid_range`, or `converted_by_fallback_method`;
   `effective_temperature` is null for methods that derive no temperature;
+- PHOENIX adds `target_flux`, `sed_model`, `teff`, `logg`, `mh`, individual
+  parameter-source fields, `normalization_factor`, `quality`,
+  `extinction_applied`, and `fallback_reason` to target and contaminant records;
+  configured lower/upper parameter intervals are additive fields;
 - scalar `*_converted` flux fractions suitable for screening and validation tools;
 - unresolved target rows when explicitly requested, with `status` set to
   `missing_from_index` or `invalid_target_id`.

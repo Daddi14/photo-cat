@@ -27,6 +27,20 @@ build_neighbors_index:
       # Uncomment when your catalogue provides them.
       # gaia_bp: phot_bp_mean_mag
       # gaia_rp: phot_rp_mean_mag
+    # Optional atmospheric arrays used by conversion_method: phoenix. Configure
+    # every column present in the input; missing values remain eligible for the
+    # documented GSP-Spec/GSP-Phot/parameter/blackbody fallbacks.
+    stellar_parameter_columns:
+      # teff_gspphot_phoenix: teff_gspphot_phoenix
+      # logg_gspphot_phoenix: logg_gspphot_phoenix
+      # mh_gspphot_phoenix: mh_gspphot_phoenix
+      # teff_gspphot_phoenix_lower: teff_gspphot_phoenix_lower
+      # teff_gspphot_phoenix_upper: teff_gspphot_phoenix_upper
+      # logg_gspphot_phoenix_lower: logg_gspphot_phoenix_lower
+      # logg_gspphot_phoenix_upper: logg_gspphot_phoenix_upper
+      # mh_gspphot_phoenix_lower: mh_gspphot_phoenix_lower
+      # mh_gspphot_phoenix_upper: mh_gspphot_phoenix_upper
+      # azero_gspphot_phoenix: azero_gspphot_phoenix
   settings:
     use_dask: true
     calculate_separations: false
@@ -57,13 +71,17 @@ query_contamination_from_index:
     # conversion_method: blackbody integrates a spectrum through the band's filter and
     #   works for any curve; gaia_empirical applies the published Gaia colour relation,
     #   only for the bands and colour ranges it was calibrated on; auto uses that
-    #   relation where it applies and blackbody elsewhere. phoenix needs external data.
+    #   relation where it applies and blackbody elsewhere; phoenix interpolates a
+    #   prepared local PHOENIX/BT-Settl grid and normalizes it on Gaia G.
     # Omit the block to skip the conversion entirely.
     photometric_conversion:
     #   output_band: tess
     #   conversion_method: blackbody
     #   filter_file:
     #   catalog: gaia_dr3
+    #   phoenix_grid_path: data/phoenix_grid
+    #   apply_extinction: false
+    #   extinction_rv: 3.1
     contamination_model:
       mode: gaussian_psf
       gaussian_fwhm_arcsec: 120.0

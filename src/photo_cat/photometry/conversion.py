@@ -5,11 +5,12 @@
 Two families of method live here, sharing one interface so the rest of PHOTO-CAT
 never learns which one ran:
 
-- SED-based (``blackbody``, and ``phoenix`` once its grid exists). Per source:
+- SED-based (``blackbody`` and local-grid ``phoenix``). Per source:
   colour -> effective temperature -> output/anchor flux ratio -> output-band
   magnitude. The heavy synthetic photometry (integrating the SED through each
   filter) is done once on a temperature grid at construction; per-source work is
-  two vectorised ``np.interp`` calls, so converting a whole catalogue is O(N).
+  two vectorised ``np.interp`` calls for blackbody; PHOENIX interpolates the
+  configured Teff/logg/[M/H] grid and caches its corner spectra.
   This is the only family that works for an arbitrary transmission curve, which
   is what mission passbands and SVO filters need.
 - Empirical (``gaia_empirical``). A published polynomial in the catalogue colour,
@@ -40,6 +41,11 @@ import numpy as np
 from .catalogs import CatalogSpec, resolve_catalog
 from .filters import FilterCurve, load_filter
 from .library import library_filter_path, load_library_filter, normalized_band_key, resolve_output_filter
+from .phoenix import (
+    PhoenixGrid,
+    PhoenixGridCoverageError,
+    convert_phoenix_photometry,
+)
 from .sed import SED_MODELS
 from .transformations import ColourTransformation, find_transformation, require_transformation
 
@@ -71,6 +77,7 @@ STATUS_NAMES = {
 APPLIED_NONE = 0
 APPLIED_SED = 1
 APPLIED_EMPIRICAL = 2
+APPLIED_PHOENIX = 3
 
 # Blackbody-equivalent colour temperature is only meaningful over a stellar range;
 # the grid is dense enough that linear interpolation is exact to well under a kelvin.
@@ -91,6 +98,9 @@ class ConversionResult:
     # single-method run; genuinely per-source under ``auto``.
     applied_method: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.uint8))
     summary: dict[str, Any] = field(default_factory=dict)
+    # Optional aligned arrays with model provenance and PHOENIX diagnostics.  The
+    # contamination algorithm ignores these; result serialization can expose them.
+    diagnostics: dict[str, np.ndarray] = field(default_factory=dict)
 
 
 def _conversion_summary(
@@ -181,6 +191,9 @@ class PhotometricConverter:
         self.output_filter = output_filter
         self.method = method
         self._status_name = _status_name
+        self.required_magnitude_bands = catalog.required_bands
+        self.optional_magnitude_bands: tuple[str, ...] = ()
+        self.required_stellar_parameters: tuple[str, ...] = ()
 
         sed_model = SED_MODELS[method]
         teff_grid = np.linspace(_TEFF_MIN_K, _TEFF_MAX_K, _TEFF_GRID_POINTS)
@@ -274,6 +287,300 @@ class PhotometricConverter:
         )
 
 
+PHOENIX_PRIMARY_PARAMETERS = (
+    "teff_gspphot_phoenix",
+    "logg_gspphot_phoenix",
+    "mh_gspphot_phoenix",
+)
+PHOENIX_PARAMETER_KEYS = (
+    *PHOENIX_PRIMARY_PARAMETERS,
+    "teff_gspphot_phoenix_lower",
+    "teff_gspphot_phoenix_upper",
+    "logg_gspphot_phoenix_lower",
+    "logg_gspphot_phoenix_upper",
+    "mh_gspphot_phoenix_lower",
+    "mh_gspphot_phoenix_upper",
+    "teff_gspspec",
+    "logg_gspspec",
+    "mh_gspspec",
+    "teff_gspphot",
+    "logg_gspphot",
+    "mh_gspphot",
+    "mass_flame",
+    "radius_flame",
+    "azero_gspphot_phoenix",
+)
+
+
+def _aligned_optional_array(
+    arrays: dict[str, np.ndarray], key: str, shape: tuple[int, ...]
+) -> np.ndarray:
+    """Return one optional finite-value input, or an aligned all-NaN array."""
+    value = arrays.get(key)
+    if value is None:
+        return np.full(shape, np.nan, dtype=np.float64)
+    result = np.asarray(value, dtype=np.float64)
+    if result.ndim != 1 or result.shape != shape:
+        raise ValueError(f"PHOENIX input array {key!r} must be an aligned 1-D array.")
+    return result
+
+
+def _select_phoenix_parameters(
+    arrays: dict[str, np.ndarray],
+    shape: tuple[int, ...],
+    colour_temperature: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Apply the documented Gaia parameter hierarchy for each catalogue source."""
+    candidates = {
+        key: _aligned_optional_array(arrays, key, shape)
+        for key in (
+            *PHOENIX_PRIMARY_PARAMETERS,
+            "teff_gspspec",
+            "logg_gspspec",
+            "mh_gspspec",
+            "teff_gspphot",
+            "logg_gspphot",
+            "mh_gspphot",
+            "mass_flame",
+            "radius_flame",
+        )
+    }
+    teff = np.full(shape, np.nan, dtype=np.float64)
+    logg = np.full(shape, np.nan, dtype=np.float64)
+    mh = np.full(shape, np.nan, dtype=np.float64)
+    teff_source = np.full(shape, "missing", dtype="U32")
+    logg_source = np.full(shape, "missing", dtype="U32")
+    mh_source = np.full(shape, "missing", dtype="U32")
+    quality = np.full(shape, "unavailable", dtype="U16")
+
+    source_groups = (
+        ("Gaia_GSPPhot_PHOENIX", PHOENIX_PRIMARY_PARAMETERS, "high"),
+        ("Gaia_GSPSpec", ("teff_gspspec", "logg_gspspec", "mh_gspspec"), "medium"),
+        ("Gaia_GSPPhot_best", ("teff_gspphot", "logg_gspphot", "mh_gspphot"), "medium"),
+    )
+    unresolved = np.ones(shape, dtype=bool)
+    for source_name, keys, source_quality in source_groups:
+        values = [candidates[key] for key in keys]
+        complete = unresolved & np.isfinite(values[0]) & np.isfinite(values[1]) & np.isfinite(values[2])
+        teff[complete], logg[complete], mh[complete] = (
+            values[0][complete],
+            values[1][complete],
+            values[2][complete],
+        )
+        teff_source[complete] = source_name
+        logg_source[complete] = source_name
+        mh_source[complete] = source_name
+        quality[complete] = source_quality
+        unresolved &= ~complete
+
+    # If no pipeline produced a complete triplet, retain the strongest available
+    # estimate for each individual parameter before using explicit assumptions.
+    individual_sources = (
+        ("Gaia_GSPPhot_PHOENIX", PHOENIX_PRIMARY_PARAMETERS),
+        ("Gaia_GSPSpec", ("teff_gspspec", "logg_gspspec", "mh_gspspec")),
+        ("Gaia_GSPPhot_best", ("teff_gspphot", "logg_gspphot", "mh_gspphot")),
+    )
+    for source_name, keys in individual_sources:
+        for output, source_output, key in (
+            (teff, teff_source, keys[0]),
+            (logg, logg_source, keys[1]),
+            (mh, mh_source, keys[2]),
+        ):
+            use = unresolved & ~np.isfinite(output) & np.isfinite(candidates[key])
+            output[use] = candidates[key][use]
+            source_output[use] = source_name
+
+    # FLAME masses/radii are in solar units. logg_sun = 4.438 (cgs).
+    mass = candidates["mass_flame"]
+    radius = candidates["radius_flame"]
+    use_flame = unresolved & ~np.isfinite(logg) & (mass > 0.0) & (radius > 0.0)
+    logg[use_flame] = 4.438 + np.log10(mass[use_flame]) - 2.0 * np.log10(radius[use_flame])
+    logg_source[use_flame] = "Gaia_FLAME_mass_radius"
+
+    use_colour = unresolved & ~np.isfinite(teff) & np.isfinite(colour_temperature)
+    teff[use_colour] = colour_temperature[use_colour]
+    teff_source[use_colour] = "Gaia_BP_RP_relation"
+
+    # A solar prior is allowed only after every measured metallicity source failed.
+    assume_solar = unresolved & ~np.isfinite(mh) & np.isfinite(teff) & np.isfinite(logg)
+    mh[assume_solar] = 0.0
+    mh_source[assume_solar] = "assumed_solar"
+
+    complete_mixed = unresolved & np.isfinite(teff) & np.isfinite(logg) & np.isfinite(mh)
+    quality[complete_mixed] = "low"
+    return teff, logg, mh, teff_source, logg_source, mh_source, quality
+
+
+class PhoenixConverter:
+    """Convert Gaia G to a target band with a local interpolated PHOENIX SED.
+
+    PHOENIX is attempted source by source.  Missing/uncovered/invalid atmospheric
+    solutions fall back to the existing blackbody converter when BP/RP are present;
+    no change is made to the downstream contamination calculation.
+    """
+
+    def __init__(
+        self,
+        catalog: CatalogSpec,
+        output_filter: FilterCurve,
+        anchor_filter: FilterCurve,
+        grid: PhoenixGrid,
+        fallback: PhotometricConverter,
+        *,
+        apply_extinction: bool = False,
+        extinction_rv: float = 3.1,
+    ) -> None:
+        self.catalog = catalog
+        self.output_filter = output_filter
+        self.anchor_filter = anchor_filter
+        self.grid = grid
+        self.fallback = fallback
+        self.method = "phoenix"
+        self.is_identity = output_filter.sha256 == anchor_filter.sha256
+        self.apply_extinction = bool(apply_extinction)
+        self.extinction_rv = float(extinction_rv)
+        self.required_magnitude_bands = (catalog.anchor_band,)
+        self.optional_magnitude_bands = catalog.colour_bands
+        self.required_stellar_parameters = PHOENIX_PARAMETER_KEYS
+        self.metadata: dict[str, Any] = {
+            "catalog": catalog.name,
+            "output_band": output_filter.name,
+            "conversion_method": self.method,
+            "anchor_band": catalog.anchor_band,
+            "normalization_band": catalog.band_filters.get(catalog.anchor_band, catalog.anchor_band),
+            "filter_used": output_filter.metadata(),
+            "phoenix_grid_index": str(grid.index_path),
+            "phoenix_grid_bounds": grid.bounds,
+            "apply_extinction": self.apply_extinction,
+            "extinction_law": "CCM89_RV" if self.apply_extinction else None,
+            "extinction_rv": self.extinction_rv if self.apply_extinction else None,
+            "fallback_method": fallback.method,
+        }
+
+    def _fallback_result(self, arrays: dict[str, np.ndarray], shape: tuple[int, ...]) -> ConversionResult:
+        if all(band in arrays for band in self.catalog.required_bands):
+            return self.fallback.convert(arrays)
+        status = np.full(shape, STATUS_MISSING_INPUT, dtype=np.uint8)
+        applied = np.full(shape, APPLIED_NONE, dtype=np.uint8)
+        return ConversionResult(
+            np.full(shape, np.nan),
+            np.full(shape, np.nan),
+            status,
+            self.fallback.metadata,
+            applied,
+            _conversion_summary(status, applied, {APPLIED_SED: self.fallback.method}),
+        )
+
+    def convert(self, magnitude_arrays: dict[str, np.ndarray]) -> ConversionResult:
+        """Convert aligned catalogue arrays, retaining a diagnostic for every row."""
+        if self.catalog.anchor_band not in magnitude_arrays:
+            raise ValueError(
+                f"PHOENIX normalization requires magnitude band {self.catalog.anchor_band!r}."
+            )
+        anchor = np.asarray(magnitude_arrays[self.catalog.anchor_band], dtype=np.float64)
+        if anchor.ndim != 1:
+            raise ValueError("PHOENIX magnitude arrays must be aligned 1-D arrays.")
+        shape = anchor.shape
+        fallback = self._fallback_result(magnitude_arrays, shape)
+        colour_temperature = fallback.effective_temperature
+        teff, logg, mh, teff_source, logg_source, mh_source, quality = _select_phoenix_parameters(
+            magnitude_arrays, shape, colour_temperature
+        )
+        azero = _aligned_optional_array(magnitude_arrays, "azero_gspphot_phoenix", shape)
+
+        out_magnitudes = np.full(shape, np.nan, dtype=np.float64)
+        target_flux = np.full(shape, np.nan, dtype=np.float64)
+        normalization = np.full(shape, np.nan, dtype=np.float64)
+        effective_temperature = np.full(shape, np.nan, dtype=np.float64)
+        status = np.full(shape, STATUS_MISSING_INPUT, dtype=np.uint8)
+        applied = np.full(shape, APPLIED_NONE, dtype=np.uint8)
+        sed_model = np.full(shape, "none", dtype="U16")
+        fallback_reason = np.full(shape, "", dtype="U48")
+        extinction_applied = np.zeros(shape, dtype=bool)
+
+        for index in range(anchor.size):
+            if not np.isfinite(anchor[index]):
+                fallback_reason[index] = "missing_gaia_g_magnitude"
+                continue
+            if not (np.isfinite(teff[index]) and np.isfinite(logg[index]) and np.isfinite(mh[index])):
+                fallback_reason[index] = "missing_phoenix_parameters"
+            else:
+                try:
+                    photometry = convert_phoenix_photometry(
+                        self.grid,
+                        teff=float(teff[index]),
+                        logg=float(logg[index]),
+                        mh=float(mh[index]),
+                        gaia_g_magnitude=float(anchor[index]),
+                        gaia_g_filter=self.anchor_filter,
+                        target_filter=self.output_filter,
+                        azero=(float(azero[index]) if np.isfinite(azero[index]) else None),
+                        apply_extinction=self.apply_extinction,
+                        extinction_rv=self.extinction_rv,
+                        quality=str(quality[index]),
+                    )
+                except PhoenixGridCoverageError:
+                    fallback_reason[index] = "outside_phoenix_grid"
+                except ValueError:
+                    fallback_reason[index] = "invalid_phoenix_photometry"
+                else:
+                    out_magnitudes[index] = photometry.target_mag
+                    target_flux[index] = photometry.target_flux
+                    normalization[index] = photometry.normalization_factor
+                    effective_temperature[index] = photometry.teff
+                    extinction_applied[index] = photometry.extinction_applied
+                    status[index] = STATUS_VALID
+                    applied[index] = APPLIED_PHOENIX
+                    sed_model[index] = "phoenix"
+                    continue
+
+            if np.isfinite(fallback.out_magnitudes[index]):
+                out_magnitudes[index] = fallback.out_magnitudes[index]
+                target_flux[index] = 10.0 ** (-0.4 * out_magnitudes[index])
+                effective_temperature[index] = fallback.effective_temperature[index]
+                status[index] = STATUS_FALLBACK
+                applied[index] = APPLIED_SED
+                sed_model[index] = self.fallback.method
+                quality[index] = "fallback"
+
+        diagnostics: dict[str, np.ndarray] = {
+            "target_flux": target_flux,
+            "sed_model": sed_model,
+            "teff": teff,
+            "logg": logg,
+            "mh": mh,
+            "teff_source": teff_source,
+            "logg_source": logg_source,
+            "mh_source": mh_source,
+            "normalization_factor": normalization,
+            "quality": quality,
+            "fallback_reason": fallback_reason,
+            "extinction_applied": extinction_applied,
+        }
+        for key in PHOENIX_PARAMETER_KEYS:
+            if key.endswith(("_lower", "_upper")) and key in magnitude_arrays:
+                diagnostics[key] = _aligned_optional_array(magnitude_arrays, key, shape)
+
+        summary = _conversion_summary(
+            status,
+            applied,
+            {APPLIED_PHOENIX: self.method, APPLIED_SED: self.fallback.method},
+        )
+        reasons, counts = np.unique(fallback_reason[fallback_reason != ""], return_counts=True)
+        summary["fallback_reasons"] = {
+            str(reason): int(count) for reason, count in zip(reasons, counts)
+        }
+        return ConversionResult(
+            out_magnitudes=out_magnitudes,
+            effective_temperature=effective_temperature,
+            status_codes=status,
+            metadata=self.metadata,
+            applied_method=applied,
+            summary=summary,
+            diagnostics=diagnostics,
+        )
+
+
 class EmpiricalConverter:
     """Apply one published colour relation, strictly inside its calibrated range.
 
@@ -292,6 +599,9 @@ class EmpiricalConverter:
         # A colour relation always changes the band; there is no identity shortcut.
         self.is_identity = False
         self.output_filter = None
+        self.required_magnitude_bands = catalog.required_bands
+        self.optional_magnitude_bands: tuple[str, ...] = ()
+        self.required_stellar_parameters: tuple[str, ...] = ()
         self.metadata: dict[str, Any] = {
             "catalog": catalog.name,
             "output_band": self.output_band,
@@ -340,6 +650,9 @@ class AutoConverter:
         self.fallback = fallback
         self.is_identity = False
         self.output_filter = None if fallback is None else fallback.output_filter
+        self.required_magnitude_bands = self.catalog.required_bands
+        self.optional_magnitude_bands: tuple[str, ...] = ()
+        self.required_stellar_parameters: tuple[str, ...] = ()
         self.metadata: dict[str, Any] = {
             **empirical.metadata,
             "conversion_method": METHOD_AUTO,
@@ -386,7 +699,7 @@ class AutoConverter:
         )
 
 
-BandConverter = PhotometricConverter | EmpiricalConverter | AutoConverter
+BandConverter = PhotometricConverter | PhoenixConverter | EmpiricalConverter | AutoConverter
 
 
 def _output_band_has_filter(output_band: str, filter_file: str | None) -> bool:
@@ -431,11 +744,50 @@ def _build_sed_converter(
     )
 
 
+def _build_phoenix_converter(
+    catalog: CatalogSpec,
+    output_band: str,
+    filter_file: str | None,
+    phoenix_grid_path: str | None,
+    apply_extinction: bool,
+    extinction_rv: float,
+) -> PhoenixConverter:
+    """Assemble the atmospheric-grid converter and its existing blackbody fallback."""
+    if phoenix_grid_path is None:
+        raise ValueError(
+            "conversion_method 'phoenix' requires a local phoenix_grid_path containing "
+            "grid_index.csv and the referenced spectra."
+        )
+    output_filter = resolve_output_filter(output_band, filter_file)
+    if output_filter.is_nominal:
+        warnings.warn(
+            f"Output band '{output_band}' uses a NOMINAL approximate passband, not an "
+            "official instrument response. Results are indicative only; install the "
+            "official transmission curve for quantitative work.",
+            stacklevel=2,
+        )
+    anchor_band = catalog.band_filters.get(catalog.anchor_band, catalog.anchor_band)
+    anchor_filter = load_library_filter(anchor_band)
+    fallback = _build_sed_converter(catalog, output_band, "blackbody", filter_file)
+    return PhoenixConverter(
+        catalog,
+        output_filter,
+        anchor_filter,
+        PhoenixGrid(phoenix_grid_path),
+        fallback,
+        apply_extinction=apply_extinction,
+        extinction_rv=extinction_rv,
+    )
+
+
 def build_converter(
     catalog: CatalogSpec,
     output_band: str,
     conversion_method: str,
     filter_file: str | None,
+    phoenix_grid_path: str | None = None,
+    apply_extinction: bool = False,
+    extinction_rv: float = 3.1,
 ) -> BandConverter:
     """Assemble the converter for one method, output band, and catalogue."""
     if (conversion_method not in SUPPORTED_CONVERSION_METHODS):
@@ -470,6 +822,16 @@ def build_converter(
             )
         return AutoConverter(EmpiricalConverter(catalog, output_band, transformation), fallback)
 
+    if (conversion_method == "phoenix"):
+        return _build_phoenix_converter(
+            catalog,
+            output_band,
+            filter_file,
+            phoenix_grid_path,
+            apply_extinction,
+            extinction_rv,
+        )
+
     return _build_sed_converter(catalog, output_band, conversion_method, filter_file)
 
 
@@ -479,10 +841,21 @@ def convert_magnitudes(
     conversion_method: str = "blackbody",
     filter_file: str | None = None,
     catalog: str | None = None,
+    phoenix_grid_path: str | None = None,
+    apply_extinction: bool = False,
+    extinction_rv: float = 3.1,
 ) -> ConversionResult:
     """Convenience wrapper: resolve the catalogue, build a converter, convert once."""
     spec = resolve_catalog(catalog)
-    converter = build_converter(spec, output_band, conversion_method, filter_file)
+    converter = build_converter(
+        spec,
+        output_band,
+        conversion_method,
+        filter_file,
+        phoenix_grid_path,
+        apply_extinction,
+        extinction_rv,
+    )
     return converter.convert(magnitude_arrays)
 
 
@@ -493,6 +866,8 @@ __all__ = [
     "ConversionResult",
     "EmpiricalConverter",
     "PhotometricConverter",
+    "PhoenixConverter",
+    "PHOENIX_PARAMETER_KEYS",
     "build_converter",
     "convert_magnitudes",
     "load_filter",

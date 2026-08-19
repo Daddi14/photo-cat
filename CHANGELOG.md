@@ -40,6 +40,14 @@ Releases before 3.0.0 are documented in the
 - GUI note under the conversion-method picker stating which relation will run,
   over what colour range and with what published scatter, and warning when the
   selected band and method cannot be paired.
+- Working `conversion_method: phoenix`: local PHOENIX/BT-Settl grid loading,
+  complete-cell interpolation in Teff/logg/[M/H], photon-counting synthetic
+  photometry through the existing filters, Gaia-G normalization, and optional
+  `azero_gspphot_phoenix` extinction.
+- `stellar_parameter_columns` index inputs and per-source PHOENIX provenance,
+  quality, normalization, retained lower/upper intervals, and explicit fallback
+  reasons. The parameter hierarchy uses GSP-Phot PHOENIX, GSP-Spec, best-library
+  GSP-Phot, parameter-specific estimates, then the existing blackbody converter.
 
 ### Changed
 

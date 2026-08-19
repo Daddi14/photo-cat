@@ -97,6 +97,10 @@ Ogni risultato per target preserva i campi documentati per:
   `missing_input`, `colour_out_of_grid`, `colour_outside_valid_range` oppure
   `converted_by_fallback_method`; `effective_temperature` è null per i metodi che
   non derivano alcuna temperatura;
+- PHOENIX aggiunge `target_flux`, `sed_model`, `teff`, `logg`, `mh`, le singole
+  provenienze dei parametri, `normalization_factor`, `quality`,
+  `extinction_applied` e `fallback_reason` ai record di target e contaminanti;
+  gli intervalli lower/upper configurati sono campi additivi;
 - frazioni di flusso scalari `*_converted` utilizzabili dagli strumenti di screening e
   validazione;
 - righe target non risolte quando richieste esplicitamente, con `status` uguale
