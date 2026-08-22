@@ -200,10 +200,10 @@ class PhoenixGrid:
                 entries: dict[tuple[float, float, float], _GridEntry] = {}
                 for row_number, row in enumerate(reader, start=2):
                     try:
-                        teff = float(row[teff_column])  # type: ignore[index]
-                        logg = float(row[logg_column])  # type: ignore[index]
-                        mh = float(row[mh_column])  # type: ignore[index]
-                        filename = str(row[filename_column]).strip()  # type: ignore[index]
+                        teff = float(row[teff_column])
+                        logg = float(row[logg_column])
+                        mh = float(row[mh_column])
+                        filename = str(row[filename_column]).strip()
                     except (KeyError, TypeError, ValueError) as error:
                         raise PhoenixGridError(
                             f"Invalid PHOENIX grid parameters on row {row_number}: {index_path}"
@@ -264,7 +264,12 @@ class PhoenixGrid:
             self._bracket(self._mh_axis, float(mh), "mh"),
         )
         choices = [((low,) if low == high else (low, high)) for low, high, _ in brackets]
-        corners = list(itertools.product(*choices))
+        corners: list[tuple[float, float, float]] = [
+            (teff_corner, logg_corner, mh_corner)
+            for teff_corner, logg_corner, mh_corner in itertools.product(
+                choices[0], choices[1], choices[2]
+            )
+        ]
         missing = [corner for corner in corners if corner not in self._entries]
         if missing:
             raise PhoenixGridCoverageError(
@@ -407,9 +412,10 @@ def convert_phoenix_photometry(
     if not np.isfinite(gaia_g_magnitude):
         raise ValueError("Gaia G magnitude must be finite for PHOENIX normalization.")
     spectrum = grid.interpolate(teff, logg, mh)
-    extinction_applied = bool(apply_extinction and azero is not None and np.isfinite(azero))
-    if extinction_applied:
-        transmission = extinction_transmission(spectrum.wavelength_nm, float(azero), extinction_rv)
+    extinction_applied = False
+    if apply_extinction and azero is not None and np.isfinite(azero):
+        extinction_applied = True
+        transmission = extinction_transmission(spectrum.wavelength_nm, azero, extinction_rv)
         spectrum = PhoenixSpectrum(
             spectrum.wavelength_nm,
             spectrum.photon_flux_density * transmission,
