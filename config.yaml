@@ -27,20 +27,54 @@ build_neighbors_index:
       # Uncomment when your catalogue provides them.
       # gaia_bp: phot_bp_mean_mag
       # gaia_rp: phot_rp_mean_mag
-    # Optional atmospheric arrays used by conversion_method: phoenix. Configure
-    # every column present in the input; missing values remain eligible for the
-    # documented GSP-Spec/GSP-Phot/parameter/blackbody fallbacks.
+    # Atmospheric columns read by conversion_method: phoenix. Every column the code
+    # can use is listed below, so the set does not have to be looked up elsewhere.
+    #
+    # The name on the LEFT is fixed: it is what PHOTO-CAT reads. The value on the
+    # RIGHT is the column in your own catalogue, pre-filled with the Gaia archive
+    # name, so a straight Gaia dump only needs the lines uncommented. Delete or
+    # retarget any line whose column your file does not have.
+    #
+    # [required] PHOENIX needs Teff, log g and [M/H] together. They may come from
+    # any one of groups 1-3: the first group that is complete wins, per source, so
+    # listing more than one group only widens coverage and never conflicts. A source
+    # with no complete group falls back parameter by parameter, and finally to the
+    # blackbody method, with the substitution recorded in the result.
+    #
+    # [optional] Everything below group 3 improves or documents the result but is
+    # never required.
     stellar_parameter_columns:
+      # --- group 1 [required, preferred]: GSP-Phot fitted with the PHOENIX library
       # teff_gspphot_phoenix: teff_gspphot_phoenix
       # logg_gspphot_phoenix: logg_gspphot_phoenix
       # mh_gspphot_phoenix: mh_gspphot_phoenix
+      #
+      # --- group 2 [required, alternative]: GSP-Spec, derived from the RVS spectra
+      # teff_gspspec: teff_gspspec
+      # logg_gspspec: logg_gspspec
+      # mh_gspspec: mh_gspspec
+      #
+      # --- group 3 [required, alternative]: GSP-Phot best-library solution.
+      #     Note these are NOT the PHOENIX-specific columns of group 1.
+      # teff_gspphot: teff_gspphot
+      # logg_gspphot: logg_gspphot
+      # mh_gspphot: mh_gspphot
+      #
+      # --- [optional] per-parameter fallback: log g derived from mass and radius
+      # mass_flame: mass_flame
+      # radius_flame: radius_flame
+      #
+      # --- [optional] extinction applied to the model spectrum when present
+      # azero_gspphot_phoenix: azero_gspphot_phoenix
+      #
+      # --- [optional] 16th/84th percentile bounds. Recorded for provenance; not yet
+      #     propagated into the converted magnitude.
       # teff_gspphot_phoenix_lower: teff_gspphot_phoenix_lower
       # teff_gspphot_phoenix_upper: teff_gspphot_phoenix_upper
       # logg_gspphot_phoenix_lower: logg_gspphot_phoenix_lower
       # logg_gspphot_phoenix_upper: logg_gspphot_phoenix_upper
       # mh_gspphot_phoenix_lower: mh_gspphot_phoenix_lower
       # mh_gspphot_phoenix_upper: mh_gspphot_phoenix_upper
-      # azero_gspphot_phoenix: azero_gspphot_phoenix
   settings:
     use_dask: true
     calculate_separations: false

@@ -241,3 +241,22 @@ execution:
 
     manifest = json.loads((output_dir / "index_manifest.json").read_text(encoding="utf-8"))
     assert set(manifest["stellar_parameters"]) == set(PHOENIX_PRIMARY_PARAMETERS)
+
+
+@pytest.mark.regression
+def test_the_shipped_config_lists_every_stellar_parameter_column(project_root: Path) -> None:
+    """config.yaml must offer every column the PHOENIX path can read.
+
+    The template is the only place a user discovers which columns exist, so a key
+    added to the code and not to the template is invisible: that is how the
+    GSP-Spec, GSP-Phot and FLAME fallbacks came to be supported but undiscoverable.
+    """
+    import re
+
+    from photo_cat.photometry.conversion import PHOENIX_PARAMETER_KEYS
+
+    template = (project_root / "config.yaml").read_text(encoding="utf-8")
+    listed = set(re.findall(r"#\s+([a-z_]+):\s+[a-z_]+", template))
+
+    missing = [key for key in PHOENIX_PARAMETER_KEYS if key not in listed]
+    assert missing == [], f"columns read by the code but absent from config.yaml: {missing}"
