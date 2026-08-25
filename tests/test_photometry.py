@@ -150,15 +150,24 @@ def test_custom_output_band_requires_a_filter_file(tmp_path: Path) -> None:
     assert converter.output_filter.name == "custom"
 
 
-@pytest.mark.unit
-def test_phoenix_is_selectable_but_unavailable() -> None:
-    """An unimplemented SED model is accepted for selection but fails with guidance."""
-    with pytest.raises(ValueError, match="phoenix"):
-        convert_magnitudes(
-            {"gaia_g": np.array([12.0]), "gaia_bp": np.array([12.4]), "gaia_rp": np.array([11.6])},
-            "gaia_rp",
-            "phoenix",
-        )
+@pytest.mark.regression
+def test_phoenix_needs_no_locally_installed_grid() -> None:
+    """The method must be usable without the user first obtaining a spectrum grid.
+
+    Requiring one made phoenix unselectable in practice: nobody has a grid lying
+    around, and the nodes a run needs are a tiny part of any of them. Building the
+    converter must therefore succeed with no grid path, and reach for nodes only
+    when a source actually needs one.
+    """
+    converter = build_converter(GAIA_DR3, "tess", "phoenix", None)
+
+    assert converter.method == "phoenix"
+    # The atmospheric grid is consulted per source, so an unparameterised catalogue
+    # still converts: it simply falls back, which is the documented behaviour.
+    result = converter.convert(
+        {"gaia_g": np.array([12.0]), "gaia_bp": np.array([12.4]), "gaia_rp": np.array([11.6])}
+    )
+    assert np.isfinite(result.out_magnitudes[0])
 
 
 @pytest.mark.unit

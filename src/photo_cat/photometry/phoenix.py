@@ -27,7 +27,7 @@ import itertools
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
 import numpy as np
 
@@ -394,8 +394,18 @@ def synthetic_photometry(spectrum: PhoenixSpectrum, filter_curve: FilterCurve) -
     return flux
 
 
+class SpectrumSource(Protocol):
+    """Anything that can produce a model spectrum at a set of parameters.
+
+    The conversion only ever asks a grid for one spectrum, so a local directory of
+    files and a grid that fetches its nodes on demand are interchangeable here.
+    """
+
+    def interpolate(self, teff: float, logg: float, mh: float) -> PhoenixSpectrum: ...
+
+
 def convert_phoenix_photometry(
-    grid: PhoenixGrid,
+    grid: SpectrumSource,
     *,
     teff: float,
     logg: float,

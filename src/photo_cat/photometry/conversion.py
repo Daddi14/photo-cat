@@ -38,6 +38,7 @@ from typing import Any, Callable
 
 import numpy as np
 
+from .atmospheres import RemoteAtmosphereGrid
 from .catalogs import CatalogSpec, resolve_catalog
 from .filters import FilterCurve, load_filter
 from .library import library_filter_path, load_library_filter, normalized_band_key, resolve_output_filter
@@ -303,6 +304,9 @@ PHOENIX_PARAMETER_KEYS = (
     "teff_gspspec",
     "logg_gspspec",
     "mh_gspspec",
+    "teff_gspspec_ann",
+    "logg_gspspec_ann",
+    "mh_gspspec_ann",
     "teff_gspphot",
     "logg_gspphot",
     "mh_gspphot",
@@ -338,6 +342,9 @@ def _select_phoenix_parameters(
             "teff_gspspec",
             "logg_gspspec",
             "mh_gspspec",
+            "teff_gspspec_ann",
+            "logg_gspspec_ann",
+            "mh_gspspec_ann",
             "teff_gspphot",
             "logg_gspphot",
             "mh_gspphot",
@@ -356,6 +363,7 @@ def _select_phoenix_parameters(
     source_groups = (
         ("Gaia_GSPPhot_PHOENIX", PHOENIX_PRIMARY_PARAMETERS, "high"),
         ("Gaia_GSPSpec", ("teff_gspspec", "logg_gspspec", "mh_gspspec"), "medium"),
+        ("Gaia_GSPSpec_ANN", ("teff_gspspec_ann", "logg_gspspec_ann", "mh_gspspec_ann"), "medium"),
         ("Gaia_GSPPhot_best", ("teff_gspphot", "logg_gspphot", "mh_gspphot"), "medium"),
     )
     unresolved = np.ones(shape, dtype=bool)
@@ -378,6 +386,7 @@ def _select_phoenix_parameters(
     individual_sources = (
         ("Gaia_GSPPhot_PHOENIX", PHOENIX_PRIMARY_PARAMETERS),
         ("Gaia_GSPSpec", ("teff_gspspec", "logg_gspspec", "mh_gspspec")),
+        ("Gaia_GSPSpec_ANN", ("teff_gspspec_ann", "logg_gspspec_ann", "mh_gspspec_ann")),
         ("Gaia_GSPPhot_best", ("teff_gspphot", "logg_gspphot", "mh_gspphot")),
     )
     for source_name, keys in individual_sources:
@@ -424,7 +433,7 @@ class PhoenixConverter:
         catalog: CatalogSpec,
         output_filter: FilterCurve,
         anchor_filter: FilterCurve,
-        grid: PhoenixGrid,
+        grid: PhoenixGrid | RemoteAtmosphereGrid,
         fallback: PhotometricConverter,
         *,
         apply_extinction: bool = False,
@@ -753,11 +762,12 @@ def _build_phoenix_converter(
     extinction_rv: float,
 ) -> PhoenixConverter:
     """Assemble the atmospheric-grid converter and its existing blackbody fallback."""
-    if phoenix_grid_path is None:
-        raise ValueError(
-            "conversion_method 'phoenix' requires a local phoenix_grid_path containing "
-            "grid_index.csv and the referenced spectra."
-        )
+    # No local grid is required: without one the nodes a source needs are fetched
+    # from the published grid and cached, so the method works out of the box and
+    # phoenix_grid_path stays an option for an installation that already has one.
+    grid: PhoenixGrid | RemoteAtmosphereGrid = (
+        RemoteAtmosphereGrid() if phoenix_grid_path is None else PhoenixGrid(phoenix_grid_path)
+    )
     output_filter = resolve_output_filter(output_band, filter_file)
     if output_filter.is_nominal:
         warnings.warn(
@@ -773,7 +783,7 @@ def _build_phoenix_converter(
         catalog,
         output_filter,
         anchor_filter,
-        PhoenixGrid(phoenix_grid_path),
+        grid,
         fallback,
         apply_extinction=apply_extinction,
         extinction_rv=extinction_rv,

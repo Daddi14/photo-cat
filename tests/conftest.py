@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from photo_cat.index_manifest import IndexManifest, write_index_manifest
+from photo_cat.photometry.atmospheres import GRID_CACHE_DIR_ENV
 from photo_cat.photometry.library import USER_FILTERS_DIR_ENV
 
 
@@ -33,6 +34,9 @@ def isolated_filter_library(tmp_path_factory: pytest.TempPathFactory):
     """
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path_factory.mktemp("user_filters")))
+        # The atmosphere cache is isolated for the same reason, and additionally so
+        # that no test can reach the network by finding a node absent from it.
+        patch.setenv(GRID_CACHE_DIR_ENV, str(tmp_path_factory.mktemp("grid_cache")))
         yield
 
 

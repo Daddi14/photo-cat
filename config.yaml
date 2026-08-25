@@ -54,6 +54,12 @@ build_neighbors_index:
       # logg_gspspec: logg_gspspec
       # mh_gspspec: mh_gspspec
       #
+      # --- group 2b [required, alternative]: GSP-Spec ANN solution, a separate
+      #     pipeline that covers sources the one above does not
+      # teff_gspspec_ann: teff_gspspec_ann
+      # logg_gspspec_ann: logg_gspspec_ann
+      # mh_gspspec_ann: mh_gspspec_ann
+      #
       # --- group 3 [required, alternative]: GSP-Phot best-library solution.
       #     Note these are NOT the PHOENIX-specific columns of group 1.
       # teff_gspphot: teff_gspphot

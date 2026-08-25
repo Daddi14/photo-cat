@@ -51,6 +51,15 @@ def _platform_data_dir() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
 
 
+def user_data_root() -> Path:
+    """Return the per-user directory PHOTO-CAT keeps downloaded data under.
+
+    Shared by the filter library and the atmosphere-grid cache so both land in one
+    place the user can find, back up, or delete as a unit.
+    """
+    return _platform_data_dir() / "photo-cat"
+
+
 def user_filters_root() -> Path:
     """Return the writable directory downloaded and user-added filters live in.
 
@@ -61,7 +70,7 @@ def user_filters_root() -> Path:
     override = os.environ.get(USER_FILTERS_DIR_ENV, "").strip()
     if (override):
         return Path(override).expanduser().resolve()
-    return _platform_data_dir() / "photo-cat" / "filters"
+    return user_data_root() / "filters"
 
 
 def normalized_band_key(value: str) -> str:
