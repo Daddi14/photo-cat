@@ -130,6 +130,7 @@ from .index_manifest import (
 from .logger_setup import USE_COLOR, get_logger
 from .load_config import BuildConfig, load_config
 from .path_policy import ensure_directory, index_paths
+from .photometry.conversion import GAIA_LIBRARY_CODES
 from .pipeline_display import ActivityBar, tqdm_options
 
 
@@ -418,8 +419,18 @@ def load_star_dataframe(
 
     # Atmospheric quantities are optional per row: coerce malformed/missing
     # values to NaN and let the query-time PHOENIX decision tree choose a fallback.
+    # Columns naming a Gaia library are text, and coercing them would silently make
+    # every row NaN, so they are encoded first and decoded again in the result.
     for parameter in stellar_parameter_columns:
         parameter_column = f"parameter_{safe_band_name(parameter)}"
+        if (parameter.startswith("libname")):
+            star_dataframe[parameter_column] = (
+                star_dataframe[parameter_column]
+                .astype("string")
+                .str.strip()
+                .str.upper()
+                .map(GAIA_LIBRARY_CODES)
+            )
         star_dataframe[parameter_column] = pd.to_numeric(
             star_dataframe[parameter_column], errors="coerce"
         )

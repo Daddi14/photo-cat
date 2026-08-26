@@ -321,7 +321,18 @@ PHOENIX_PARAMETER_KEYS = (
     "mass_flame",
     "radius_flame",
     "azero_gspphot_phoenix",
+    "logposterior_gspphot_phoenix",
+    "mcmcaccept_gspphot_phoenix",
+    "libname_best_gspphot",
 )
+
+# GSP-Phot fits four libraries and reports which one won. The name is text, and the
+# stellar-parameter arrays are numeric throughout, so the build stage stores a code
+# and the result decodes it. Keeping it is provenance only: it says which library
+# produced the *_gspphot columns, and must not be read as a statement about whether
+# the PHOENIX-specific columns exist, which is a separate question.
+GAIA_LIBRARY_CODES: dict[str, int] = {"PHOENIX": 1, "MARCS": 2, "A": 3, "OB": 4}
+GAIA_LIBRARY_NAMES: dict[int, str] = {code: name for name, code in GAIA_LIBRARY_CODES.items()}
 
 
 def _aligned_optional_array(
@@ -626,6 +637,18 @@ class PhoenixConverter:
             "fallback_reason": fallback_reason,
             "extinction_applied": extinction_applied,
         }
+
+        # Provenance and fit diagnostics, carried through untouched. The library name
+        # says which of the four GSP-Phot libraries produced the *_gspphot columns; it
+        # is deliberately not used to decide anything, because the PHOENIX-specific
+        # columns can exist whichever library won the overall fit.
+        library_codes = _aligned_optional_array(magnitude_arrays, "libname_best_gspphot", shape)
+        best_library = np.full(shape, "", dtype="U8")
+        for code, name in GAIA_LIBRARY_NAMES.items():
+            best_library[library_codes == code] = name
+        diagnostics["gaia_best_library"] = best_library
+        for key in ("logposterior_gspphot_phoenix", "mcmcaccept_gspphot_phoenix"):
+            diagnostics[key] = _aligned_optional_array(magnitude_arrays, key, shape)
         for key in PHOENIX_PARAMETER_KEYS:
             if key.endswith(("_lower", "_upper")) and key in magnitude_arrays:
                 diagnostics[key] = _aligned_optional_array(magnitude_arrays, key, shape)

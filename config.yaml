@@ -73,6 +73,14 @@ build_neighbors_index:
       # --- [optional] extinction applied to the model spectrum when present
       # azero_gspphot_phoenix: azero_gspphot_phoenix
       #
+      # --- [optional] provenance and fit quality, recorded in the result and never
+      #     used to decide anything. libname_best_gspphot names which of the four
+      #     GSP-Phot libraries won the overall fit; it does NOT say whether the
+      #     PHOENIX-specific columns of group 1 exist, which is a separate question.
+      # libname_best_gspphot: libname_best_gspphot
+      # logposterior_gspphot_phoenix: logposterior_gspphot_phoenix
+      # mcmcaccept_gspphot_phoenix: mcmcaccept_gspphot_phoenix
+      #
       # --- [optional] 16th/84th percentile bounds. Recorded for provenance; not yet
       #     propagated into the converted magnitude.
       # teff_gspphot_phoenix_lower: teff_gspphot_phoenix_lower
@@ -112,7 +120,13 @@ query_contamination_from_index:
     #   works for any curve; gaia_empirical applies the published Gaia colour relation,
     #   only for the bands and colour ranges it was calibrated on; auto uses that
     #   relation where it applies and blackbody elsewhere; phoenix interpolates a
-    #   prepared local PHOENIX/BT-Settl grid and normalizes it on Gaia G.
+    #   model atmosphere at the source's Teff/logg/[M/H] and normalizes it on Gaia G.
+    # phoenix needs no setup: the grid nodes a run needs are fetched and cached under
+    #   the per-user data directory, and the atmosphere family follows the temperature
+    #   (BT-Settl below 7000 K, ATLAS9 to 15000 K, TLUSTY to 55000 K), always checking
+    #   that the point is really covered before using a family. Sources no installed
+    #   family suits fall back to blackbody, recorded per source.
+    #   phoenix_grid_path stays available for an installation that already has a grid.
     # Omit the block to skip the conversion entirely.
     photometric_conversion:
     #   output_band: tess

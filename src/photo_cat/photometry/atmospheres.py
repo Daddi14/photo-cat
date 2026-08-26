@@ -66,6 +66,11 @@ class AtmosphereFamily:
     svo_model: str
     index_file: str
     reference: str
+    # The temperature range this code is built for. Coverage and appropriateness are
+    # different things: a cool-star grid can hold a node at 40000 K and still be the
+    # wrong physics there, so the regime decides which family is offered first while
+    # coverage decides whether it is actually usable.
+    preferred_teff: tuple[float, float] = (0.0, float("inf"))
 
     @property
     def index_path(self) -> Path:
@@ -80,7 +85,25 @@ FAMILIES: tuple[AtmosphereFamily, ...] = (
         name="BT-Settl",
         svo_model="bt-settl",
         index_file="bt-settl.csv",
-        reference="Allard et al. (2012), RSPTA 370, 2765; grid served by the SVO Theoretical Spectra Service",
+        reference="Allard et al. (2012), RSPTA 370, 2765; served by the SVO Theoretical Spectra Service",
+        preferred_teff=(0.0, 7000.0),
+    ),
+    AtmosphereFamily(
+        name="ATLAS9",
+        svo_model="Kurucz2003",
+        index_file="atlas9.csv",
+        reference="Castelli & Kurucz (2003), IAU Symp. 210, A20; served by the SVO Theoretical Spectra Service",
+        preferred_teff=(7000.0, 15000.0),
+    ),
+    AtmosphereFamily(
+        name="TLUSTY",
+        svo_model="tlusty_mergedbin",
+        index_file="tlusty.csv",
+        reference=(
+            "Lanz & Hubeny (2003) OSTAR2002 and (2007) BSTAR2006, merged collection; "
+            "served by the SVO Theoretical Spectra Service"
+        ),
+        preferred_teff=(15000.0, 55000.0),
     ),
 )
 
@@ -188,10 +211,27 @@ def select_atmosphere_model(teff: float, logg: float, mh: float) -> ModelSelecti
     """
     if (not all(np.isfinite([teff, logg, mh]))):
         return ModelSelection(None, "incomplete_parameters")
-    for family in FAMILIES:
+
+    def prefers(family: AtmosphereFamily) -> bool:
+        low, high = family.preferred_teff
+        return low <= teff < high
+
+    # A temperature no installed code was built for gets no model at all. Coverage is
+    # a necessary condition, not a licence: a cool-star grid can hold a node at
+    # 60000 K, and using it there would be the very substitution the regimes exist to
+    # prevent. Such a source falls through to the caller's own fallback instead.
+    preferred = [family for family in FAMILIES if prefers(family)]
+    if (not preferred):
+        return ModelSelection(None, "no_model_for_this_regime")
+
+    # Within a regime the appropriate family is tried first, and the others follow
+    # only as coverage fallbacks: a point can sit inside a regime and still miss a
+    # node of that family, for instance at a gravity the grid does not reach.
+    for family in preferred + [family for family in FAMILIES if not prefers(family)]:
         nodes = load_index(family.name).bracketing_nodes(teff, logg, mh)
         if (nodes is not None):
-            return ModelSelection(family.name, "covered", nodes)
+            reason = "covered" if prefers(family) else "covered_outside_preferred_regime"
+            return ModelSelection(family.name, reason, nodes)
     return ModelSelection(None, "outside_every_grid")
 
 
