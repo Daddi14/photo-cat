@@ -38,7 +38,12 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .atmospheres import RemoteAtmosphereGrid
+from .atmospheres import (
+    RemoteAtmosphereGrid,
+    batch_band_fluxes,
+    blend_weights,
+    select_atmosphere_model,
+)
 from .catalogs import CatalogSpec, resolve_catalog
 from .filters import FilterCurve, load_filter
 from .library import library_filter_path, load_library_filter, normalized_band_key, resolve_output_filter
@@ -47,12 +52,15 @@ from .phoenix import (
     PhoenixGridCoverageError,
     convert_phoenix_photometry,
 )
+from ..logger_setup import get_logger
 from .sed import SED_MODELS
 from .transformations import ColourTransformation, find_transformation, require_transformation
 
 # np.trapezoid is the name from NumPy 2.0; NumPy 1.24-1.x only ships np.trapz.
 # getattr for both keeps mypy off the version-specific stub attribute.
 _trapezoid = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+
+logger = get_logger(__name__)
 
 METHOD_GAIA_EMPIRICAL = "gaia_empirical"
 METHOD_AUTO = "auto"
@@ -420,6 +428,14 @@ def _select_phoenix_parameters(
     return teff, logg, mh, teff_source, logg_source, mh_source, quality
 
 
+def _report_node_progress(position: int, total: int) -> None:
+    """Announce grid-node retrieval, which is the slow part of a first PHOENIX run."""
+    if (total <= 0):
+        return
+    if (position == 1 or position == total or position % 10 == 0):
+        logger.info("Retrieving atmosphere grid nodes: %d/%d", position, total)
+
+
 class PhoenixConverter:
     """Convert Gaia G to a target band with a local interpolated PHOENIX SED.
 
@@ -507,12 +523,56 @@ class PhoenixConverter:
         fallback_reason = np.full(shape, "", dtype="U48")
         extinction_applied = np.zeros(shape, dtype=bool)
 
+        # Integrating once per source put a possible download inside a loop over the
+        # whole catalogue, which on a real run reads as a hang. Integration is linear
+        # in the spectrum, so the corners can be integrated once each and the result
+        # blended per source instead, giving an identical number for a cost bounded
+        # by the grid rather than by the catalogue. Reddening is applied to the
+        # spectrum before integration and depends on the source, so it breaks that
+        # linearity and keeps the per-source route.
+        fast_ratio = np.full(anchor.shape, np.nan, dtype=np.float64)
+        if (not self.apply_extinction and isinstance(self.grid, RemoteAtmosphereGrid)):
+            usable = np.isfinite(anchor) & np.isfinite(teff) & np.isfinite(logg) & np.isfinite(mh)
+            selections = {}
+            for row in np.flatnonzero(usable):
+                choice = select_atmosphere_model(float(teff[row]), float(logg[row]), float(mh[row]))
+                if (choice.covered):
+                    selections[int(row)] = choice
+            if (selections):
+                curves = {"output": self.output_filter, "anchor": self.anchor_filter}
+                node_fluxes = batch_band_fluxes(
+                    selections.values(), curves, progress=_report_node_progress
+                )
+                for source_index, choice in selections.items():
+                    shares = blend_weights(
+                        choice, float(teff[source_index]), float(logg[source_index]), float(mh[source_index])
+                    )
+                    output_flux = sum(
+                        share * node_fluxes[node.node]["output"]
+                        for share, node in zip(shares, choice.nodes)
+                    )
+                    anchor_flux = sum(
+                        share * node_fluxes[node.node]["anchor"]
+                        for share, node in zip(shares, choice.nodes)
+                    )
+                    if (anchor_flux > 0.0 and output_flux > 0.0):
+                        fast_ratio[source_index] = output_flux / anchor_flux
+
         for index in range(anchor.size):
             if not np.isfinite(anchor[index]):
                 fallback_reason[index] = "missing_gaia_g_magnitude"
                 continue
             if not (np.isfinite(teff[index]) and np.isfinite(logg[index]) and np.isfinite(mh[index])):
                 fallback_reason[index] = "missing_phoenix_parameters"
+            elif np.isfinite(fast_ratio[index]):
+                out_magnitudes[index] = anchor[index] - 2.5 * np.log10(fast_ratio[index])
+                target_flux[index] = float(10.0 ** (-0.4 * out_magnitudes[index]))
+                normalization[index] = target_flux[index] / fast_ratio[index]
+                effective_temperature[index] = teff[index]
+                status[index] = STATUS_VALID
+                applied[index] = APPLIED_PHOENIX
+                sed_model[index] = "phoenix"
+                continue
             else:
                 try:
                     photometry = convert_phoenix_photometry(

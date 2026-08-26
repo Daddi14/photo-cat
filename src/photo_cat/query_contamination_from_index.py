@@ -140,7 +140,12 @@ from scipy.stats import ncx2
 
 from . import __version__
 from .photometry.catalogs import resolve_catalog
-from .photometry.conversion import STATUS_NAMES, build_converter
+from .photometry.conversion import (
+    STATUS_MISSING_INPUT,
+    STATUS_NAMES,
+    ConversionResult,
+    build_converter,
+)
 from .photometry.library import normalized_band_key
 from .index_manifest import (
     IndexManifest,
@@ -1572,6 +1577,63 @@ def process_target(
     return result
 
 
+
+def rows_used_by_targets(
+    targets_internal: list[int],
+    offsets: np.ndarray,
+    neighbors_mm: np.ndarray,
+    number_of_sources: int,
+) -> np.ndarray:
+    """Return a mask of the catalogue rows the contamination step will read.
+
+    Only the targets and the neighbours stored for them ever reach a flux ratio, so
+    converting the whole catalogue does work whose result is discarded. On a large
+    survey the difference is the run: the conversion cost follows the targets rather
+    than the catalogue.
+    """
+    in_play = np.zeros(number_of_sources, dtype=bool)
+    for internal_target in targets_internal:
+        target_index = internal_target - 1
+        if (target_index < 0 or target_index >= number_of_sources):
+            continue
+        in_play[target_index] = True
+        start, end = int(offsets[target_index]), int(offsets[target_index + 1])
+        if (end <= start):
+            continue
+        neighbours = np.asarray(neighbors_mm[start:end], dtype=np.int64) - 1
+        valid = neighbours[(neighbours >= 0) & (neighbours < number_of_sources)]
+        in_play[valid] = True
+    return in_play
+
+
+def scatter_conversion(result: ConversionResult, rows: np.ndarray) -> ConversionResult:
+    """Expand a subset conversion back to full catalogue length.
+
+    Rows that were never converted keep the same value they would have had if the
+    conversion had reached them and found nothing to work with, so downstream code
+    cannot tell a skipped row from an unconvertible one -- both are unknown.
+    """
+    size = int(rows.shape[0])
+
+    def expand(values: np.ndarray, empty: Any) -> np.ndarray:
+        full = np.full(size, empty, dtype=values.dtype)
+        full[rows] = values
+        return full
+
+    return ConversionResult(
+        out_magnitudes=expand(result.out_magnitudes, np.nan),
+        effective_temperature=expand(result.effective_temperature, np.nan),
+        status_codes=expand(result.status_codes, STATUS_MISSING_INPUT),
+        metadata=result.metadata,
+        applied_method=expand(result.applied_method, 0),
+        summary={**result.summary, "sources_in_play": int(np.count_nonzero(rows)), "catalogue_sources": size},
+        diagnostics={
+            name: expand(values, "" if values.dtype.kind in "US" else np.nan)
+            for name, values in result.diagnostics.items()
+        },
+    )
+
+
 def loop_over_targets(
     offsets: np.ndarray,
     neighbors_mm: np.ndarray,
@@ -1877,7 +1939,27 @@ def main(config_path: str | Path | None = None) -> int:
 
     if (converter is not None and catalog_spec is not None and conversion_config is not None):
         conversion_inputs = {**loaded_magnitude_arrays, **stellar_parameter_arrays}
-        result = converter.convert(conversion_inputs)
+        # Restrict the conversion to the rows that will actually be read. The
+        # recompute path finds neighbours outside the stored index, so the set is
+        # only knowable in advance when it is not active.
+        recomputing = (
+            config_query.effective_influence_radius_arcsec > runtime_plan.manifest.max_radius_arcsec
+        )
+        rows_in_play = (
+            None
+            if (recomputing or not targets_internal)
+            else rows_used_by_targets(targets_internal, offsets, neighbors_mm, int(ra.size))
+        )
+        if (rows_in_play is None):
+            result = converter.convert(conversion_inputs)
+        else:
+            logger.info(
+                "Converting %d of %d catalogue sources: the targets and their neighbours.",
+                int(np.count_nonzero(rows_in_play)),
+                int(ra.size),
+            )
+            subset = {name: values[rows_in_play] for name, values in conversion_inputs.items()}
+            result = scatter_conversion(converter.convert(subset), rows_in_play)
         # Store the converted band under a dedicated key so it can never clobber a
         # catalogue band that shares its name (for example a Gaia RP output).
         output_key = f"converted_{normalized_band_key(conversion_config.output_band)}"

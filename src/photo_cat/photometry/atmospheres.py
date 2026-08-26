@@ -1,21 +1,23 @@
 # SPDX-FileCopyrightText: 2026 PHOTO-CAT contributors
 # SPDX-License-Identifier: GPL-3.0-only
-"""Model-atmosphere grids fetched a node at a time, and cached as band ratios.
+"""Model-atmosphere grids fetched a node at a time and cached, resampled, on disk.
 
-A model atmosphere gives a spectrum from (Teff, log g, [M/H]). Converting a source
-into an output band needs only the ratio ``F_X / F_G`` of that spectrum through the
-two filters, because contamination is a flux ratio within one band and the output
-zero-point cancels. That is the whole model-dependent content, and it is one number
-per band per grid node.
+A model atmosphere gives a spectrum from (Teff, log g, [M/H]), which the conversion
+then reddens, normalises on the catalogue band and integrates through the requested
+filter. Shipping those grids is not possible: at the spacing the physics needs --
+measured on real spectra at about 0.5 dex in log g and [M/H] and 100-200 K in Teff
+for one per cent interpolation error -- a useful grid is thousands of nodes, and one
+BT-Settl spectrum is roughly 18 MB.
 
-Shipping the grids is not possible: at the spacing the physics needs -- measured at
-about 0.5 dex in log g and [M/H] and 100-200 K in Teff for one per cent
-interpolation error -- a useful grid is thousands of nodes, and one BT-Settl
-spectrum is roughly 18 MB. So nothing is precomputed. Each source asks for the
-eight nodes bracketing its parameters; a node absent from the cache is downloaded
-once, integrated through the requested filters, reduced to its ratios, and the
-spectrum is discarded. The cache therefore holds kilobytes however many nodes it
-has seen, and a catalogue only ever pays for the region it actually visits.
+So nothing is precomputed. Each source asks for the nodes bracketing its parameters;
+a node absent from the cache is downloaded once, resampled onto a common wavelength
+grid, stored, and the original payload discarded. That is about 31 KB per node
+instead of 18 MB, and a catalogue only ever pays for the region it actually visits.
+
+The spectrum is kept rather than its band fluxes for two reasons: extinction acts on
+the shape of the spectrum, so it has to be applied per source and cannot be folded
+into a stored flux; and a filter chosen later integrates from the cache without
+fetching anything again.
 
 What ships in the package is the node index of each family: the parameter triples
 that genuinely exist. Real grids are not rectangular -- BT-Settl fills about half
@@ -35,15 +37,13 @@ from dataclasses import dataclass
 from functools import lru_cache
 from itertools import product
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import numpy as np
 
+from .filters import FilterCurve
 from .library import user_data_root
-from .phoenix import PhoenixGridCoverageError, PhoenixSpectrum
-
-# np.trapezoid is the NumPy 2.0 name; 1.x only ships np.trapz.
-_trapezoid = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+from .phoenix import PhoenixGridCoverageError, PhoenixSpectrum, synthetic_photometry
 
 INDEX_ROOT = Path(__file__).resolve().parent.parent / "atmospheres"
 
@@ -329,3 +329,64 @@ def cached_node_count(family_name: str | None = None) -> int:
         [p for p in root.iterdir() if p.is_dir()] if root.is_dir() else []
     )
     return sum(len(list(path.glob("*.npy"))) for path in families if path.is_dir())
+
+def node_band_fluxes(
+    family_name: str,
+    node: str,
+    curves: dict[str, FilterCurve],
+    timeout: float = 300.0,
+) -> dict[str, float]:
+    """Return one node's flux in each filter, integrating its spectrum once."""
+    # Built as the spectrum the slow path would have used and pushed through the
+    # same integrator, so the two routes cannot drift apart on a convention.
+    spectrum = PhoenixSpectrum(
+        wavelength_nm=CACHE_WAVELENGTH_NM,
+        photon_flux_density=node_spectrum(family_name, node, timeout).astype(np.float64),
+        band_weight=CACHE_WAVELENGTH_NM,
+    )
+    return {band: synthetic_photometry(spectrum, curve) for band, curve in curves.items()}
+
+
+def blend_weights(selection: ModelSelection, teff: float, logg: float, mh: float) -> list[float]:
+    """Return each corner's share of a trilinear blend, in ``selection.nodes`` order."""
+    axes = [sorted({getattr(n, a) for n in selection.nodes}) for a in ("teff", "logg", "mh")]
+    fractions = [
+        0.0 if (len(axis) == 1 or axis[-1] == axis[0]) else (value - axis[0]) / (axis[-1] - axis[0])
+        for axis, value in zip(axes, (teff, logg, mh))
+    ]
+    weights = []
+    for node in selection.nodes:
+        share = 1.0
+        for axis, fraction, value in zip(axes, fractions, (node.teff, node.logg, node.mh)):
+            share *= (1.0 - fraction) if (value == axis[0]) else fraction
+        weights.append(share)
+    return weights
+
+
+def batch_band_fluxes(
+    selections: Iterable[ModelSelection],
+    curves: dict[str, FilterCurve],
+    timeout: float = 300.0,
+    progress: Callable[[int, int], None] | None = None,
+) -> dict[str, dict[str, float]]:
+    """Integrate every distinct node one catalogue needs, once each.
+
+    Integration is linear in the spectrum, so blending the corner spectra and then
+    integrating gives exactly the same number as integrating the corners and then
+    blending. Doing it in this order turns a per-source integral -- and a possible
+    download inside a per-source loop -- into one pass over the distinct nodes,
+    which for any catalogue is bounded by the grid rather than by its own size.
+    """
+    wanted: dict[str, str] = {}
+    for selection in selections:
+        if (selection.covered):
+            for node in selection.nodes:
+                wanted.setdefault(node.node, str(selection.family))
+
+    fluxes: dict[str, dict[str, float]] = {}
+    total = len(wanted)
+    for position, (node_id, family_name) in enumerate(sorted(wanted.items()), start=1):
+        if (progress is not None):
+            progress(position, total)
+        fluxes[node_id] = node_band_fluxes(family_name, node_id, curves, timeout)
+    return fluxes

@@ -401,7 +401,8 @@ class SpectrumSource(Protocol):
     files and a grid that fetches its nodes on demand are interchangeable here.
     """
 
-    def interpolate(self, teff: float, logg: float, mh: float) -> PhoenixSpectrum: ...
+    def interpolate(self, teff: float, logg: float, mh: float) -> PhoenixSpectrum:
+        """Return the model spectrum at one set of atmospheric parameters."""
 
 
 def convert_phoenix_photometry(
