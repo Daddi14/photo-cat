@@ -518,6 +518,7 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
     except ImportError as error:
         raise ImportError("Matplotlib plotting requires the optional matplotlib package.") from error
 
@@ -597,7 +598,7 @@ def write_matplotlib_plot(rows: list[dict[str, Any]], kind: str, output_path: st
         ax.set_ylabel("Dec [deg]")
         ax.set_title("Sky map of stellar contamination")
         legend_handles = [
-            plt.Line2D([], [], marker="o", linestyle="", color=colour, markersize=6, label=label)
+            Line2D([], [], marker="o", linestyle="", color=colour, markersize=6, label=label)
             for label, colour in SKY_MAP_CLASSES
         ]
         ax.legend(handles=legend_handles, loc="upper right")

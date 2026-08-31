@@ -48,6 +48,8 @@ def validate_against_reference(
         predicted_value: Any = row.get(prediction_metric)
         if (predicted_value is None and prediction_metric == "flux_fraction_total_weighted"):
             predicted_value = row.get("flux_fraction_all_neighbors", row.get("flux_fraction_selected"))
+        if (predicted_value is None):
+            continue
         try:
             predicted = float(predicted_value)
         except (TypeError, ValueError):

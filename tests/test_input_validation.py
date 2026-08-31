@@ -42,7 +42,7 @@ def test_catalog_column_error_lists_missing_column_and_case_hint(tmp_path: Path)
 def test_build_config_rejects_output_directory_that_is_an_existing_file(
     tmp_path: Path,
     config_text: str,
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
 ) -> None:
     """Build output must not silently overwrite a file that occupies the configured directory path."""
     conflict_path = tmp_path / "output"

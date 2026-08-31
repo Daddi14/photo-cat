@@ -40,6 +40,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "magnitude_columns": {
                 "gaia_g": "phot_g_mean_mag",
             },
+            "stellar_parameter_columns": {},
         },
         "settings": {
             "use_dask": True,
@@ -86,6 +87,7 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "dec_column": ("build_neighbors_index", "io", "columns", "dec"),
     "phot_g_mean_mag_column": ("build_neighbors_index", "io", "columns", "phot_g_mean_mag"),
     "magnitude_columns": ("build_neighbors_index", "io", "magnitude_columns"),
+    "stellar_parameter_columns": ("build_neighbors_index", "io", "stellar_parameter_columns"),
     "use_dask": ("build_neighbors_index", "settings", "use_dask"),
     "calculate_separations": ("build_neighbors_index", "settings", "calculate_separations"),
     "max_radius_arcsec": ("build_neighbors_index", "settings", "max_radius_arcsec"),
@@ -103,6 +105,9 @@ OVERRIDE_PATHS: dict[str, tuple[str, ...]] = {
     "conversion_method": ("query_contamination_from_index", "settings", "photometric_conversion", "conversion_method"),
     "conversion_filter_file": ("query_contamination_from_index", "settings", "photometric_conversion", "filter_file"),
     "conversion_catalog": ("query_contamination_from_index", "settings", "photometric_conversion", "catalog"),
+    "phoenix_grid_path": ("query_contamination_from_index", "settings", "photometric_conversion", "phoenix_grid_path"),
+    "apply_extinction": ("query_contamination_from_index", "settings", "photometric_conversion", "apply_extinction"),
+    "extinction_rv": ("query_contamination_from_index", "settings", "photometric_conversion", "extinction_rv"),
     "contamination_model_mode": ("query_contamination_from_index", "settings", "contamination_model", "mode"),
     "gaussian_fwhm_arcsec": ("query_contamination_from_index", "settings", "contamination_model", "gaussian_fwhm_arcsec"),
     "influence_sigma": ("query_contamination_from_index", "settings", "contamination_model", "influence_sigma"),
@@ -118,6 +123,7 @@ PATH_OVERRIDE_NAMES = {
     "index_dir",
     "targets_input",
     "conversion_filter_file",
+    "phoenix_grid_path",
 }
 
 
@@ -203,7 +209,7 @@ def collect_overrides(args: Any) -> dict[str, Any]:
             value = parse_targets(value)
         elif (name == "contamination_bands"):
             value = parse_csv_list(value)
-        elif (name == "magnitude_columns"):
+        elif (name in {"magnitude_columns", "stellar_parameter_columns"}):
             value = parse_key_value_list(value)
         elif (name in PATH_OVERRIDE_NAMES):
             value = resolve_cli_path(value)

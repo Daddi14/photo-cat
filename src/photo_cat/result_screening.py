@@ -24,6 +24,8 @@ def _metric_value(row: dict[str, Any], metric: str) -> float | None:
     value: Any = row.get(metric)
     if (value is None and metric == DEFAULT_METRIC):
         value = row.get("flux_fraction_all_neighbors", row.get("flux_fraction_selected"))
+    if (value is None):
+        return None
     try:
         numeric = float(value)
     except (TypeError, ValueError):

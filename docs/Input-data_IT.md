@@ -17,6 +17,14 @@ I valori `source_id` devono essere univoci anche dopo la normalizzazione numeric
 (`1` e `001` sono ambigui). `ra` deve essere finito e compreso in `[0, 360)`,
 `dec` in `[-90, 90]` e `phot_g_mean_mag` deve essere finito.
 
+Per la conversione PHOENIX includi e mappa le colonne atmosferiche Gaia
+disponibili. La terna preferita è `teff_gspphot_phoenix`,
+`logg_gspphot_phoenix` e `mh_gspphot_phoenix`; gli intervalli `_lower`/`_upper`
+e `azero_gspphot_phoenix` sono opzionali. Le colonne GSP-Spec, GSP-Phot best
+library, massa/raggio FLAME e BP/RP abilitano i fallback documentati. A differenza
+dei quattro campi obbligatori del catalogo, i valori atmosferici possono mancare
+nelle singole righe.
+
 ## CSV target
 
 Il CSV target identifica le sorgenti da interrogare usando l’indice dei vicini creato.

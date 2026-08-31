@@ -112,7 +112,7 @@ from typing import BinaryIO, Iterator
 
 import numpy as np
 import pandas as pd
-from scipy.spatial import cKDTree
+from scipy.spatial import cKDTree  # pyright: ignore[reportAttributeAccessIssue]
 from tqdm import tqdm
 from numpy.typing import NDArray
 
@@ -130,6 +130,7 @@ from .index_manifest import (
 from .logger_setup import USE_COLOR, get_logger
 from .load_config import BuildConfig, load_config
 from .path_policy import ensure_directory, index_paths
+from .photometry.conversion import GAIA_LIBRARY_CODES
 from .pipeline_display import ActivityBar, tqdm_options
 
 
@@ -277,6 +278,7 @@ def load_star_dataframe(
     dec_column: str = "dec",
     phot_g_mean_mag_column: str = "phot_g_mean_mag",
     magnitude_columns: dict[str, str] | None = None,
+    stellar_parameter_columns: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
     Load the star catalog from CSV using pandas or Dask, keep only valid rows,
@@ -307,6 +309,7 @@ def load_star_dataframe(
     logger.info(f"Using {'Dask' if use_dask else 'Pandas'}...")
 
     magnitude_columns = {"gaia_g": phot_g_mean_mag_column, **(magnitude_columns or {})}
+    stellar_parameter_columns = stellar_parameter_columns or {}
     usecolumns = [
         source_id_column,
         ra_column,
@@ -314,6 +317,9 @@ def load_star_dataframe(
         phot_g_mean_mag_column,
     ]
     for column in magnitude_columns.values():
+        if (column not in usecolumns):
+            usecolumns.append(column)
+    for column in stellar_parameter_columns.values():
         if (column not in usecolumns):
             usecolumns.append(column)
 
@@ -331,6 +337,8 @@ def load_star_dataframe(
     if (len(magnitude_columns) > 1):
         for band, column in sorted(magnitude_columns.items()):
             logger.info(f" - magnitude band {band}: {column}")
+    for parameter, column in sorted(stellar_parameter_columns.items()):
+        logger.info(f" - stellar parameter {parameter}: {column}")
 
     validate_required_columns(input_catalog, usecolumns)
 
@@ -376,6 +384,10 @@ def load_star_dataframe(
         band_column = f"magnitude_{safe_band}"
         star_dataframe[band_column] = star_dataframe[source_column]
 
+    for parameter, source_column in stellar_parameter_columns.items():
+        parameter_column = f"parameter_{safe_band_name(parameter)}"
+        star_dataframe[parameter_column] = star_dataframe[source_column]
+
     logger.info(f"Loaded {len(star_dataframe)} rows.")
     logger.info("Validating and cleaning catalog rows (this can take a while for very large catalogs)...")
 
@@ -405,6 +417,24 @@ def load_star_dataframe(
             + "\n\nCheck that RA, Dec, and magnitude columns contain numbers, not text."
         )
 
+    # Atmospheric quantities are optional per row: coerce malformed/missing
+    # values to NaN and let the query-time PHOENIX decision tree choose a fallback.
+    # Columns naming a Gaia library are text, and coercing them would silently make
+    # every row NaN, so they are encoded first and decoded again in the result.
+    for parameter in stellar_parameter_columns:
+        parameter_column = f"parameter_{safe_band_name(parameter)}"
+        if (parameter.startswith("libname")):
+            star_dataframe[parameter_column] = (
+                star_dataframe[parameter_column]
+                .astype("string")
+                .str.strip()
+                .str.upper()
+                .map(GAIA_LIBRARY_CODES)
+            )
+        star_dataframe[parameter_column] = pd.to_numeric(
+            star_dataframe[parameter_column], errors="coerce"
+        )
+
     # Drop rows missing mandatory fields and normalize IDs to strings. The warning
     # names which field failed and where, so a user can find and fix the offending
     # rows instead of guessing.
@@ -418,13 +448,15 @@ def load_star_dataframe(
     # stages so warnings can always point at the original CSV rows.
     catalog_row_numbers = np.arange(1, len(star_dataframe) + 1)
 
+    # The pandas stubs type these reductions as returning a scalar rather than the
+    # Series they return at runtime, so the .to_numpy() calls below are flagged.
     missing_mask = star_dataframe[list(mandatory_fields)].isna()
-    dropped_any = missing_mask.any(axis=1).to_numpy()
+    dropped_any = missing_mask.any(axis=1).to_numpy()  # pyright: ignore[reportAttributeAccessIssue]
     dropped_rows = int(dropped_any.sum())
     per_field_missing = {
-        label: int(missing_mask[column].to_numpy().sum())
+        label: int(missing_mask[column].to_numpy().sum())  # pyright: ignore[reportAttributeAccessIssue]
         for column, label in mandatory_fields.items()
-        if bool(missing_mask[column].to_numpy().any())
+        if bool(missing_mask[column].to_numpy().any())  # pyright: ignore[reportAttributeAccessIssue]
     }
     final_star_dataframe = star_dataframe.dropna(
         subset=['source_id', 'ra', 'dec', 'phot_g_mean_mag']
@@ -547,6 +579,17 @@ def magnitude_band_manifest(magnitude_columns: dict[str, str], phot_g_mean_mag_c
             "array_file": array_file,
         }
     return manifest
+
+
+def stellar_parameter_manifest(stellar_parameter_columns: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Describe persisted atmospheric-parameter arrays for SED conversion."""
+    return {
+        parameter: {
+            "catalog_column": source_column,
+            "array_file": f"parameter_{safe_band_name(parameter)}.npy",
+        }
+        for parameter, source_column in stellar_parameter_columns.items()
+    }
 
 
 def convert_ra_dec_to_unit_vectors(
@@ -928,6 +971,7 @@ def save_final_outputs(
     total_neighbors: int,
     magnitude_columns: dict[str, str],
     phot_g_mean_mag_column: str,
+    stellar_parameter_columns: dict[str, str] | None = None,
 ) -> str:
     """
     Finalize temporary files atomically, build compact ID mapping arrays,
@@ -1114,6 +1158,15 @@ def save_final_outputs(
                 final_star_dataframe[column_name].to_numpy(dtype=np.float64),
             )
 
+    stellar_parameters = stellar_parameter_manifest(stellar_parameter_columns or {})
+    for metadata in stellar_parameters.values():
+        array_file = metadata["array_file"]
+        column_name = Path(array_file).stem
+        atomic_save_npy(
+            Path(out_dir) / array_file,
+            final_star_dataframe[column_name].to_numpy(dtype=np.float64),
+        )
+
     manifest = IndexManifest(
         format_version=2,
         status="complete",
@@ -1124,6 +1177,7 @@ def save_final_outputs(
         total_neighbors=total_neighbors,
         calculate_separations=calculate_separations,
         magnitude_bands=magnitude_bands,
+        stellar_parameters=stellar_parameters,
     )
     write_index_manifest(manifest_path, manifest)
     validate_index_structure(index_paths(out_dir), manifest)
@@ -1147,6 +1201,7 @@ def run_build(config_build: BuildConfig) -> int:
         config_build.dec_column,
         config_build.phot_g_mean_mag_column,
         config_build.magnitude_columns,
+        config_build.stellar_parameter_columns,
     )
 
     catalog_digest = sha256_file(config_build.input_catalog)
@@ -1156,6 +1211,7 @@ def run_build(config_build: BuildConfig) -> int:
         calculate_separations=config_build.calculate_separations,
         columns=config_build.usecolumns,
         magnitude_columns=config_build.magnitude_columns,
+        stellar_parameter_columns=config_build.stellar_parameter_columns,
     )
     existing_manifest_path = Path(config_build.out_dir) / INDEX_MANIFEST_FILENAME
     if (existing_manifest_path.is_file()):
@@ -1260,6 +1316,7 @@ def run_build(config_build: BuildConfig) -> int:
             total_neighbors=checkpoint_total,
             magnitude_columns=config_build.magnitude_columns,
             phot_g_mean_mag_column=config_build.phot_g_mean_mag_column,
+            stellar_parameter_columns=config_build.stellar_parameter_columns,
         )
     Path(checkpoint_path).unlink(missing_ok=True)
 

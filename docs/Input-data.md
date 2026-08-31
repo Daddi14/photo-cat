@@ -17,6 +17,13 @@ The default expected columns are:
 (`1` and `001` are ambiguous). `ra` must be finite and in `[0, 360)`, `dec`
 must be finite and in `[-90, 90]`, and `phot_g_mean_mag` must be finite.
 
+For PHOENIX conversion, include and map the available Gaia atmospheric columns.
+The preferred triplet is `teff_gspphot_phoenix`, `logg_gspphot_phoenix`, and
+`mh_gspphot_phoenix`; their `_lower`/`_upper` intervals and
+`azero_gspphot_phoenix` are optional. GSP-Spec, best-library GSP-Phot, FLAME
+mass/radius, and BP/RP columns enable the documented fallbacks. Unlike the four
+mandatory catalogue fields, atmospheric values may be missing per row.
+
 ## Targets CSV
 
 The targets CSV identifies the sources to query against the built neighbour index.

@@ -414,6 +414,8 @@ Le opzioni booleane supportano forma positiva e negativa:
 | `build_neighbors_index.io.columns.ra` | `--ra-column NAME` |
 | `build_neighbors_index.io.columns.dec` | `--dec-column NAME` |
 | `build_neighbors_index.io.columns.phot_g_mean_mag` | `--mag-column NAME` |
+| `build_neighbors_index.io.magnitude_columns` | `--magnitude-columns banda=colonna,...` |
+| `build_neighbors_index.io.stellar_parameter_columns` | `--stellar-parameter-columns parametro=colonna,...` |
 | `build_neighbors_index.settings.use_dask` | `--use-dask` / `--no-use-dask` |
 | `build_neighbors_index.settings.calculate_separations` | `--calculate-separations` / `--no-calculate-separations` |
 | `build_neighbors_index.settings.max_radius_arcsec` | `--max-radius-arcsec VALUE` |
@@ -430,6 +432,9 @@ Le opzioni booleane supportano forma positiva e negativa:
 | `query_contamination_from_index.settings.photometric_conversion.conversion_method` | `--conversion-method NAME` |
 | `query_contamination_from_index.settings.photometric_conversion.filter_file` | `--conversion-filter-file PATH` |
 | `query_contamination_from_index.settings.photometric_conversion.catalog` | `--conversion-catalog NAME` |
+| `query_contamination_from_index.settings.photometric_conversion.phoenix_grid_path` | `--phoenix-grid-path PATH` |
+| `query_contamination_from_index.settings.photometric_conversion.apply_extinction` | `--apply-extinction` / `--no-apply-extinction` |
+| `query_contamination_from_index.settings.photometric_conversion.extinction_rv` | `--extinction-rv VALUE` |
 | `query_contamination_from_index.settings.delta_mag` | `--delta-mag VALUE` |
 | `query_contamination_from_index.settings.include_missing_targets` | `--include-missing-targets` / `--no-include-missing-targets` |
 | `execution.run_build` | `--run-build` / `--no-run-build` |

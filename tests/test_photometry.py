@@ -13,7 +13,14 @@ import pytest
 from photo_cat.photometry.catalogs import GAIA_DR3, resolve_catalog
 from photo_cat.photometry.conversion import build_converter, convert_magnitudes
 from photo_cat.photometry.filters import load_filter
-from photo_cat.photometry.library import available_output_bands, load_library_filter
+from photo_cat.photometry.library import (
+    FILTERS_ROOT,
+    USER_FILTERS_DIR_ENV,
+    available_output_bands,
+    library_filter_path,
+    load_library_filter,
+    user_filters_root,
+)
 from photo_cat.photometry.sed import blackbody_photon_density
 
 
@@ -139,19 +146,39 @@ def test_custom_output_band_requires_a_filter_file(tmp_path: Path) -> None:
 
     custom = _write_filter(tmp_path / "mine.dat", 600.0, 700.0)
     converter = build_converter(GAIA_DR3, "custom", "blackbody", str(custom))
+    assert converter.output_filter is not None
     assert converter.output_filter.name == "custom"
 
 
+@pytest.mark.regression
+def test_phoenix_needs_no_locally_installed_grid() -> None:
+    """The method must be usable without the user first obtaining a spectrum grid.
+
+    Requiring one made phoenix unselectable in practice: nobody has a grid lying
+    around, and the nodes a run needs are a tiny part of any of them. Building the
+    converter must therefore succeed with no grid path, and reach for nodes only
+    when a source actually needs one.
+    """
+    converter = build_converter(GAIA_DR3, "tess", "phoenix", None)
+
+    assert converter.method == "phoenix"
+    # The atmospheric grid is consulted per source, so an unparameterised catalogue
+    # still converts: it simply falls back, which is the documented behaviour.
+    result = converter.convert(
+        {"gaia_g": np.array([12.0]), "gaia_bp": np.array([12.4]), "gaia_rp": np.array([11.6])}
+    )
+    assert np.isfinite(result.out_magnitudes[0])
+
+
 @pytest.mark.unit
-def test_phoenix_and_empirical_are_selectable_but_unavailable() -> None:
-    """Unimplemented methods are accepted for selection but fail with guidance."""
-    for method in ("phoenix", "empirical"):
-        with pytest.raises(ValueError, match=method):
-            convert_magnitudes(
-                {"gaia_g": np.array([12.0]), "gaia_bp": np.array([12.4]), "gaia_rp": np.array([11.6])},
-                "gaia_rp",
-                method,
-            )
+def test_an_unknown_conversion_method_lists_the_supported_ones() -> None:
+    """A misspelled method names its alternatives instead of failing obscurely."""
+    with pytest.raises(ValueError, match="gaia_empirical"):
+        convert_magnitudes(
+            {"gaia_g": np.array([12.0]), "gaia_bp": np.array([12.4]), "gaia_rp": np.array([11.6])},
+            "gaia_rp",
+            "not_a_method",
+        )
 
 
 @pytest.mark.regression
@@ -161,6 +188,78 @@ def test_built_in_library_ships_only_official_missions() -> None:
     assert {"gaia_g", "gaia_bp", "gaia_rp", "tess", "cheops", "mauve"} <= bands
     for band in bands:
         assert load_library_filter(band).is_nominal is False
+
+
+@pytest.mark.unit
+def test_the_user_library_lives_outside_the_installed_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Downloaded filters must survive reinstalling or upgrading the package."""
+    monkeypatch.delenv(USER_FILTERS_DIR_ENV, raising=False)
+    root = user_filters_root()
+
+    assert (root.name, root.parent.name) == ("filters", "photo-cat")
+    assert not root.is_relative_to(FILTERS_ROOT)
+
+
+@pytest.mark.regression
+def test_a_filter_added_to_the_user_library_is_discovered(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A curve outside the package is addressable exactly like a shipped one."""
+    monkeypatch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path))
+    (tmp_path / "MyMission").mkdir()
+    _write_filter(tmp_path / "MyMission" / "response.dat", 600.0, 700.0)
+
+    assert "mymission" in available_output_bands()
+    assert load_library_filter("mymission").throughput.max() == pytest.approx(1.0)
+
+
+@pytest.mark.regression
+def test_shipped_filters_stay_available_alongside_the_user_library(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The package remains a search root, so a filter left there keeps resolving."""
+    monkeypatch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path / "empty"))
+    path = library_filter_path("tess")
+
+    assert path is not None and Path(path).is_relative_to(FILTERS_ROOT)
+
+
+@pytest.mark.regression
+def test_a_user_curve_takes_precedence_over_a_shipped_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Installing a curve locally is how a shipped one is replaced without editing it."""
+    monkeypatch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path))
+    (tmp_path / "TESS").mkdir()
+    _write_filter(tmp_path / "TESS" / "response.dat", 600.0, 700.0)
+
+    path = library_filter_path("tess")
+
+    assert path is not None and Path(path).is_relative_to(tmp_path)
+
+
+@pytest.mark.regression
+def test_an_unconverted_target_reports_unknown_contamination_not_zero() -> None:
+    """A target with no reference magnitude must not read as a clean target.
+
+    Its flux ratios are undefined, and 0.0 is the value a measured, uncontaminated
+    target would carry. For a screening tool the two must not look the same.
+    """
+    from photo_cat.query_contamination_from_index import flux_fraction_by_band
+
+    magnitudes = {
+        "gaia_g": np.array([10.0, 12.0]),
+        "converted_band": np.array([np.nan, 11.0]),
+    }
+
+    metrics = flux_fraction_by_band(
+        0, np.array([1]), np.array([True]), magnitudes, np.array([1.0])
+    )
+
+    # The catalogue band is still measured for this target, so it stays a number.
+    catalogue_metric = metrics["gaia_g"]
+    assert catalogue_metric is not None and catalogue_metric > 0.0
+    assert metrics["converted_band"] is None
 
 
 @pytest.mark.regression

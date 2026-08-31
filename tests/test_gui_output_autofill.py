@@ -2,6 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Tests for type-aware GUI output-path suggestions."""
 
+# These tests call the ConfigGui methods unbound, passing a stand-in for self, so the
+# path logic can be exercised without constructing a Tk window. The stand-in is not a
+# ConfigGui by type, which is the point of the technique rather than a defect.
+# pyright: reportArgumentType=false
+
 from __future__ import annotations
 
 from pathlib import Path

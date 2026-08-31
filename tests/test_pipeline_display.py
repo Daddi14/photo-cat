@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Unit tests for terminal progress output that does not require an interactive terminal."""
 
+# A controllable stand-in is injected over the bar's internal event so the animation can
+# be stepped deterministically instead of waited on.
+# pyright: reportAttributeAccessIssue=false
+
 from __future__ import annotations
 
 from types import SimpleNamespace

@@ -8,7 +8,7 @@ import os
 import io
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Callable
+from typing import Any, Callable
 
 import pytest
 
@@ -136,7 +136,7 @@ def test_child_stage_environment_receives_explicit_config_without_mutating_paren
     """Pipeline subprocesses receive the selected config through a copied environment only."""
     config_path = tmp_path / "selected-config.yaml"
     original_cwd = Path.cwd()
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     activities: list[str] = []
 

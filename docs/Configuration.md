@@ -56,6 +56,30 @@ build_neighbors_index:
 `gaia_g` defaults to the configured `phot_g_mean_mag` column. Additional bands
 are written as numeric arrays and recorded in `index_manifest.json`.
 
+Atmospheric parameters for PHOENIX are stored separately from magnitudes. Map
+every Gaia column available in the input; values may be missing on individual
+rows because the conversion records and applies its source-by-source fallback:
+
+```yaml
+build_neighbors_index:
+  io:
+    stellar_parameter_columns:
+      teff_gspphot_phoenix: teff_gspphot_phoenix
+      logg_gspphot_phoenix: logg_gspphot_phoenix
+      mh_gspphot_phoenix: mh_gspphot_phoenix
+      teff_gspphot_phoenix_lower: teff_gspphot_phoenix_lower
+      teff_gspphot_phoenix_upper: teff_gspphot_phoenix_upper
+      logg_gspphot_phoenix_lower: logg_gspphot_phoenix_lower
+      logg_gspphot_phoenix_upper: logg_gspphot_phoenix_upper
+      mh_gspphot_phoenix_lower: mh_gspphot_phoenix_lower
+      mh_gspphot_phoenix_upper: mh_gspphot_phoenix_upper
+      azero_gspphot_phoenix: azero_gspphot_phoenix
+```
+
+The optional GSP-Spec (`teff_gspspec`, `logg_gspspec`, `mh_gspspec`), best
+GSP-Phot (`teff_gspphot`, `logg_gspphot`, `mh_gspphot`), and FLAME
+(`mass_flame`, `radius_flame`) columns use the same key-to-column syntax.
+
 ## Query stage
 
 The query stage reads an existing index and processes selected targets.
@@ -107,10 +131,15 @@ conversion estimates it in a mission band instead:
 query_contamination_from_index:
   settings:
     photometric_conversion:
-      output_band: tess          # a built-in filter, or "custom"
-      conversion_method: blackbody
+      output_band: tess          # a built-in filter, a band with a published
+                                 # Gaia relation (johnson_v, 2mass_ks, ...),
+                                 # or "custom"
+      conversion_method: blackbody   # blackbody | gaia_empirical | auto | phoenix
       filter_file:               # required only when output_band is custom
       catalog: gaia_dr3
+      phoenix_grid_path: data/phoenix_grid  # required for phoenix
+      apply_extinction: false
+      extinction_rv: 3.1
 ```
 
 The selected output band is the reference band for the delta-magnitude cut,
@@ -118,33 +147,115 @@ contaminant list, primary flux fractions, counts, and PSF metrics. If that exact
 band is already stored in the index (for example `gaia_bp` or `gaia_rp`), its
 nominal catalogue magnitudes are used directly and no conversion is performed.
 
-Otherwise, the colour (BP-RP) gives a blackbody-equivalent temperature; each
-source's flux is integrated through the chosen filter, so
-`m_out = m_anchor - 2.5*log10(R)` where
+Otherwise the conversion runs. Blackbody and empirical conversion need the
+catalogue colour bands (BP, RP) stored with `magnitude_columns` during the index
+build. PHOENIX needs only Gaia G plus a complete atmospheric triplet; BP/RP are
+optional and enable its temperature/blackbody fallback. PHOTO-CAT loads these
+inputs automatically; they do not have to be repeated in `contamination_bands`.
+
+#### Conversion methods
+
+| `conversion_method` | What it does | Use it for |
+| --- | --- | --- |
+| `blackbody` (default) | Approximate SED-based conversion: the colour BP-RP gives a blackbody-equivalent temperature, and that spectrum is integrated through the band's transmission curve. | Any band with a transmission curve, including mission passbands and user-supplied filter profiles. |
+| `gaia_empirical` | Empirical colour-based transformation calibrated on Gaia photometry for a specific published photometric system. No spectral model is assumed. | The photometric systems Gaia publishes relations for, within their calibrated colour range. |
+| `auto` | Uses the empirical Gaia transformation when a calibrated relation exists and the source lies within its validity range; otherwise falls back to the blackbody conversion. | Mixed catalogues, where some sources fall outside the calibrated colour range. |
+| `phoenix` | Interpolates a local PHOENIX/BT-Settl spectrum in Teff/logg/[M/H], optionally applies extinction, normalizes it to Gaia G, and integrates the existing target filter. | Physical SED conversion for sources with atmospheric parameters; falls back to the existing blackbody method per source. |
+
+With `blackbody`, `m_out = m_anchor - 2.5*log10(R)` where
 `R = F_out(Teff)/F_anchor(Teff)`. Because contamination uses only flux ratios
 within one band, the output zero-point cancels and the anchor band's zero-point
-is kept. This requires the catalogue colour bands (BP, RP) to be stored with
-`magnitude_columns` during the index build. PHOTO-CAT loads those required bands
-automatically; they do not have to be repeated in `contamination_bands`.
+is kept.
 
-`output_band` is a built-in filter band key (`gaia_g`, `gaia_bp`, `gaia_rp`,
-`tess`, `cheops`, `mauve`, and the Ariel channels `ariel_fgs1`, `ariel_fgs2`,
-`ariel_visphot`, `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`) or `custom`
-with a `filter_file`. `conversion_method` is `blackbody` (default); `phoenix` and
-`empirical` are selectable but require external data (a model-spectrum grid, or a
-published relation) and error clearly until it is supplied.
+With `gaia_empirical`, the published polynomial `G - X = sum(c_n * (BP-RP)^n)` is
+evaluated directly, so `X = G - polynomial(BP-RP)`. The relations, their colour
+validity ranges and their published scatter are from the Gaia DR3 documentation,
+Sect. 5.5.1, Tables 5.9-5.10 (Riello et al. 2021, A&A 649, A3). Nothing is
+extrapolated: a source whose colour lies outside the published range is reported
+with `conversion_status: colour_outside_valid_range` and left unconverted, and a
+band with no published relation is refused at config time.
 
-Built-in filters live under `photo_cat/filters/<Mission>/<band>.dat`; adding a
-mission is just dropping its official transmission curve there. Gaia, TESS,
-CHEOPS, MAUVE and the Ariel channels ship as official curves. More filters can be
+There is no Gaia relation to any mission passband. Ariel, MAUVE, TESS, CHEOPS and
+SVO filters are converted with `blackbody` (or `auto`, which selects it for them
+automatically); `gaia_empirical` on such a band is an error, not a nearest-match
+guess.
+
+#### Local PHOENIX grid
+
+`phoenix_grid_path` points to a directory containing `grid_index.csv` (or to the
+CSV itself). The index has these required columns:
+
+```text
+teff,logg,mh,filename
+```
+
+Each filename is relative to the index and identifies a whitespace-separated
+wavelength/flux spectrum. Optional `wavelength_unit` (`nm`, `angstrom`, `micron`)
+and `flux_kind` (`energy`, the default PHOENIX F-lambda, or `photon`) columns make
+the prepared grid explicit. PHOTO-CAT loads spectra lazily and caches them; it
+does not contact SVO during a query.
+
+Interpolation uses Teff, logg, and [M/H]. A cell is usable only when every corner
+needed for trilinear interpolation exists, which prevents crossing holes in an
+irregular BT-Settl grid. Parameters are selected in this order: Gaia GSP-Phot
+PHOENIX triplet, GSP-Spec triplet, best-library GSP-Phot triplet, then individual
+parameter fallbacks (solar [M/H], FLAME mass/radius for logg, BP-RP temperature).
+If the triplet is still missing, outside the local grid, or produces invalid
+synthetic photometry, the existing blackbody conversion is used when BP/RP exist.
+
+The optional extinction uses `azero_gspphot_phoenix` and a CCM89 law with the
+configured `extinction_rv`. Output records retain `sed_model`, Teff/logg/[M/H]
+and their sources, `normalization_factor`, `quality`, and `fallback_reason`. The
+configured lower/upper PHOENIX intervals are preserved for later uncertainty
+propagation; this release computes the nominal magnitude only.
+
+#### Output bands
+
+`output_band` is one of:
+
+- a built-in filter band key: `gaia_g`, `gaia_bp`, `gaia_rp`, `tess`, `cheops`,
+  `mauve`, and the Ariel channels `ariel_fgs1`, `ariel_fgs2`, `ariel_visphot`,
+  `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`;
+- a band with a published Gaia relation: `johnson_b`, `johnson_v`, `johnson_r`,
+  `cousins_i` (Johnson-Cousins), `2mass_j`, `2mass_h`, `2mass_ks` (2MASS),
+  `sdss_g`, `sdss_r`, `sdss_i`, `sdss_z` (SDSS12), `hipparcos_hp` (Hipparcos),
+  `tycho_bt`, `tycho_vt` (Tycho-2). The short spellings `b`, `v`, `r`, `i`, `j`,
+  `h`, `ks`, `z`, `hp`, `bt`, `vt` are accepted; `r` and `i` mean the
+  Johnson-Cousins bands, and the SDSS bands keep their prefix because a bare `g`
+  would read as Gaia G;
+- `custom` with a `filter_file`.
+
+A band can be in both lists. `auto` needs a transmission curve installed for the
+band to have a blackbody fallback: without one, sources outside the relation's
+colour range stay unconverted and are reported as such.
+
+Filters come from two directories, read together. The official curves shipped with
+the release (Gaia, TESS, CHEOPS, MAUVE and the Ariel channels) live inside the
+package. Downloaded and user-added curves live in the per-user data directory,
+where an upgrade or reinstall cannot discard them:
+
+| Platform | User filter library |
+| --- | --- |
+| Windows | `%APPDATA%\photo-cat\filters` |
+| macOS | `~/Library/Application Support/photo-cat/filters` |
+| Linux | `$XDG_DATA_HOME/photo-cat/filters` (default `~/.local/share/photo-cat/filters`) |
+
+Set `PHOTO_CAT_FILTERS_DIR` to relocate the user library. Adding a mission is just
+dropping its official transmission curve there as `<Mission>/<band>.dat`. A filter
+left inside the package by an earlier version keeps working, since both
+directories are scanned; when the same band key exists in both, the user library
+wins, so a locally installed curve replaces a shipped one. More filters can be
 pulled from the SVO Filter Profile Service directly in the GUI (the "Download a
 filter from SVO" panel picks a facility, lists its filters, and downloads one into
-the library) or with `photo_cat.photometry.svo.download_filter`.
+the user library) or with `photo_cat.photometry.svo.download_filter`.
 
-This is an approximate, catalogue-level screening estimate: real stars are not
-blackbodies, and the reported effective temperature is a blackbody-equivalent
-colour temperature, not a physical Teff. The output filter and its SHA-256
-checksum are copied into query metadata.
+The blackbody path is an approximate, catalogue-level screening estimate: real
+stars are not blackbodies, and the reported effective temperature is a
+blackbody-equivalent colour temperature, not a physical Teff. The empirical path
+reports no temperature at all, because it derives none. The output filter and its
+SHA-256 checksum, the relation used with its coefficients and published scatter,
+and per-run counts of how many sources each method converted are all copied into
+query metadata.
 
 ## Save and run pipeline
 

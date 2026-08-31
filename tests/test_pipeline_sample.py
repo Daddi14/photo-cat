@@ -264,3 +264,105 @@ execution:
     assert target["num_contaminants"] == 1
     assert target["contaminants"][0]["source_id"] == "3"
     assert target["contaminants"][0]["magnitude"] == pytest.approx(expected[2])
+
+
+@pytest.mark.regression
+def test_gaia_empirical_conversion_drives_contamination_end_to_end(tmp_path: Path) -> None:
+    """A published relation converts target and contaminants alike, and bounds itself.
+
+    Source 3 sits inside the aperture and would be selected on its Gaia magnitude,
+    but its colour is outside the published calibration range of the relation, so it
+    must be reported as uncalibrated rather than extrapolated into the output band.
+    """
+    catalog_path = tmp_path / "catalog.csv"
+    catalog_path.write_text(
+        "source_id,ra,dec,phot_g_mean_mag,phot_bp_mean_mag,phot_rp_mean_mag\n"
+        "1,10.000,0.0,10.0,10.4,9.6\n"
+        "2,10.003,0.0,13.0,13.5,12.5\n"
+        # BP-RP = 6.0, past the 5.0 edge of the published G-V relation.
+        "3,10.006,0.0,13.0,16.0,10.0\n",
+        encoding="utf-8",
+    )
+    targets_path = tmp_path / "targets.csv"
+    targets_path.write_text("source_id\n1\n", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""
+build_neighbors_index:
+  io:
+    input_catalog: {catalog_path.as_posix()}
+    out_dir: {output_dir.as_posix()}
+    columns:
+      source_id: source_id
+      ra: ra
+      dec: dec
+      phot_g_mean_mag: phot_g_mean_mag
+    magnitude_columns:
+      gaia_g: phot_g_mean_mag
+      gaia_bp: phot_bp_mean_mag
+      gaia_rp: phot_rp_mean_mag
+  settings:
+    use_dask: false
+    calculate_separations: false
+    max_radius_arcsec: 120.0
+    chunk_size: 2
+    buffer_flush_interval: 1
+query_contamination_from_index:
+  io:
+    INDEX_DIR: {output_dir.as_posix()}
+    TARGETS_INPUT: {targets_path.as_posix()}
+    targets: []
+    target_source_id_column: source_id
+  settings:
+    field_of_view_arcsec: 47.0
+    delta_mag: 5.0
+    contamination_bands: [gaia_g]
+    photometric_conversion:
+      output_band: johnson_v
+      conversion_method: gaia_empirical
+      catalog: gaia_dr3
+execution:
+  run_build: true
+  run_query: true
+""".strip() + "\n",
+        encoding="utf-8",
+    )
+
+    expected = convert_magnitudes(
+        {
+            "gaia_g": np.array([10.0, 13.0, 13.0]),
+            "gaia_bp": np.array([10.4, 13.5, 16.0]),
+            "gaia_rp": np.array([9.6, 12.5, 10.0]),
+        },
+        "johnson_v",
+        "gaia_empirical",
+    )
+    assert np.isfinite(expected.out_magnitudes[:2]).all()
+    assert np.isnan(expected.out_magnitudes[2])
+
+    assert build_neighbors_index.main(config_path) == 0
+    assert query_contamination_from_index.main(config_path) == 0
+
+    result_path = next((output_dir / "results").glob("*.json"))
+    target = json.loads(result_path.read_text(encoding="utf-8"))[0]
+    assert target["magnitude_band"] == "johnson_v"
+    assert target["magnitude_source"] == "converted"
+    assert target["conversion_method"] == "gaia_empirical"
+    assert target["conversion_status"] == "valid"
+    assert target["magnitude"] == pytest.approx(expected.out_magnitudes[0])
+    # The relation derives no temperature, so none is reported for it.
+    assert target["effective_temperature"] is None
+    # The colour that drove the conversion is recorded, so a status can be checked.
+    assert target["colour_used"] == pytest.approx(0.8)
+    # Target and contaminant are compared in the same converted band.
+    assert [contaminant["source_id"] for contaminant in target["contaminants"]] == ["2"]
+    assert target["contaminants"][0]["magnitude"] == pytest.approx(expected.out_magnitudes[1])
+    assert target["contaminants"][0]["colour_used"] == pytest.approx(1.0)
+
+    metadata_path = next((output_dir / "results" / "metadata").glob("*.json"))
+    conversion = json.loads(metadata_path.read_text(encoding="utf-8"))["photometric_conversion"]
+    assert conversion["conversion_applied"] is True
+    assert conversion["transformation"]["relation"] == "G-V"
+    assert conversion["summary"]["method_counts"] == {"gaia_empirical": 2}
+    assert conversion["summary"]["status_counts"]["colour_outside_valid_range"] == 1

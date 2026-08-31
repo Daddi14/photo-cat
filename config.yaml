@@ -27,6 +27,68 @@ build_neighbors_index:
       # Uncomment when your catalogue provides them.
       # gaia_bp: phot_bp_mean_mag
       # gaia_rp: phot_rp_mean_mag
+    # Atmospheric columns read by conversion_method: phoenix. Every column the code
+    # can use is listed below, so the set does not have to be looked up elsewhere.
+    #
+    # The name on the LEFT is fixed: it is what PHOTO-CAT reads. The value on the
+    # RIGHT is the column in your own catalogue, pre-filled with the Gaia archive
+    # name, so a straight Gaia dump only needs the lines uncommented. Delete or
+    # retarget any line whose column your file does not have.
+    #
+    # [required] PHOENIX needs Teff, log g and [M/H] together. They may come from
+    # any one of groups 1-3: the first group that is complete wins, per source, so
+    # listing more than one group only widens coverage and never conflicts. A source
+    # with no complete group falls back parameter by parameter, and finally to the
+    # blackbody method, with the substitution recorded in the result.
+    #
+    # [optional] Everything below group 3 improves or documents the result but is
+    # never required.
+    stellar_parameter_columns:
+      # --- group 1 [required, preferred]: GSP-Phot fitted with the PHOENIX library
+      # teff_gspphot_phoenix: teff_gspphot_phoenix
+      # logg_gspphot_phoenix: logg_gspphot_phoenix
+      # mh_gspphot_phoenix: mh_gspphot_phoenix
+      #
+      # --- group 2 [required, alternative]: GSP-Spec, derived from the RVS spectra
+      # teff_gspspec: teff_gspspec
+      # logg_gspspec: logg_gspspec
+      # mh_gspspec: mh_gspspec
+      #
+      # --- group 2b [required, alternative]: GSP-Spec ANN solution, a separate
+      #     pipeline that covers sources the one above does not
+      # teff_gspspec_ann: teff_gspspec_ann
+      # logg_gspspec_ann: logg_gspspec_ann
+      # mh_gspspec_ann: mh_gspspec_ann
+      #
+      # --- group 3 [required, alternative]: GSP-Phot best-library solution.
+      #     Note these are NOT the PHOENIX-specific columns of group 1.
+      # teff_gspphot: teff_gspphot
+      # logg_gspphot: logg_gspphot
+      # mh_gspphot: mh_gspphot
+      #
+      # --- [optional] per-parameter fallback: log g derived from mass and radius
+      # mass_flame: mass_flame
+      # radius_flame: radius_flame
+      #
+      # --- [optional] extinction applied to the model spectrum when present
+      # azero_gspphot_phoenix: azero_gspphot_phoenix
+      #
+      # --- [optional] provenance and fit quality, recorded in the result and never
+      #     used to decide anything. libname_best_gspphot names which of the four
+      #     GSP-Phot libraries won the overall fit; it does NOT say whether the
+      #     PHOENIX-specific columns of group 1 exist, which is a separate question.
+      # libname_best_gspphot: libname_best_gspphot
+      # logposterior_gspphot_phoenix: logposterior_gspphot_phoenix
+      # mcmcaccept_gspphot_phoenix: mcmcaccept_gspphot_phoenix
+      #
+      # --- [optional] 16th/84th percentile bounds. Recorded for provenance; not yet
+      #     propagated into the converted magnitude.
+      # teff_gspphot_phoenix_lower: teff_gspphot_phoenix_lower
+      # teff_gspphot_phoenix_upper: teff_gspphot_phoenix_upper
+      # logg_gspphot_phoenix_lower: logg_gspphot_phoenix_lower
+      # logg_gspphot_phoenix_upper: logg_gspphot_phoenix_upper
+      # mh_gspphot_phoenix_lower: mh_gspphot_phoenix_lower
+      # mh_gspphot_phoenix_upper: mh_gspphot_phoenix_upper
   settings:
     use_dask: true
     calculate_separations: false
@@ -50,14 +112,30 @@ query_contamination_from_index:
     # are used directly. Otherwise BP-RP converts each source into the chosen band.
     # A conversion requires the catalogue BP and RP columns in the index.
     # output_band: a built-in filter (gaia_g/bp/rp, tess, cheops, mauve, ariel_fgs1,
-    #   ariel_fgs2, ariel_visphot, ariel_airs_ch0/ch1, ariel_nirspec), "custom" with a
-    #   filter_file, or any filter downloaded from SVO in the GUI. conversion_method:
-    #   blackbody (phoenix and empirical need external data). Omit the block to skip.
+    #   ariel_fgs2, ariel_visphot, ariel_airs_ch0/ch1, ariel_nirspec), a band with a
+    #   published Gaia relation (johnson_b/v/r, cousins_i, 2mass_j/h/ks, sdss_g/r/i/z,
+    #   hipparcos_hp, tycho_bt/vt), "custom" with a filter_file, or any filter
+    #   downloaded from SVO in the GUI.
+    # conversion_method: blackbody integrates a spectrum through the band's filter and
+    #   works for any curve; gaia_empirical applies the published Gaia colour relation,
+    #   only for the bands and colour ranges it was calibrated on; auto uses that
+    #   relation where it applies and blackbody elsewhere; phoenix interpolates a
+    #   model atmosphere at the source's Teff/logg/[M/H] and normalizes it on Gaia G.
+    # phoenix needs no setup: the grid nodes a run needs are fetched and cached under
+    #   the per-user data directory, and the atmosphere family follows the temperature
+    #   (BT-Settl below 7000 K, ATLAS9 to 15000 K, TLUSTY to 55000 K), always checking
+    #   that the point is really covered before using a family. Sources no installed
+    #   family suits fall back to blackbody, recorded per source.
+    #   phoenix_grid_path stays available for an installation that already has a grid.
+    # Omit the block to skip the conversion entirely.
     photometric_conversion:
     #   output_band: tess
     #   conversion_method: blackbody
     #   filter_file:
     #   catalog: gaia_dr3
+    #   phoenix_grid_path: data/phoenix_grid
+    #   apply_extinction: false
+    #   extinction_rv: 3.1
     contamination_model:
       mode: gaussian_psf
       gaussian_fwhm_arcsec: 120.0

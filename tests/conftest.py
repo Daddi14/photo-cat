@@ -12,6 +12,8 @@ import numpy as np
 import pytest
 
 from photo_cat.index_manifest import IndexManifest, write_index_manifest
+from photo_cat.photometry.atmospheres import GRID_CACHE_DIR_ENV
+from photo_cat.photometry.library import USER_FILTERS_DIR_ENV
 
 
 @dataclass(frozen=True)
@@ -20,6 +22,22 @@ class SampleInputs:
 
     catalog_path: Path
     targets_path: Path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_filter_library(tmp_path_factory: pytest.TempPathFactory):
+    """Point the writable filter library at an empty temporary directory.
+
+    The library merges the shipped filters with the per-user ones, so without this
+    a developer's own downloaded curves would join the library under test and could
+    fail assertions about which bands exist or which provenance they carry.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv(USER_FILTERS_DIR_ENV, str(tmp_path_factory.mktemp("user_filters")))
+        # The atmosphere cache is isolated for the same reason, and additionally so
+        # that no test can reach the network by finding a node absent from it.
+        patch.setenv(GRID_CACHE_DIR_ENV, str(tmp_path_factory.mktemp("grid_cache")))
+        yield
 
 
 @pytest.fixture(scope="session")
@@ -82,7 +100,7 @@ execution:
 
 
 @pytest.fixture
-def write_config(tmp_path: Path, config_text: str) -> Callable[[str | None], Path]:
+def write_config(tmp_path: Path, config_text: str) -> Callable[..., Path]:
     """Return a helper that writes a config and the minimal input CSV files it references."""
     def _write_config(text: str | None = None) -> Path:
         (tmp_path / "catalog.csv").write_text(

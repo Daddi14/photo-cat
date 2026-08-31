@@ -1,0 +1,79 @@
+{
+  "upload_type": "software",
+  "title": "PHOTO-CAT: Photometric Contamination Analyzer Tool",
+  "version": "3.1.0",
+  "license": "gpl-3.0-only",
+  "access_right": "open",
+  "language": "eng",
+  "description": "<p>PHOTO-CAT is a catalog-driven, mission-agnostic tool for quantifying stellar flux contamination in wide-field photometric observations. High-precision photometric missions are sensitive to flux from neighboring stars, which can bias light curves, dilute transit depths, and degrade photometric precision; PHOTO-CAT screens targets for that risk directly from an astrometric catalog, before an observation is planned.</p><p>The pipeline builds a three-dimensional Euclidean representation of the sky from a user-provided catalog and indexes it with a memory-optimized KDTree for rapid neighbor searches. A streaming, CSR-style storage format with compact internal identifiers keeps memory overhead low enough to process catalogs with tens to hundreds of millions of sources. Per-target contamination is then computed from angular separations, relative fluxes, and a configurable aperture model: a top-hat, or a circular Gaussian PSF that weights each neighbor by its radial flux decay out to a PSF-derived influence radius.</p><p>Catalog flux can optionally be converted into another photometric band before contamination is computed, either by integrating a blackbody spectrum through the band's transmission curve, which works for any mission passband including filters pulled from the SVO Filter Profile Service, or by applying a published Gaia empirical colour transformation, for the photometric systems and colour ranges those relations are calibrated on. Official transmission curves for Gaia, TESS, CHEOPS, MAUVE and the six Ariel channels ship with the package.</p><p>Outputs include per-target contaminating flux, contamination ratios, target purity, the number of neighboring sources and their angular separations, written as JSON alongside reproducibility metadata recording the package version, the query configuration, the index manifest and the explicit scope of the model. The tool runs from a graphical configurator or from a command-line interface. Results are catalog-level screening estimates, meant to support target selection and field-geometry decisions ahead of observations rather than to correct measured photometry.</p><p>The method and its application to the Ariel Mission Candidate Sample are described in G. Galletta et al. (2026), <em>\"PHOTO-CAT - Photometric Contamination Analyzer Tool: A High-Performance Framework for Photometric Contamination Assessment\"</em>; this reference is updated with its DOI once the article is published. Although developed for the Mauve satellite, PHOTO-CAT is mission-agnostic and readily applicable to TESS, PLATO, Ariel and other wide-field surveys.</p>",
+  "creators": [
+    {
+      "name": "Galletta, Gabriele",
+      "affiliation": "National Institute for Astrophysics",
+      "orcid": "0009-0002-4054-0813"
+    },
+    {
+      "name": "Favata, Fabio",
+      "affiliation": "Imperial College London",
+      "orcid": "0009-0001-8144-2526"
+    },
+    {
+      "name": "Bradley, Lawrence",
+      "affiliation": "Blue Skies Space Ltd."
+    },
+    {
+      "name": "Saba, Arianna",
+      "affiliation": "King's College London",
+      "orcid": "0000-0002-1437-4228"
+    },
+    {
+      "name": "Grant, Rachel",
+      "affiliation": "Blue Skies Space Ltd."
+    },
+    {
+      "name": "McLaren, James",
+      "affiliation": "Blue Skies Space Ltd."
+    },
+    {
+      "name": "Harvey, Sarah",
+      "affiliation": "Blue Skies Space Ltd."
+    },
+    {
+      "name": "Drago, Enrico",
+      "orcid": "0009-0005-1725-5223"
+    },
+    {
+      "name": "Tessenyi, Marcell",
+      "affiliation": "Blue Skies Space Ltd.",
+      "orcid": "0000-0002-3905-5944"
+    },
+    {
+      "name": "Micela, Giuseppina",
+      "affiliation": "National Institute for Astrophysics",
+      "orcid": "0000-0002-9900-4751"
+    }
+  ],
+  "keywords": [
+    "astronomy",
+    "photometry",
+    "contamination",
+    "crowding",
+    "catalogue",
+    "target selection",
+    "transit photometry",
+    "exoplanets",
+    "Gaia",
+    "Mauve",
+    "Ariel",
+    "TESS",
+    "PLATO",
+    "Python"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.21488163",
+      "relation": "isSourceOf",
+      "resource_type": "dataset"
+    }
+  ]
+}

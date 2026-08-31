@@ -25,7 +25,7 @@ def test_build_index_cli_returns_one_and_explains_missing_config(tmp_path: Path,
 
 @pytest.mark.regression
 def test_build_index_cli_returns_one_and_explains_missing_catalogue(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     capsys,
 ) -> None:
     """A missing overridden catalogue path must identify input_catalog so scripted callers can repair it."""

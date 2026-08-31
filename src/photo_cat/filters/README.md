@@ -74,13 +74,31 @@ never mistaken for a measured instrument response.
 
 More filters can be pulled from the SVO Filter Profile Service directly in the
 GUI (the "Download a filter from SVO" panel), or programmatically with
-`photo_cat.photometry.svo.download_filter`. They are saved into this tree and
-become selectable immediately.
+`photo_cat.photometry.svo.download_filter`. They become selectable immediately.
+
+## Where filters live
+
+Two directories are scanned together:
+
+- **this tree**, which holds the official curves shipped with the release. It
+  belongs to the installation and is replaced whenever PHOTO-CAT is upgraded or
+  reinstalled;
+- the **user library** in the per-user data directory, where downloaded and
+  user-added curves go so an upgrade cannot discard them:
+  - Windows `%APPDATA%\photo-cat\filters`
+  - macOS `~/Library/Application Support/photo-cat/filters`
+  - Linux `$XDG_DATA_HOME/photo-cat/filters` (default `~/.local/share/...`)
+
+Set `PHOTO_CAT_FILTERS_DIR` to put the user library somewhere else. A filter that
+still sits in this tree from an earlier version keeps working, because both
+directories are read; if the same band key exists in both, the user library wins,
+which is how a locally installed curve replaces a shipped one. The path actually
+used and its SHA-256 checksum are recorded in the query metadata.
 
 ## Adding a mission
 
 Download the official transmission curve (for example from the SVO Filter Profile
 Service) for the mission band you need, save it in this format under
-`filters/<Mission>/<band>.dat`, and it becomes selectable immediately as
+`<user library>/<Mission>/<band>.dat`, and it becomes selectable immediately as
 `output_band: <mission>` or `<mission>_<band>`. PHOTO-CAT does not ship invented
 mission curves; use the published instrument response.

@@ -63,7 +63,7 @@ def test_load_query_and_execution_configs(write_config: Callable[[], Path], tmp_
 
 @pytest.mark.unit
 def test_load_config_parses_multiband_and_contamination_model(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """New model settings should be validated while preserving Gaia-G defaults."""
@@ -91,7 +91,7 @@ def test_load_config_parses_multiband_and_contamination_model(
 
 @pytest.mark.unit
 def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """The outer radius follows the optics: sigma = FWHM / 2.3548, times the sigma count."""
@@ -103,6 +103,7 @@ def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
 
     query = load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
 
+    assert isinstance(query, QueryConfig)
     assert query.contamination_model.sigma_arcsec == pytest.approx(2.0 / GAUSSIAN_FWHM_TO_SIGMA)
     assert query.effective_influence_radius_arcsec == pytest.approx(5.0 * 2.0 / GAUSSIAN_FWHM_TO_SIGMA)
     # A narrow PSF legitimately stops contributing well inside a wide aperture.
@@ -111,7 +112,7 @@ def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
 
 @pytest.mark.unit
 def test_gaussian_psf_requires_both_fwhm_and_sigma_count(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """A Gaussian PSF without its sigma count has no derivable influence radius."""
@@ -126,7 +127,7 @@ def test_gaussian_psf_requires_both_fwhm_and_sigma_count(
 
 @pytest.mark.unit
 def test_query_parses_photometric_conversion_and_resolves_custom_filter_path(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
     tmp_path: Path,
 ) -> None:
@@ -148,8 +149,80 @@ def test_query_parses_photometric_conversion_and_resolves_custom_filter_path(
 
 
 @pytest.mark.unit
+def test_query_accepts_the_empirical_and_auto_conversion_methods(
+    write_config: Callable[..., Path],
+    config_text: str,
+) -> None:
+    """Both new methods parse, and a band with a published relation is accepted."""
+    for method in ("gaia_empirical", "auto"):
+        modified = config_text.replace(
+            "delta_mag: 5.0",
+            "delta_mag: 5.0\n    photometric_conversion:\n"
+            f"      output_band: johnson_v\n      conversion_method: {method}",
+        )
+        query = load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
+
+        assert isinstance(query, QueryConfig)
+        assert query.photometric_conversion is not None
+        assert query.photometric_conversion.conversion_method == method
+
+
+@pytest.mark.unit
+def test_phoenix_config_parses_grid_extinction_and_stellar_columns(
+    write_config: Callable[..., Path],
+    config_text: str,
+    tmp_path: Path,
+) -> None:
+    """PHOENIX paths, extinction, and indexed parameter mappings remain typed and resolved."""
+    modified = config_text.replace(
+        "      phot_g_mean_mag: phot_g_mean_mag\n  settings:",
+        "      phot_g_mean_mag: phot_g_mean_mag\n"
+        "    stellar_parameter_columns:\n"
+        "      teff_gspphot_phoenix: teff_phx\n"
+        "      logg_gspphot_phoenix: logg_phx\n"
+        "      mh_gspphot_phoenix: mh_phx\n"
+        "  settings:",
+        1,
+    ).replace(
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n"
+        "    photometric_conversion:\n"
+        "      output_band: tess\n"
+        "      conversion_method: phoenix\n"
+        "      phoenix_grid_path: models/phoenix\n"
+        "      apply_extinction: true\n"
+        "      extinction_rv: 3.2",
+    )
+    config_path = write_config(modified)
+    build = load_config("build_neighbors_index", str(config_path), validate_runtime=False)
+    query = load_config("query_contamination_from_index", str(config_path), validate_runtime=False)
+
+    assert build.stellar_parameter_columns["teff_gspphot_phoenix"] == "teff_phx"
+    assert query.photometric_conversion is not None
+    assert query.photometric_conversion.phoenix_grid_path == str((tmp_path / "models" / "phoenix").resolve())
+    assert query.photometric_conversion.apply_extinction is True
+    assert query.photometric_conversion.extinction_rv == pytest.approx(3.2)
+
+
+@pytest.mark.unit
+def test_query_rejects_an_empirical_band_without_a_published_relation(
+    write_config: Callable[..., Path],
+    config_text: str,
+) -> None:
+    """A mission passband has no Gaia relation, and that fails before the run starts."""
+    modified = config_text.replace(
+        "delta_mag: 5.0",
+        "delta_mag: 5.0\n    photometric_conversion:\n"
+        "      output_band: ariel_fgs1\n      conversion_method: gaia_empirical",
+    )
+
+    with pytest.raises(ValueError, match="No calibrated Gaia empirical transformation"):
+        load_config("query_contamination_from_index", str(write_config(modified)), validate_runtime=False)
+
+
+@pytest.mark.unit
 def test_query_rejects_unknown_conversion_method(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
     """An unsupported conversion method must fail at parse time with a clear message."""
@@ -181,7 +254,7 @@ def test_load_config_rejects_unknown_section(write_config: Callable[[], Path]) -
 )
 @pytest.mark.unit
 def test_load_config_rejects_invalid_setting_types_and_ranges(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     config_text: str,
     replacement: str,
     message: str,

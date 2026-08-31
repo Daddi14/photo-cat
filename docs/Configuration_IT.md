@@ -57,6 +57,31 @@ build_neighbors_index:
 configurata. Le bande aggiuntive vengono scritte come array numerici e
 registrate in `index_manifest.json`.
 
+I parametri atmosferici per PHOENIX vengono conservati separatamente dalle
+magnitudini. Mappa tutte le colonne Gaia disponibili nell'input; i singoli valori
+possono essere mancanti perché la conversione applica e registra il fallback per
+ogni sorgente:
+
+```yaml
+build_neighbors_index:
+  io:
+    stellar_parameter_columns:
+      teff_gspphot_phoenix: teff_gspphot_phoenix
+      logg_gspphot_phoenix: logg_gspphot_phoenix
+      mh_gspphot_phoenix: mh_gspphot_phoenix
+      teff_gspphot_phoenix_lower: teff_gspphot_phoenix_lower
+      teff_gspphot_phoenix_upper: teff_gspphot_phoenix_upper
+      logg_gspphot_phoenix_lower: logg_gspphot_phoenix_lower
+      logg_gspphot_phoenix_upper: logg_gspphot_phoenix_upper
+      mh_gspphot_phoenix_lower: mh_gspphot_phoenix_lower
+      mh_gspphot_phoenix_upper: mh_gspphot_phoenix_upper
+      azero_gspphot_phoenix: azero_gspphot_phoenix
+```
+
+Le colonne opzionali GSP-Spec (`teff_gspspec`, `logg_gspspec`, `mh_gspspec`),
+GSP-Phot best library (`teff_gspphot`, `logg_gspphot`, `mh_gspphot`) e FLAME
+(`mass_flame`, `radius_flame`) usano la stessa sintassi chiave-colonna.
+
 ## Fase di query
 
 La fase di query legge un indice esistente e processa i target selezionati.
@@ -109,10 +134,15 @@ opzionale la stima invece in una banda di missione:
 query_contamination_from_index:
   settings:
     photometric_conversion:
-      output_band: tess          # un filtro integrato, o "custom"
-      conversion_method: blackbody
+      output_band: tess          # un filtro integrato, una banda con relazione
+                                 # Gaia pubblicata (johnson_v, 2mass_ks, ...),
+                                 # o "custom"
+      conversion_method: blackbody   # blackbody | gaia_empirical | auto | phoenix
       filter_file:               # serve solo quando output_band è custom
       catalog: gaia_dr3
+      phoenix_grid_path: data/phoenix_grid  # obbligatorio per phoenix
+      apply_extinction: false
+      extinction_rv: 3.1
 ```
 
 La banda di uscita selezionata diventa la banda di riferimento per il taglio in
@@ -121,33 +151,120 @@ principali, i conteggi e le metriche PSF. Se quella banda esatta è già present
 nell'indice (per esempio `gaia_bp` o `gaia_rp`), PHOTO-CAT usa direttamente le
 magnitudini nominali del catalogo e non esegue alcuna conversione.
 
-Altrimenti il colore (BP-RP) fornisce una temperatura equivalente di corpo nero;
-il flusso di ogni sorgente viene integrato nel filtro scelto, quindi
-`m_out = m_anchor - 2.5*log10(R)` con `R = F_out(Teff)/F_anchor(Teff)`. Poiché la
-contaminazione usa solo rapporti di flusso nella stessa banda, lo zero-point di
-uscita si cancella e si mantiene quello della banda di ancoraggio. Servono le
-bande colore del catalogo (BP, RP) memorizzate con `magnitude_columns` durante la
-build. PHOTO-CAT carica automaticamente le bande richieste: non è necessario
-ripeterle in `contamination_bands`.
+Altrimenti la conversione viene eseguita. Blackbody e conversione empirica
+richiedono le bande colore del catalogo (BP, RP) memorizzate con
+`magnitude_columns` durante la build. PHOENIX richiede solo Gaia G e una terna
+atmosferica completa; BP/RP sono opzionali e abilitano il fallback di temperatura
+e il fallback finale blackbody. PHOTO-CAT carica automaticamente questi input:
+non è necessario ripeterli in `contamination_bands`.
 
-`output_band` è la chiave di un filtro integrato (`gaia_g`, `gaia_bp`, `gaia_rp`,
-`tess`, `cheops`, `mauve`, e i canali Ariel `ariel_fgs1`, `ariel_fgs2`,
-`ariel_visphot`, `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`) o `custom`
-con un `filter_file`. `conversion_method` è `blackbody` (default); `phoenix` ed
-`empirical` sono selezionabili ma richiedono dati esterni (una griglia di spettri
-modello o una relazione pubblicata) ed errano chiaramente finché non vengono forniti.
+#### Metodi di conversione
 
-I filtri integrati stanno in `photo_cat/filters/<Missione>/<banda>.dat`; aggiungere
-una missione significa solo mettere lì la sua curva di trasmissione ufficiale.
-Gaia, TESS, CHEOPS, MAUVE e i canali Ariel sono curve ufficiali. Altri filtri si
-possono scaricare dal SVO Filter Profile Service direttamente nella GUI (il
-pannello "Scarica un filtro da SVO" sceglie una facility, ne elenca i filtri e ne
-scarica uno nella libreria) o con `photo_cat.photometry.svo.download_filter`.
+| `conversion_method` | Cosa fa | Quando usarlo |
+| --- | --- | --- |
+| `blackbody` (default) | Conversione approssimata basata sulla SED: il colore BP-RP fornisce una temperatura equivalente di corpo nero e quello spettro viene integrato nella curva di trasmissione della banda. | Qualsiasi banda con una curva di trasmissione, comprese le bande di missione e i profili forniti dall'utente. |
+| `gaia_empirical` | Trasformazione empirica basata sul colore, calibrata sulla fotometria Gaia per uno specifico sistema fotometrico pubblicato. Non assume alcun modello spettrale. | I sistemi fotometrici per cui Gaia pubblica relazioni, entro il loro intervallo di colore calibrato. |
+| `auto` | Usa la trasformazione empirica Gaia quando esiste una relazione calibrata e la sorgente rientra nel suo intervallo di validità; altrimenti ricade sulla conversione blackbody. | Cataloghi misti, in cui alcune sorgenti cadono fuori dall'intervallo di colore calibrato. |
+| `phoenix` | Interpola uno spettro PHOENIX/BT-Settl locale in Teff/logg/[M/H], applica opzionalmente l'estinzione, lo normalizza su Gaia G e integra il filtro target esistente. | Conversione SED fisica per sorgenti con parametri atmosferici; applica per sorgente il fallback blackbody esistente. |
 
-È una stima approssimata a livello di catalogo per lo screening: le stelle reali
-non sono corpi neri e la temperatura efficace riportata è una temperatura di
-colore equivalente di corpo nero, non una Teff fisica. Il filtro di uscita e il
-suo checksum SHA-256 vengono copiati nei metadata della query.
+Con `blackbody`, `m_out = m_anchor - 2.5*log10(R)` con
+`R = F_out(Teff)/F_anchor(Teff)`. Poiché la contaminazione usa solo rapporti di
+flusso nella stessa banda, lo zero-point di uscita si cancella e si mantiene
+quello della banda di ancoraggio.
+
+Con `gaia_empirical` si valuta direttamente il polinomio pubblicato
+`G - X = sum(c_n * (BP-RP)^n)`, quindi `X = G - polinomio(BP-RP)`. Le relazioni,
+i loro intervalli di validità in colore e la dispersione pubblicata provengono
+dalla documentazione Gaia DR3, Sez. 5.5.1, Tabelle 5.9-5.10 (Riello et al. 2021,
+A&A 649, A3). Nulla viene estrapolato: una sorgente il cui colore cade fuori
+dall'intervallo pubblicato viene riportata con
+`conversion_status: colour_outside_valid_range` e lasciata non convertita, e una
+banda senza relazione pubblicata viene rifiutata già in fase di configurazione.
+
+Non esiste alcuna relazione Gaia verso le bande di missione. Ariel, MAUVE, TESS,
+CHEOPS e i filtri SVO si convertono con `blackbody` (o con `auto`, che lo
+seleziona automaticamente per loro); `gaia_empirical` su una banda simile è un
+errore, non una scelta della relazione più vicina.
+
+#### Griglia PHOENIX locale
+
+`phoenix_grid_path` indica una cartella contenente `grid_index.csv` (oppure il CSV
+stesso). L'indice richiede queste colonne:
+
+```text
+teff,logg,mh,filename
+```
+
+Ogni filename è relativo all'indice e identifica uno spettro a due colonne
+lunghezza d'onda/flusso. Le colonne opzionali `wavelength_unit` (`nm`, `angstrom`,
+`micron`) e `flux_kind` (`energy`, il valore predefinito per F-lambda PHOENIX,
+oppure `photon`) rendono esplicita la preparazione della griglia. PHOTO-CAT carica
+gli spettri su richiesta e li mantiene in cache; non interroga SVO durante la query.
+
+L'interpolazione usa Teff, logg e [M/H]. Una cella è valida solo se esistono tutti
+i vertici necessari all'interpolazione trilineare, evitando di attraversare buchi
+di una griglia BT-Settl irregolare. I parametri vengono scelti nell'ordine:
+terna Gaia GSP-Phot PHOENIX, terna GSP-Spec, terna GSP-Phot best library, poi i
+fallback per parametro ([M/H] solare, massa/raggio FLAME per logg, temperatura da
+BP-RP). Se la terna resta incompleta, è fuori griglia o produce fotometria
+sintetica non valida, viene usata la conversione blackbody esistente quando BP/RP
+sono disponibili.
+
+L'estinzione opzionale usa `azero_gspphot_phoenix` e una legge CCM89 con
+`extinction_rv` configurabile. Gli output conservano `sed_model`, Teff/logg/[M/H]
+e le loro provenienze, `normalization_factor`, `quality` e `fallback_reason`. Gli
+intervalli lower/upper PHOENIX configurati vengono conservati per una futura
+propagazione delle incertezze; questa versione calcola solo il valore nominale.
+
+#### Bande di uscita
+
+`output_band` può essere:
+
+- la chiave di un filtro integrato: `gaia_g`, `gaia_bp`, `gaia_rp`, `tess`,
+  `cheops`, `mauve` e i canali Ariel `ariel_fgs1`, `ariel_fgs2`, `ariel_visphot`,
+  `ariel_airs_ch0`, `ariel_airs_ch1`, `ariel_nirspec`;
+- una banda con relazione Gaia pubblicata: `johnson_b`, `johnson_v`, `johnson_r`,
+  `cousins_i` (Johnson-Cousins), `2mass_j`, `2mass_h`, `2mass_ks` (2MASS),
+  `sdss_g`, `sdss_r`, `sdss_i`, `sdss_z` (SDSS12), `hipparcos_hp` (Hipparcos),
+  `tycho_bt`, `tycho_vt` (Tycho-2). Sono accettate anche le forme brevi `b`, `v`,
+  `r`, `i`, `j`, `h`, `ks`, `z`, `hp`, `bt`, `vt`; `r` e `i` indicano le bande
+  Johnson-Cousins e le bande SDSS mantengono il prefisso perché una `g` isolata
+  si leggerebbe come la G di Gaia;
+- `custom` con un `filter_file`.
+
+Una banda può comparire in entrambi gli elenchi. Perché `auto` abbia un fallback
+blackbody serve una curva di trasmissione installata per quella banda: senza,
+le sorgenti fuori dall'intervallo di colore della relazione restano non convertite
+e vengono riportate come tali.
+
+I filtri arrivano da due cartelle, lette insieme. Le curve ufficiali distribuite
+con la release (Gaia, TESS, CHEOPS, MAUVE e i canali Ariel) stanno dentro il
+package. Le curve scaricate e quelle aggiunte dall'utente stanno nella cartella
+dati dell'utente, dove un aggiornamento o una reinstallazione non può cancellarle:
+
+| Piattaforma | Libreria filtri utente |
+| --- | --- |
+| Windows | `%APPDATA%\photo-cat\filters` |
+| macOS | `~/Library/Application Support/photo-cat/filters` |
+| Linux | `$XDG_DATA_HOME/photo-cat/filters` (default `~/.local/share/photo-cat/filters`) |
+
+Imposta `PHOTO_CAT_FILTERS_DIR` per spostare la libreria utente. Aggiungere una
+missione significa solo mettere lì la sua curva ufficiale come
+`<Missione>/<banda>.dat`. Un filtro lasciato dentro il package da una versione
+precedente continua a funzionare, perché entrambe le cartelle vengono scandite; se
+la stessa chiave di banda esiste in entrambe vince la libreria utente, così una
+curva installata localmente sostituisce una distribuita. Altri filtri si possono
+scaricare dal SVO Filter Profile Service direttamente nella GUI (il pannello
+"Scarica un filtro da SVO" sceglie una facility, ne elenca i filtri e ne scarica
+uno nella libreria utente) o con `photo_cat.photometry.svo.download_filter`.
+
+Il percorso blackbody è una stima approssimata a livello di catalogo per lo
+screening: le stelle reali non sono corpi neri e la temperatura efficace riportata
+è una temperatura di colore equivalente di corpo nero, non una Teff fisica. Il
+percorso empirico non riporta alcuna temperatura, perché non ne deriva nessuna.
+Il filtro di uscita con il suo checksum SHA-256, la relazione usata con i suoi
+coefficienti e la dispersione pubblicata, e i conteggi per run di quante sorgenti
+ha convertito ciascun metodo finiscono tutti nei metadata della query.
 
 ## Salva e avvia la pipeline
 

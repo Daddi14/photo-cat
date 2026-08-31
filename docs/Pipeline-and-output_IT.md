@@ -60,10 +60,10 @@ un'analisi successiva aggiunga modellazione specifica della missione.
 La pesatura gaussiana opzionale resta un modello radiale circolare, non una
 simulazione completa dello strumento. Può stimare il leakage delle sorgenti fra
 apertura e raggio di influenza, ma non modella PSF asimmetriche o variabili,
-pixel del detector, diffrazione o luce diffusa. Una conversione opzionale
-corpo-nero colore→banda può stimare la contaminazione in una banda di missione a
-partire dai colori del catalogo, ma PHOTO-CAT non integra una distribuzione
-spettrale di energia completa né fa fit di atmosfere stellari reali.
+pixel del detector, diffrazione o luce diffusa. La conversione opzionale può usare
+un corpo nero, una relazione Gaia pubblicata o fotometria sintetica su una griglia
+locale di atmosfere PHOENIX/BT-Settl. PHOTO-CAT seleziona/interpola spettri modello
+esistenti; non esegue fit né genera atmosfere stellari.
 
 ## Output JSON
 
@@ -79,6 +79,8 @@ Ogni risultato target include:
 - dizionari opzionali multi-banda per le frazioni di flusso selezionate/tutti i vicini
 - metriche opzionali nella banda di missione convertita, magnitudini di
   target/contaminanti, temperatura efficace e stato di conversione per target
+- per PHOENIX, parametri atmosferici e provenienza, flusso target relativo,
+  fattore di normalizzazione, qualità, flag di estinzione e motivo del fallback
 - frazioni di flusso pesate dentro l'apertura, fuori dall'apertura e totali
 - conteggi e record delle sorgenti selezionate fuori dall'apertura
 - numero di vicini dentro il raggio circolare

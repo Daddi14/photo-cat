@@ -167,7 +167,7 @@ def test_resume_reconciliation_discards_bytes_written_after_the_checkpoint(tmp_p
 
 @pytest.mark.regression
 def test_complete_checkpoint_finishes_outputs_after_a_finalization_crash(
-    write_config: Callable[[str | None], Path],
+    write_config: Callable[..., Path],
     tmp_path: Path,
 ) -> None:
     """A 100% checkpoint without a manifest must finalize rather than return an unusable index."""

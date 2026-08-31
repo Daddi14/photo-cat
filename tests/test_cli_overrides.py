@@ -24,10 +24,12 @@ def test_cli_run_accepts_all_override_groups(tmp_path: Path, monkeypatch) -> Non
         "--usecolumns", "id,RA,DEC,G", "--catalog-source-id-column", "id",
         "--ra-column", "RA", "--dec-column", "DEC", "--mag-column", "G", "--no-use-dask",
         "--calculate-separations", "--max-radius-arcsec", "180", "--chunk-size", "500",
+        "--stellar-parameter-columns", "teff_gspphot_phoenix=teff_phx,logg_gspphot_phoenix=logg_phx",
         "--buffer-flush-interval", "25", "--index-dir", "output/run", "--no-targets-input",
         "--targets", "1001,HD 216608A", "--target-source-id-column", "id", "--field-of-view-arcsec", "60",
         "--delta-mag", "4", "--output-band", "custom",
         "--conversion-filter-file", "profiles/mission.dat", "--conversion-method", "blackbody",
+        "--phoenix-grid-path", "models/phoenix", "--apply-extinction", "--extinction-rv", "3.2",
         "--run-build", "--no-run-query", "--no-replace-running-pipeline",
     ])
 
@@ -44,6 +46,10 @@ def test_cli_run_accepts_all_override_groups(tmp_path: Path, monkeypatch) -> Non
     assert overrides["calculate_separations"] is True
     assert overrides["max_radius_arcsec"] == 180.0
     assert overrides["chunk_size"] == 500
+    assert overrides["stellar_parameter_columns"] == {
+        "teff_gspphot_phoenix": "teff_phx",
+        "logg_gspphot_phoenix": "logg_phx",
+    }
     assert overrides["buffer_flush_interval"] == 25
     assert overrides["index_dir"] == str((tmp_path / "output" / "run").resolve())
     assert overrides["targets_input"] is None
@@ -54,6 +60,9 @@ def test_cli_run_accepts_all_override_groups(tmp_path: Path, monkeypatch) -> Non
     assert overrides["output_band"] == "custom"
     assert overrides["conversion_method"] == "blackbody"
     assert overrides["conversion_filter_file"] == str((tmp_path / "profiles" / "mission.dat").resolve())
+    assert overrides["phoenix_grid_path"] == str((tmp_path / "models" / "phoenix").resolve())
+    assert overrides["apply_extinction"] is True
+    assert overrides["extinction_rv"] == pytest.approx(3.2)
     assert overrides["run_build"] is True
     assert overrides["run_query"] is False
     assert overrides["replace_running_pipeline"] is False

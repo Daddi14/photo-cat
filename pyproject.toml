@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "photo-cat"
-version = "3.0.0"
+version = "3.1.0"
 description = "A GUI-assisted catalogue-level photometric contamination risk-assessment and target-screening tool."
 authors = ["Gabriele Galletta <gabriele.galletta@inaf.it>", "PHOTO-CAT contributors"]
 readme = "README.md"
@@ -101,6 +101,23 @@ warn_redundant_casts = true
 [[tool.mypy.overrides]]
 module = ["photo_cat.configure_gui", "photo_cat.install"]
 ignore_errors = true
+
+# Pyright/Pylance settings, so an editor reports the same problems the CI does.
+# Without this the extension falls back to whatever each contributor has set
+# globally; in strict mode it flags thousands of diagnostics that mypy has no
+# equivalent for, most of them artefacts of the partial NumPy stubs rather than
+# defects. mypy remains the checker of record: it is what CI runs.
+[tool.pyright]
+include = ["src/photo_cat", "tests"]
+# Mirrors the mypy override above.
+ignore = ["src/photo_cat/configure_gui.py", "src/photo_cat/install.py"]
+typeCheckingMode = "standard"
+# The oldest interpreter the package supports, so editor and CI agree on syntax.
+pythonVersion = "3.10"
+venvPath = "."
+venv = ".venv"
+useLibraryCodeForTypes = true
+reportMissingTypeStubs = false
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

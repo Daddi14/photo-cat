@@ -57,10 +57,10 @@ tool unless mission-specific modelling is added downstream.
 The optional Gaussian PSF weights remain a circular radial model, not full
 instrument simulations. They can estimate leakage from sources between the
 aperture and influence radii, but do not model asymmetric or spatially varying
-PSFs, detector pixels, diffraction or scattered light. An optional blackbody
-colour-to-band conversion can estimate contamination in a mission band from
-catalogue colours, but PHOTO-CAT does not perform full spectral-energy-distribution
-integration or fit real stellar atmospheres.
+PSFs, detector pixels, diffraction or scattered light. Optional band conversion
+can use a blackbody, a published Gaia relation, or synthetic photometry of a
+locally prepared PHOENIX/BT-Settl atmosphere grid. PHOTO-CAT selects/interpolates
+existing model spectra; it does not fit or generate stellar atmospheres.
 
 ## Output JSON
 
@@ -77,6 +77,8 @@ Each target result includes:
 - optional per-band selected/all-neighbour flux-fraction dictionaries
 - optional converted mission-band metrics, effective temperature, and per-target
   conversion status when no exact catalogue output band is available
+- for PHOENIX, atmospheric parameters and provenance, relative target flux,
+  normalization factor, quality, extinction flag, and explicit fallback reason
 - weighted inside-aperture, outside-aperture, and total flux fractions
 - outside-aperture neighbour counts and selected-source records
 - number of neighbours inside the circular radius
