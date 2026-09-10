@@ -17,16 +17,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Test PAT access
+      - name: Test PAT
         env:
           MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN_EXOPA }}
         run: |
+          echo "Testing PAT access..."
           git ls-remote \
-            "https://x-access-token:${MIRROR_TOKEN}@github.com/EXOPA-OAPa/PHOTO-CAT.git"
-
-      - name: Mirror repository
-        env:
-          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN_EXOPA }}
-        run: |
-          git push --mirror \
             "https://x-access-token:${MIRROR_TOKEN}@github.com/EXOPA-OAPa/PHOTO-CAT.git"
