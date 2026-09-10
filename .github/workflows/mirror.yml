@@ -17,23 +17,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Test mirror authentication
-        env:
-          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
-        run: |
-          if [ -z "$MIRROR_TOKEN" ]; then
-            echo "ERROR: MIRROR_TOKEN is empty or unavailable"
-            exit 1
-          fi
-
-          echo "MIRROR_TOKEN is available"
-
-          git ls-remote \
-            "https://x-access-token:${MIRROR_TOKEN}@github.com/EXOPA-OAPa/photo-cat.git"
-
       - name: Mirror repository
         env:
-          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN_EXOPA }}
         run: |
           git push --mirror \
             "https://x-access-token:${MIRROR_TOKEN}@github.com/EXOPA-OAPa/photo-cat.git"
