@@ -9,6 +9,9 @@ on:
 
 jobs:
   mirror:
+    # Esegui il mirror SOLO nel repository personale
+    if: github.repository == 'Daddi14/photo-cat'
+
     runs-on: ubuntu-latest
 
     steps:
