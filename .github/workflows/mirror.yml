@@ -16,6 +16,9 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Check authentication
+        run: |
+          git ls-remote https://x-access-token:${{ secrets.MIRROR_TOKEN }}@github.com/EXOPA-OAPa/photo-cat.git
 
       - name: Mirror repository
         run: |
