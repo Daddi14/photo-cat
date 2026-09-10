@@ -16,10 +16,24 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Check authentication
+
+      - name: Test mirror authentication
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
         run: |
-          git ls-remote https://x-access-token:${{ secrets.MIRROR_TOKEN }}@github.com/EXOPA-OAPa/photo-cat.git
+          if [ -z "$MIRROR_TOKEN" ]; then
+            echo "ERROR: MIRROR_TOKEN is empty or unavailable"
+            exit 1
+          fi
+
+          echo "MIRROR_TOKEN is available"
+
+          git ls-remote \
+            "https://x-access-token:${MIRROR_TOKEN}@github.com/EXOPA-OAPa/photo-cat.git"
 
       - name: Mirror repository
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
         run: |
-          git push --mirror https://x-access-token:${{ secrets.MIRROR_TOKEN }}@github.com/EXOPA-OAPa/photo-cat.git
+          git push --mirror \
+            "https://x-access-token:${MIRROR_TOKEN}@github.com/EXOPA-OAPa/photo-cat.git"
