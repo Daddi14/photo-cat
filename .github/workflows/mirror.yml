@@ -14,6 +14,11 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    # Un push di branch e uno di tag fatti insieme non devono specchiarsi in parallelo
+    concurrency:
+      group: mirror-exopa
+      cancel-in-progress: false
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -24,6 +29,14 @@ jobs:
       - name: Mirror repository
         env:
           MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN_EXOPA }}
+        # Non usare --mirror: il checkout ha in refs/heads solo il ref che ha
+        # avviato il workflow (nessuno su un push di tag), quindi --mirror
+        # cancellerebbe gli altri branch, main compreso, sulla destinazione.
+        # Tutti i branch sono in refs/remotes/origin grazie a fetch-depth: 0.
+        # origin/HEAD, se presente, va tolto: altrimenti diventerebbe un branch "HEAD".
         run: |
-          git push --mirror \
-            "https://x-access-token:${MIRROR_TOKEN}@github.com/EXOPA-OAPa/PHOTO-CAT.git"
+          git remote set-head origin --delete 2>/dev/null || true
+          git push --force \
+            "https://x-access-token:${MIRROR_TOKEN}@github.com/EXOPA-OAPa/PHOTO-CAT.git" \
+            "refs/remotes/origin/*:refs/heads/*" \
+            "refs/tags/*:refs/tags/*"
