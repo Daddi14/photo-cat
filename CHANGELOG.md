@@ -10,6 +10,8 @@ Releases before 3.0.0 are documented in the
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-16
+
 ### Changed
 
 - `gaussian_psf`: the outer influence radius is now the aperture radius plus the
@@ -141,6 +143,7 @@ Releases before 3.0.0 are documented in the
   `bandpass_transformed_band` and the `*_transformed` flux aliases are replaced
   by the conversion fields and the `*_converted` flux fractions.
 
-[Unreleased]: https://github.com/Daddi14/photo-cat/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/Daddi14/photo-cat/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/Daddi14/photo-cat/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/Daddi14/photo-cat/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/Daddi14/photo-cat/compare/v2.0.1...v3.0.0

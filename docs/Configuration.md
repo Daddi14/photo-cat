@@ -88,7 +88,7 @@ Use this when the index already exists and you only need to query targets or adj
 
 The default contamination model is `top_hat`, which preserves the historical
 catalogue/aperture estimate. A 2D circular Gaussian PSF can be selected instead,
-weighting each source by its radial flux decay:
+weighting each source by the fraction of its flux falling inside the aperture:
 
 ```yaml
 query_contamination_from_index:

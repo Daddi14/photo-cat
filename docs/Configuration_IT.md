@@ -90,7 +90,7 @@ Usala quando l’indice esiste già e devi solo interrogare target o modificare 
 
 Il modello di contaminazione predefinito è `top_hat`, che conserva la stima
 storica catalogo/apertura. In alternativa si può selezionare una PSF gaussiana
-circolare 2D, che pesa ogni sorgente secondo il decadimento radiale del flusso:
+circolare 2D, che pesa ogni sorgente con la frazione del suo flusso che cade dentro l'apertura:
 
 ```yaml
 query_contamination_from_index:
