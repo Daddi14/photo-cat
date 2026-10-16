@@ -103,18 +103,21 @@ query_contamination_from_index:
       influence_sigma: 5.0           # quanti sigma di leakage considerare
 ```
 
-Con `gaussian_psf` ogni sorgente contribuisce con `exp(-r^2 / 2*sigma^2)` del
-proprio flusso a distanza angolare `r` dal centro dell'apertura, dove
-`sigma = gaussian_fwhm_arcsec / 2.3548`.
+Con `gaussian_psf` ogni sorgente a distanza angolare `d` dal centro
+dell'apertura è pesata con `eta(d; R, sigma) / eta(0; R, sigma)`, dove `eta` è la
+frazione della sua PSF gaussiana circolare che cade dentro l'apertura di raggio
+`R` (l'energia racchiusa, una CDF chi-quadro non centrale con due gradi di
+libertà) e `sigma = gaussian_fwhm_arcsec / 2.3548`. Viene contato solo il flusso
+che entra davvero nell'apertura, rispetto al flusso del target raccolto
+dall'apertura.
 
 Il raggio esterno di influenza **non si configura direttamente**: si ricava come
-`sigma * influence_sigma`, così il raggio di ricerca segue l'ottica invece di
-essere un numero impostato a mano. Con i valori qui sopra `sigma = 0.849"` e il
-raggio di influenza è `4.25"`. Può legittimamente risultare più piccolo del
-raggio di apertura: una PSF stretta smette di contribuire leakage ben dentro una
-circonferenza di estrazione ampia. Se supera il raggio di build dell'indice,
-PHOTO-CAT ricalcola i vicini direttamente dal catalogo per i target interrogati,
-operazione più lenta per target.
+`field_of_view_arcsec + sigma * influence_sigma`, perché una sorgente centrata
+fuori dall'apertura vi riversa ancora flusso finché le ali della sua PSF
+raggiungono il bordo dell'apertura. Con i valori qui sopra `sigma = 0.849"`,
+l'estensione della PSF è `4.25"` e il raggio di influenza è `51.25"`. Se supera
+il raggio di build dell'indice, PHOTO-CAT ricalcola i vicini direttamente dal
+catalogo per i target interrogati, operazione più lenta per target.
 
 `top_hat` non ha una scala PSF, quindi cerca solo entro il raggio di apertura.
 

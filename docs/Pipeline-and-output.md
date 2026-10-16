@@ -35,17 +35,20 @@ tool unless mission-specific modelling is added downstream.
   aperture, or pixel scale; use the value that matches the screening aperture
   you want to test.
 - The outer neighbour-search radius is derived, not configured: under
-  `gaussian_psf` it is `sigma * influence_sigma`, where
-  `sigma = gaussian_fwhm_arcsec / 2.3548`. `top_hat` searches the aperture only.
+  `gaussian_psf` it is `field_of_view_arcsec + sigma * influence_sigma`, where
+  `sigma = gaussian_fwhm_arcsec / 2.3548`, so it always encloses the aperture.
+  `top_hat` searches the aperture only.
 - `delta_mag` is the maximum allowed catalogue magnitude difference,
   `mag_neighbour - mag_target`, for a neighbour to be selected.
 - A `contaminant` in the JSON output means a neighbour that passes both the
   configured circular-radius cut and the `delta_mag` cut.
 - `contamination_model` records the query weighting mode. `top_hat` is the
   historical unweighted circular-aperture estimate. `gaussian_psf` applies a
-  2D circular Gaussian PSF from the configured FWHM, so each source's flux
-  decays as `exp(-r^2 / 2*sigma^2)` with angular distance from the aperture
-  centre, and additionally reports aperture-integrated flux metrics.
+  2D circular Gaussian PSF from the configured FWHM and weights each source by
+  the fraction of its flux falling inside the aperture, `eta(d) / eta(0)`
+  (encircled energy at distance `d` relative to the target's), and additionally
+  reports aperture-integrated flux metrics (`psf_metrics`) computed from every
+  selected source within the influence radius, inside or outside the aperture.
 - `flux_fraction_selected` is computed from the same selected contaminants as
   `num_contaminants`, using catalogue magnitude ratios
   `10 ** (-0.4 * (mag_neighbour - mag_target))`, and is reported as a
@@ -56,7 +59,8 @@ tool unless mission-specific modelling is added downstream.
 
 The optional Gaussian PSF weights remain a circular radial model, not full
 instrument simulations. They can estimate leakage from sources between the
-aperture and influence radii, but do not model asymmetric or spatially varying
+aperture and influence radii, i.e. the flux their PSF wings spill into the
+aperture, but do not model asymmetric or spatially varying
 PSFs, detector pixels, diffraction or scattered light. Optional band conversion
 can use a blackbody, a published Gaia relation, or synthetic photometry of a
 locally prepared PHOENIX/BT-Settl atmosphere grid. PHOTO-CAT selects/interpolates

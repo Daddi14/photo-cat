@@ -94,7 +94,7 @@ def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
     write_config: Callable[..., Path],
     config_text: str,
 ) -> None:
-    """The outer radius follows the optics: sigma = FWHM / 2.3548, times the sigma count."""
+    """The outer radius is the aperture plus the PSF extent, sigma = FWHM / 2.3548 times the sigma count."""
     modified = config_text.replace(
         "delta_mag: 5.0",
         "delta_mag: 5.0\n    contamination_model:\n"
@@ -105,9 +105,12 @@ def test_influence_radius_is_derived_from_the_psf_width_and_sigma_count(
 
     assert isinstance(query, QueryConfig)
     assert query.contamination_model.sigma_arcsec == pytest.approx(2.0 / GAUSSIAN_FWHM_TO_SIGMA)
-    assert query.effective_influence_radius_arcsec == pytest.approx(5.0 * 2.0 / GAUSSIAN_FWHM_TO_SIGMA)
-    # A narrow PSF legitimately stops contributing well inside a wide aperture.
-    assert query.effective_influence_radius_arcsec < query.field_of_view_arcsec
+    assert query.contamination_model.psf_extent_arcsec == pytest.approx(5.0 * 2.0 / GAUSSIAN_FWHM_TO_SIGMA)
+    assert query.effective_influence_radius_arcsec == pytest.approx(
+        query.field_of_view_arcsec + 5.0 * 2.0 / GAUSSIAN_FWHM_TO_SIGMA
+    )
+    # Even a narrow PSF never shrinks the search inside the aperture it must cover.
+    assert query.effective_influence_radius_arcsec > query.field_of_view_arcsec
 
 
 @pytest.mark.unit

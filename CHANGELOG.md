@@ -10,6 +10,24 @@ Releases before 3.0.0 are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- `gaussian_psf`: the outer influence radius is now the aperture radius plus the
+  PSF extent, `field_of_view_arcsec + influence_sigma * sigma`, instead of
+  `influence_sigma * sigma` alone. A source centred outside the aperture still
+  spills flux into it while its PSF wings reach the aperture edge, and a narrow
+  PSF no longer shrinks the search inside the aperture.
+- `gaussian_psf`: each source is weighted by the fraction of its flux falling
+  inside the aperture, `eta(d; R, sigma) / eta(0; R, sigma)` (encircled energy),
+  instead of the peak-normalised `exp(-d^2 / 2*sigma^2)`, so the weighted flux
+  fractions are aperture flux ratios.
+- `psf_metrics` (contamination ratio, target purity) now include every selected
+  source within the influence radius, not only those centred inside the
+  aperture, and agree with `flux_fraction_total_weighted`.
+- `ContaminationModelConfig.influence_radius_arcsec` is renamed
+  `psf_extent_arcsec`; `QueryConfig.effective_influence_radius_arcsec` returns
+  the full outer radius.
+
 ## [3.1.0] - 2026-08-17
 
 ### Added

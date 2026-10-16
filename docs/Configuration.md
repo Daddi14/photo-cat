@@ -101,17 +101,21 @@ query_contamination_from_index:
       influence_sigma: 5.0           # how many sigmas of leakage still count
 ```
 
-Under `gaussian_psf` each source contributes `exp(-r^2 / 2*sigma^2)` of its flux
-at angular distance `r` from the aperture centre, with
-`sigma = gaussian_fwhm_arcsec / 2.3548`.
+Under `gaussian_psf` each source at angular distance `d` from the aperture
+centre is weighted by `eta(d; R, sigma) / eta(0; R, sigma)`, where `eta` is the
+fraction of its circular Gaussian PSF falling inside the aperture of radius `R`
+(the encircled energy, a non-central chi-square CDF with two degrees of freedom)
+and `sigma = gaussian_fwhm_arcsec / 2.3548`. Only the flux that actually lands
+inside the aperture is counted, relative to the flux the aperture captures from
+the target.
 
 The outer influence radius is **not configured directly**. It is derived as
-`sigma * influence_sigma`, so the search radius follows the optics rather than an
-unrelated hand-set number. With the values above, `sigma = 0.849"` and the
-influence radius is `4.25"`. It may legitimately fall below the aperture radius:
-a narrow PSF stops contributing leakage well inside a wide extraction circle. If
-it exceeds the index build radius, PHOTO-CAT recomputes neighbours directly from
-the catalogue for the queried targets, which is slower per target.
+`field_of_view_arcsec + sigma * influence_sigma`: a source centred outside the
+aperture still spills flux into it as long as its PSF wings reach the aperture
+edge. With the values above, `sigma = 0.849"`, the PSF extent is `4.25"`, and the
+influence radius is `51.25"`. If it exceeds the index build radius, PHOTO-CAT
+recomputes neighbours directly from the catalogue for the queried targets, which
+is slower per target.
 
 `top_hat` has no PSF scale, so it searches the aperture radius only.
 

@@ -14,8 +14,9 @@ Model scope
 PHOTO-CAT's current query model is catalogue-level and aperture-like: it selects
 neighbouring catalogue sources inside a configured circular angular radius and
 estimates flux ratios from configured catalogue magnitude columns. An optional
-circular Gaussian PSF model weights each source by its radial flux decay and
-estimates leakage out to a PSF-derived influence radius. It does not perform
+circular Gaussian PSF model weights each source by the fraction of its flux that
+falls inside the aperture, including sources centred outside the aperture out to
+an influence radius equal to the aperture radius plus the PSF extent. It does not perform
 spatially varying or asymmetric PSF
 convolution, detector-pixel modelling, scattered-light modelling, or full
 spectral/passband integration. An optional band conversion can estimate
@@ -93,8 +94,9 @@ Inputs (from config_and_run_new)
 
     - contamination_model.gaussian_fwhm_arcsec / contamination_model.influence_sigma
         Gaussian PSF width and the number of standard deviations still counted.
-        Their product is the outer neighbour radius used to model weighted
-        leakage from sources outside the aperture.
+        Their product is the PSF extent; the outer neighbour radius is the
+        aperture radius plus that extent, used to model the flux spilled into the
+        aperture by sources outside it.
 
     - delta_mag (float)
         Magnitude difference threshold. A contaminant is selected if:
@@ -882,7 +884,9 @@ def psf_aperture_metrics(
     - ``effective_contaminating_flux``  F_cont = sum over the selected contaminants of
       captured_i * flux_ratio_i, where captured_i is the fraction of contaminant i's
       flux captured by the (offset) aperture and flux_ratio_i = 10^(-0.4*(m_i - m_t))
-      is its total flux relative to the target.
+      is its total flux relative to the target. The query passes every selected
+      source within the influence radius (aperture radius plus PSF extent), so
+      sources centred outside the aperture contribute the flux their wings spill in.
     - ``contamination_ratio``  C = F_cont / F_target.
     - ``target_purity``  P = F_target / (F_target + F_cont).
     - ``contaminating_fraction``  1 - P.
@@ -944,15 +948,23 @@ def _gaussian_psf_weights(
     model: ContaminationModelConfig,
     aperture_radius_arcsec: float | None,
 ) -> np.ndarray:
-    """Radial Gaussian point-spread-function response, peaking at the centre.
+    """Fraction of each source's flux falling inside the aperture, relative to the target's.
 
-    Each source's flux decays as exp(-r^2 / 2*sigma^2) with angular distance from
-    the aperture centre, so a contaminant contributes less the further out it sits.
+    A circular Gaussian PSF of width sigma centred at distance d from the aperture
+    centre puts eta(d; R, sigma) of its flux inside the aperture of radius R, the
+    CDF of a non-central chi-square with two degrees of freedom. The weight is
+    eta(d) / eta(0), so it is 1 for a source at the target position and falls to
+    zero once the PSF wings no longer reach the aperture edge. Weighted flux
+    fractions are then aperture flux ratios, consistent with ``psf_aperture_metrics``.
     """
     if (model.gaussian_fwhm_arcsec is None):
         raise ValueError("gaussian_fwhm_arcsec is required for gaussian_psf contamination weighting.")
+    if (aperture_radius_arcsec is None or aperture_radius_arcsec <= 0.0):
+        raise ValueError("A positive aperture radius is required for gaussian_psf contamination weighting.")
     sigma = _gaussian_sigma_arcsec(model.gaussian_fwhm_arcsec)
-    return np.exp(-0.5 * (separations_arcsec / sigma) ** 2)
+    radius_squared = (float(aperture_radius_arcsec) / sigma) ** 2
+    captured = ncx2.cdf(radius_squared, df=2, nc=(np.asarray(separations_arcsec, dtype=np.float64) / sigma) ** 2)
+    return np.asarray(captured, dtype=np.float64) / float(ncx2.cdf(radius_squared, df=2, nc=0.0))
 
 
 # Registry of contamination-weighting models. Adding a model is a single entry here,
@@ -1320,9 +1332,8 @@ def process_target(
         output_band=None,
         catalog_band="gaia_g",
     )
-    # A PSF-derived influence radius may fall below the aperture: a narrow PSF stops
-    # contributing leakage well inside a wide extraction circle. Only the aperture
-    # itself bounds the selected contaminants.
+    # The influence radius is the aperture plus the PSF extent, so it always encloses
+    # the aperture; sources between the two radii spill part of their flux inside.
     influence_radius_arcsec = field_of_view_arcsec if influence_radius_arcsec is None else influence_radius_arcsec
     number_of_sources = ra.shape[0]
     if (internal_target < 1 or internal_target > number_of_sources):
@@ -1431,10 +1442,12 @@ def process_target(
         contamination_model,
         field_of_view_arcsec,
     )
+    # Selected sources outside the aperture still spill flux inside it, so the
+    # aperture-integrated metrics count every selected source within the influence radius.
     psf_metrics = psf_aperture_metrics(
         target_magnitude,
         contaminant_magnitudes,
-        selected_mask,
+        selected_mask | outside_selected_mask,
         contaminant_separations,
         contamination_model,
         field_of_view_arcsec,

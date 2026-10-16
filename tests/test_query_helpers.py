@@ -69,10 +69,33 @@ def test_gaussian_contamination_weights_decline_with_radius() -> None:
     weights = contamination_weights(
         np.array([0.0, 10.0, 20.0]),
         ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=10.0),
+        aperture_radius_arcsec=10.0,
     )
 
     assert weights[0] == pytest.approx(1.0)
     assert weights[0] > weights[1] > weights[2]
+
+
+@pytest.mark.unit
+def test_gaussian_weights_are_the_aperture_encircled_energy_ratio() -> None:
+    """The weight is eta(d)/eta(0), so a source just outside the aperture still spills flux in."""
+    aperture = 47.0
+    model = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=10.0)
+    sigma = 10.0 / GAUSSIAN_FWHM_TO_SIGMA
+    weights = contamination_weights(np.array([0.0, aperture, aperture + sigma, aperture + 8.0 * sigma]), model, aperture)
+
+    assert weights[0] == pytest.approx(1.0)
+    # On the edge about half of the PSF falls inside; one sigma out, about a sixth.
+    assert weights[1] == pytest.approx(0.5, abs=0.03)
+    assert weights[2] == pytest.approx(0.16, abs=0.02)
+    assert weights[3] == pytest.approx(0.0, abs=1e-6)
+
+
+@pytest.mark.unit
+def test_gaussian_weights_require_an_aperture_radius() -> None:
+    """Without an aperture there is no encircled energy to compute."""
+    with pytest.raises(ValueError, match="aperture radius"):
+        contamination_weights(np.array([1.0]), ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=10.0))
 
 
 @pytest.mark.unit
@@ -163,10 +186,10 @@ def test_top_hat_ignores_stale_psf_fields_when_deriving_the_influence_radius() -
     target: a run that takes seconds took hours.
     """
     stale = ContaminationModelConfig(mode="top_hat", gaussian_fwhm_arcsec=300.0, influence_sigma=3.0)
-    assert stale.influence_radius_arcsec is None
+    assert stale.psf_extent_arcsec is None
 
     psf = ContaminationModelConfig(mode="gaussian_psf", gaussian_fwhm_arcsec=300.0, influence_sigma=3.0)
-    assert psf.influence_radius_arcsec == pytest.approx(3.0 * 300.0 / GAUSSIAN_FWHM_TO_SIGMA)
+    assert psf.psf_extent_arcsec == pytest.approx(3.0 * 300.0 / GAUSSIAN_FWHM_TO_SIGMA)
 
 
 @pytest.mark.unit

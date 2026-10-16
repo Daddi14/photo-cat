@@ -1405,7 +1405,7 @@ class ConfigGui(tk.Tk):
         # Live readout so the user can see the arcsec radius their sigma choice implies.
         self.derived_influence_label = ttk.Label(model, text="", style="Muted.TLabel", wraplength=880, justify="left")
         self.derived_influence_label.grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        for variable in (self.gaussian_fwhm_var, self.influence_sigma_var):
+        for variable in (self.gaussian_fwhm_var, self.influence_sigma_var, self.field_of_view_var):
             variable.trace_add("write", lambda *_: self.update_derived_influence_radius())
 
         self.build_conversion_panel(settings_tab, row=9)
@@ -1941,9 +1941,14 @@ class ConfigGui(tk.Tk):
             return tr("FWHM and number of sigmas must both be greater than zero.")
 
         sigma = fwhm / GAUSSIAN_FWHM_TO_SIGMA
+        try:
+            aperture = float(self.field_of_view_var.get().strip())
+        except ValueError:
+            aperture = 0.0
         return (
             f"sigma = {sigma:.3f}\" (FWHM / 2.355)  ->  "
-            f"{tr('outer influence radius')} = {sigmas:g} x {sigma:.3f}\" = {sigma * sigmas:.3f}\""
+            f"{tr('outer influence radius')} = {aperture:g}\" + {sigmas:g} x {sigma:.3f}\" "
+            f"= {aperture + sigma * sigmas:.3f}\""
         )
 
     def toggle_advanced_settings(self) -> None:
@@ -2383,13 +2388,14 @@ class ConfigGui(tk.Tk):
         # values left over from an earlier Gaussian run must not raise a warning
         # about a radius that mode will never search.
         if (self.contamination_mode_var.get().strip() == "gaussian_psf" and fwhm_text != "" and sigma_text != ""):
-            influence_radius = (float(fwhm_text) / GAUSSIAN_FWHM_TO_SIGMA) * float(sigma_text)
+            aperture = float(self.field_of_view_var.get().strip())
+            influence_radius = aperture + (float(fwhm_text) / GAUSSIAN_FWHM_TO_SIGMA) * float(sigma_text)
             if (influence_radius > max_radius):
                 proceed = messagebox.askyesno(
                     "Influence radius is larger than build radius",
                     "The derived outer influence radius is larger than the build radius.\n\n"
                     f"FWHM {float(fwhm_text):g}\" gives sigma {float(fwhm_text) / GAUSSIAN_FWHM_TO_SIGMA:.3f}\", "
-                    f"and {float(sigma_text):g} sigmas gives {influence_radius:.3f}\" "
+                    f"and the {aperture:g}\" aperture plus {float(sigma_text):g} sigmas gives {influence_radius:.3f}\" "
                     f"against a build radius of {max_radius:g}\".\n\n"
                     "For the queried targets, PHOTO-CAT will recompute neighbours directly from "
                     "the catalog out to the influence radius (only those targets, not the whole "

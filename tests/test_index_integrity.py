@@ -276,3 +276,9 @@ def test_query_reports_weighted_leakage_from_outside_aperture() -> None:
     assert result["flux_fraction_outside_aperture"] > 0.0
     assert result["flux_fraction_total_weighted"] == result["flux_fraction_outside_aperture"]
     assert result["outside_aperture_contaminants"][0]["aperture_location"] == "outside"
+    # The aperture-integrated metrics count the flux the outside source spills in,
+    # and agree with the weighted flux fraction (both relative to the captured target flux).
+    assert result["psf_metrics"]["contamination_ratio"] > 0.0
+    assert result["psf_metrics"]["contamination_ratio"] * 100.0 == pytest.approx(
+        result["flux_fraction_total_weighted"], abs=0.01
+    )

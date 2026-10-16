@@ -38,17 +38,21 @@ un'analisi successiva aggiunga modellazione specifica della missione.
   pixel: usa il valore che corrisponde all'apertura di screening che vuoi
   testare.
 - Il raggio esterno di ricerca dei vicini è derivato, non configurato: con
-  `gaussian_psf` vale `sigma * influence_sigma`, dove
-  `sigma = gaussian_fwhm_arcsec / 2.3548`. `top_hat` cerca solo entro l'apertura.
+  `gaussian_psf` vale `field_of_view_arcsec + sigma * influence_sigma`, dove
+  `sigma = gaussian_fwhm_arcsec / 2.3548`, quindi racchiude sempre l'apertura.
+  `top_hat` cerca solo entro l'apertura.
 - `delta_mag` è la differenza massima di magnitudine di catalogo ammessa,
   `mag_vicino - mag_target`, perché un vicino venga selezionato.
 - Un `contaminant` nell'output JSON è un vicino che supera sia il taglio sul
   raggio circolare configurato sia il taglio `delta_mag`.
 - `contamination_model` registra la modalità di pesatura della query. `top_hat`
   è la stima storica non pesata con apertura circolare. `gaussian_psf` applica
-  una PSF gaussiana circolare 2D dalla FWHM configurata, per cui il flusso di
-  ogni sorgente decade come `exp(-r^2 / 2*sigma^2)` con la distanza angolare dal
-  centro dell'apertura, e riporta inoltre metriche di flusso integrate sull'apertura.
+  una PSF gaussiana circolare 2D dalla FWHM configurata e pesa ogni sorgente con
+  la frazione del suo flusso che cade dentro l'apertura, `eta(d) / eta(0)`
+  (energia racchiusa a distanza `d` rispetto a quella del target), e riporta
+  inoltre metriche di flusso integrate sull'apertura (`psf_metrics`) calcolate su
+  tutte le sorgenti selezionate entro il raggio di influenza, dentro o fuori
+  dall'apertura.
 - `flux_fraction_selected` viene calcolato sugli stessi contaminanti selezionati
   usati da `num_contaminants`, tramite rapporti di flusso da magnitudini di
   catalogo `10 ** (-0.4 * (mag_vicino - mag_target))`, ed è espresso come
@@ -59,7 +63,8 @@ un'analisi successiva aggiunga modellazione specifica della missione.
 
 La pesatura gaussiana opzionale resta un modello radiale circolare, non una
 simulazione completa dello strumento. Può stimare il leakage delle sorgenti fra
-apertura e raggio di influenza, ma non modella PSF asimmetriche o variabili,
+apertura e raggio di influenza, cioè il flusso che le ali della loro PSF
+riversano nell'apertura, ma non modella PSF asimmetriche o variabili,
 pixel del detector, diffrazione o luce diffusa. La conversione opzionale può usare
 un corpo nero, una relazione Gaia pubblicata o fotometria sintetica su una griglia
 locale di atmosfere PHOENIX/BT-Settl. PHOTO-CAT seleziona/interpola spettri modello

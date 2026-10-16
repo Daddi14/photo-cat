@@ -73,14 +73,14 @@ class ContaminationModelConfig:
         return self.gaussian_fwhm_arcsec / GAUSSIAN_FWHM_TO_SIGMA
 
     @property
-    def influence_radius_arcsec(self) -> float | None:
-        """Return the outer neighbour radius implied by the FWHM and sigma multiple.
+    def psf_extent_arcsec(self) -> float | None:
+        """Return how far the PSF wings still reach, N_sigma * sigma.
 
-        The radius is not configured directly: the user supplies a PSF FWHM and
+        The extent is not configured directly: the user supplies a PSF FWHM and
         decides how many standard deviations of that PSF still matter, so the
         search radius follows the optics rather than an unrelated hand-set number.
 
-        Only a PSF model has an influence radius at all. top_hat ignores the FWHM
+        Only a PSF model has a PSF extent at all. top_hat ignores the FWHM
         and sigma count entirely, so stale values left in those fields must not
         widen its search: doing so pushed the radius past the index build radius
         and silently forced a full-catalogue neighbour recomputation per target.
@@ -128,15 +128,16 @@ class QueryConfig:
 
     @property
     def effective_influence_radius_arcsec(self) -> float:
-        """Return the outer neighbour radius derived from the PSF, or the aperture.
+        """Return the outer neighbour radius: the aperture plus the PSF extent.
 
-        A Gaussian model derives the radius from its FWHM and sigma multiple. It may
-        legitimately fall below the aperture radius: a narrow PSF stops contributing
-        leakage well inside a wide extraction circle. top_hat has no PSF scale, so it
-        falls back to the aperture itself.
+        A source at distance d from the aperture centre still spills flux into the
+        aperture of radius R while its PSF wings reach the aperture edge, i.e. for
+        d < R + N_sigma * sigma. The search therefore always encloses the whole
+        aperture plus the PSF extent. top_hat has no PSF scale, so it searches the
+        aperture itself.
         """
-        derived = self.contamination_model.influence_radius_arcsec
-        return self.field_of_view_arcsec if derived is None else derived
+        extent = self.contamination_model.psf_extent_arcsec
+        return self.field_of_view_arcsec if extent is None else self.field_of_view_arcsec + extent
 
 
 @dataclass(frozen=True)
