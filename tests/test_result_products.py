@@ -277,7 +277,7 @@ def test_sky_map_uses_colourblind_safe_palette_with_legend(tmp_path: Path) -> No
 
     assert "#0072B2" in svg  # blue: 0 contaminants
     assert "#E69F00" in svg  # orange: 1-3 contaminants
-    assert "#D55E00" in svg  # vermillion: >3 contaminants
+    assert "#000000" in svg  # black: >3 contaminants
     assert "0 contaminants" in svg and "&gt;3 contaminants" in svg  # colour legend present (escaped >)
     assert "RA [deg]" in svg and "Dec [deg]" in svg
 

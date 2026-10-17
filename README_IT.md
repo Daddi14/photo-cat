@@ -59,7 +59,7 @@ Vedi [Download e utilizzo](docs/Download-and-usage_IT.md) per una guida più com
 - Riassume i JSON dei risultati in statistiche text, JSON o CSV.
 - Genera plot SVG senza dipendenze aggiuntive e report HTML/Markdown.
 - Genera distribuzioni dei conteggi e delle separazioni pronte per la
-  pubblicazione, insieme a una mappa colourblind-safe con marker ridondanti.
+  pubblicazione, insieme a una mappa colourblind-safe con classi che differiscono anche in luminosità.
 - Esporta tabelle di risultati target in CSV o Parquet per notebook e strumenti esterni.
 - Cattura provenance JSON del catalogo con checksum, conteggi righe, statistiche colonne e checksum ADQL opzionale.
 - Genera pacchetti riproducibili per articolo/revisione con riassunti, plot, report e checksum.

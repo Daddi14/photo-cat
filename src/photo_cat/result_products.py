@@ -28,11 +28,11 @@ PLOT_KINDS = (
     "sky-map",
 )
 # Sky-map contamination classes, ordered by increasing contamination. Colours use
-# the colourblind-safe Okabe-Ito palette (blue -> orange -> vermillion).
+# the colourblind-safe Okabe-Ito palette (blue -> orange -> black).
 SKY_MAP_CLASSES = (
     ("0 contaminants", "#0072B2"),
     ("1-3 contaminants", "#E69F00"),
-    (">3 contaminants", "#D55E00"),
+    (">3 contaminants", "#000000"),
 )
 REPORT_FORMATS = ("html", "markdown", "pdf")
 EXPORT_FORMATS = ("csv", "parquet")
@@ -443,7 +443,7 @@ def _severity_style(count: int) -> tuple[str, float, float]:
         return "#0072B2", 2.4, 8.0
     if (count <= 3):
         return "#E69F00", 2.4, 8.0
-    return "#D55E00", 2.4, 8.0
+    return "#000000", 2.4, 8.0
 
 
 def _sky_map(rows: list[dict[str, Any]], width: int = 760, height: int = 420) -> str:

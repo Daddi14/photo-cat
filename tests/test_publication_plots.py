@@ -56,7 +56,7 @@ def test_sky_map_uses_colourblind_safe_palette() -> None:
     colors = [item["color"] for item in SKY_MAP_CLASSES]
     labels = [item["label"] for item in SKY_MAP_CLASSES]
 
-    assert colors == ["#0072B2", "#E69F00", "#D55E00"]
+    assert colors == ["#0072B2", "#E69F00", "#000000"]
     assert labels == ["0 contaminants", "1-3 contaminants", ">3 contaminants"]
 
 

@@ -59,7 +59,7 @@ See [Download and usage](docs/Download-and-usage.md) for a fuller walkthrough.
 - Summarize result JSON files into text, JSON, or CSV statistics.
 - Generate dependency-free SVG plots and HTML/Markdown reports from query results.
 - Generate publication-ready contaminant-count and separation distributions
-  plus a colourblind-safe sky map with redundant marker encodings.
+  plus a colourblind-safe sky map whose classes also differ in lightness.
 - Export target-result tables to CSV or Parquet for notebooks and external tools.
 - Capture catalogue provenance JSON with checksums, row counts, column stats, and optional ADQL checksums.
 - Generate reproducible product bundles with summaries, plots, reports, and checksums.

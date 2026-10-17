@@ -29,8 +29,8 @@ apertura/risultato che vuoi presentare:
 photo-cat publication-plots output/run_47arcsec/results/<result>.json --aperture-arcsec 47 --output-dir output/publication_plots/47arcsec --format pdf
 ```
 
-La mappa del cielo usa classi blu/giallo/viola con marker cerchio/triangolo/X e
-dimensioni differenti. Le separazioni vengono salvate sia come distribuzione
+La mappa del cielo usa classi blu/arancio/nero della palette colourblind-safe
+Okabe-Ito, che differiscono anche in luminosità e restano distinte in scala di grigi. Le separazioni vengono salvate sia come distribuzione
 dei conteggi originale sia come versione normalizzata per area anulare richiesta
 dal reviewer.
 

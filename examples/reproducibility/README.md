@@ -28,8 +28,8 @@ aperture/result is being presented:
 photo-cat publication-plots output/run_47arcsec/results/<result>.json --aperture-arcsec 47 --output-dir output/publication_plots/47arcsec --format pdf
 ```
 
-The sky map uses blue/yellow/purple classes plus circle/triangle/X markers and
-different sizes. Separations are written both as the original count
+The sky map uses blue/orange/black classes from the colourblind-safe Okabe-Ito
+palette, which also differ in lightness and so stay distinct in greyscale. Separations are written both as the original count
 distribution and as an annular-area-normalized reviewer-facing companion.
 
 Archive together:

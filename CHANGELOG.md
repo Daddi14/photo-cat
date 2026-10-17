@@ -10,6 +10,18 @@ Releases before 3.0.0 are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- Publication sky map: the `>3 contaminants` class is drawn in black instead of
+  vermillion. Orange and vermillion were hard to tell apart under deuteranopia
+  and protanopia; blue, orange and black stay distinct for all common
+  colour-vision deficiencies and in greyscale. The HTML/SVG report sky map uses
+  the same colours.
+- Publication sky map: larger axis labels (24 pt), tick labels (21 pt) and
+  legend (16 pt), so the map stays legible once scaled to one paper column.
+- Documentation no longer describes sky-map marker shapes and sizes that the
+  plots do not draw: all classes use the same round marker.
+
 ## [4.0.0] - 2026-10-16
 
 ### Changed

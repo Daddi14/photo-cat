@@ -139,8 +139,9 @@ and can export matched residual rows.
 
 `photo-cat publication-plots` accepts one query-result JSON plus its aperture
 and writes contaminant-count, separation, area-normalized separation-density,
-and sky-map products with a checksummed manifest. Sky-map classes are encoded
-redundantly by colour, marker shape, and marker size.
+and sky-map products with a checksummed manifest. Sky-map classes use the
+colourblind-safe Okabe-Ito colours blue, orange and black, which also differ in
+lightness so that they remain distinct in greyscale.
 
 ## Diagnostics and launchers
 

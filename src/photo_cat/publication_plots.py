@@ -20,12 +20,12 @@ from .result_products import iter_contaminants, load_result_rows
 PUBLICATION_PLOT_SCHEMA_VERSION = 1
 # Sky-map contamination classes drawn as small opaque points (matching the crisp
 # reference all-sky map), with crowded targets drawn last (on top). Colours use the
-# colourblind-safe Okabe-Ito palette (blue -> orange -> vermillion), ordered by
+# colourblind-safe Okabe-Ito palette (blue -> orange -> black), ordered by
 # increasing contamination.
 SKY_MAP_CLASSES: tuple[dict[str, Any], ...] = (
     {"key": "none", "label": "0 contaminants", "color": "#0072B2", "marker": "o", "size": 2.0},
     {"key": "moderate", "label": "1-3 contaminants", "color": "#E69F00", "marker": "o", "size": 2.0},
-    {"key": "crowded", "label": ">3 contaminants", "color": "#D55E00", "marker": "o", "size": 2.0},
+    {"key": "crowded", "label": ">3 contaminants", "color": "#000000", "marker": "o", "size": 2.0},
 )
 PUBLICATION_HISTOGRAM_COLOR = "#4477AA"
 # Font sizes are absolute points while these figures differ in size, so one shared
@@ -40,8 +40,9 @@ PLOT_TYPOGRAPHY: dict[str, dict[str, int]] = {
     "separation_distribution": {"axis_label": 16, "tick_label": 14, "legend": 12},
     # figsize (6, 4) - the smallest figure, so the smallest points
     "separation_density_distribution": {"axis_label": 14, "tick_label": 12, "legend": 11},
-    # figsize (12, 6) - the largest figure, so the largest points
-    "contamination_sky_map": {"axis_label": 18, "tick_label": 15, "legend": 13},
+    # figsize (12, 6) - the largest figure, so the largest points, sized to stay
+    # legible once the map is scaled down to one paper column.
+    "contamination_sky_map": {"axis_label": 24, "tick_label": 21, "legend": 16},
 }
 
 

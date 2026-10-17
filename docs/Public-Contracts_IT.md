@@ -137,7 +137,8 @@ riferimento fornito dall'utente e può esportare le righe abbinate con i residui
 `photo-cat publication-plots` accetta un JSON di query e la relativa apertura e
 scrive distribuzioni dei conteggi, delle separazioni, densità normalizzate per
 area e mappe del cielo con un manifest dotato di checksum. Le classi della mappa
-sono codificate tramite colore, forma e dimensione dei marker.
+usano i colori colourblind-safe Okabe-Ito blu, arancio e nero, che differiscono
+anche in luminosità e restano distinti in scala di grigi.
 
 ## Diagnostica e launcher
 
