@@ -10,6 +10,23 @@ Releases before 3.0.0 are documented in the
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-10-27
+
+### Security
+
+- Require Pillow 13.0 or later on Python 3.11+. Pillow is pulled in by
+  matplotlib, and 13.0 fixes the 41 Pillow advisories reported by Dependabot,
+  including heap buffer overflows when decoding crafted images. Python 3.10 stays
+  supported and keeps Pillow 12.3, because Pillow 13 requires Python 3.11.
+
+### Fixed
+
+- `build-index` no longer leaks the open neighbour file when opening the
+  separation file fails.
+- Resolved the open CodeQL code-scanning alerts (unused and mixed imports, NaN
+  check by self-comparison, undocumented best-effort `except` blocks). No
+  change to results.
+
 ## [4.0.1] - 2026-10-17
 
 ### Changed
@@ -157,7 +174,8 @@ Releases before 3.0.0 are documented in the
   `bandpass_transformed_band` and the `*_transformed` flux aliases are replaced
   by the conversion fields and the `*_converted` flux fractions.
 
-[Unreleased]: https://github.com/Daddi14/photo-cat/compare/v4.0.1...HEAD
+[Unreleased]: https://github.com/Daddi14/photo-cat/compare/v4.0.2...HEAD
+[4.0.2]: https://github.com/Daddi14/photo-cat/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/Daddi14/photo-cat/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/Daddi14/photo-cat/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/Daddi14/photo-cat/compare/v3.0.0...v3.1.0
