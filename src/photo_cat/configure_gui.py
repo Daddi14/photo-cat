@@ -640,7 +640,7 @@ class ConfigGui(tk.Tk):
         try:
             self.style.theme_use("clam")
         except Exception:
-            pass
+            pass  # 'clam' unavailable; keep the platform default theme
 
         self.style.configure(
             ".",
@@ -786,7 +786,7 @@ class ConfigGui(tk.Tk):
             try:
                 image = image.subsample(factor, factor)
             except Exception:
-                pass
+                pass  # keep the full-size image if subsampling fails
 
         return image
 
@@ -800,7 +800,7 @@ class ConfigGui(tk.Tk):
             try:
                 canvas.configure(background=self.colors[getattr(canvas, "_photocat_bg_key", "window_bg")])
             except Exception:
-                pass
+                pass  # canvas already destroyed
 
         for text_widget in self._text_widgets:
             self.apply_text_colors(text_widget)
@@ -809,7 +809,7 @@ class ConfigGui(tk.Tk):
             try:
                 hook()
             except Exception:
-                pass
+                pass  # a failing recolour hook must not block the theme switch
 
         self.update_logo_image()
         if (self.theme_button is not None):
@@ -838,7 +838,7 @@ class ConfigGui(tk.Tk):
             try:
                 widget.configure(text=tr(source_text))
             except tk.TclError:
-                pass
+                pass  # widget destroyed while the event was pending
         for child in widget.winfo_children():
             self.localize_widget_tree(child)
 
@@ -891,7 +891,7 @@ class ConfigGui(tk.Tk):
                 highlightbackground=self.colors["border"],
             )
         except Exception:
-            pass
+            pass  # widget does not support these colour options
 
     def update_logo_image(self) -> None:
         if (self.logo_label is None):
@@ -950,7 +950,7 @@ class ConfigGui(tk.Tk):
                 if (content_fits()):
                     canvas.yview_moveto(0.0)
             except tk.TclError:
-                pass
+                pass  # widget destroyed while the event was pending
 
         def update_scroll_region(event=None):
             if (state["scroll_id"] is None):
@@ -964,7 +964,7 @@ class ConfigGui(tk.Tk):
                 try:
                     canvas.itemconfigure(window_id, width=width)
                 except tk.TclError:
-                    pass
+                    pass  # widget destroyed while the event was pending
 
         def resize_content(event):
             # Reflowing the embedded window (wrapped labels, grid geometry) is the costly
@@ -2166,7 +2166,7 @@ class ConfigGui(tk.Tk):
             try:
                 self.after_cancel(self._catalog_auto_update_after_id)
             except Exception:
-                pass
+                pass  # callback already ran or was cancelled
 
         self._catalog_auto_update_after_id = self.after(250, self.apply_catalog_defaults_from_trace)
 
@@ -2356,7 +2356,7 @@ class ConfigGui(tk.Tk):
             try:
                 temp_path.unlink(missing_ok=True)
             except Exception:
-                pass
+                pass  # best-effort cleanup of the temporary file
 
         return True
 
@@ -2709,7 +2709,7 @@ class ConfigGui(tk.Tk):
             try:
                 runner_path.chmod(runner_path.stat().st_mode | 0o111)
             except Exception:
-                pass
+                pass  # best-effort; read-only checkouts keep the current mode
 
             if (sys.platform == "darwin"):
                 self.open_macos_terminal(runner_path, env)
@@ -2795,7 +2795,7 @@ class ConfigGui(tk.Tk):
             try:
                 process.terminate()
             except Exception:
-                pass
+                pass  # process already exited
 
     def close_macos_terminal_sessions(self) -> None:
         if (sys.platform != "darwin" or not self.pipeline_sessions):

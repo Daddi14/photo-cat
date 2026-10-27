@@ -19,7 +19,7 @@ def _read_version() -> str:
         if (version):
             return version
     except Exception:
-        pass
+        pass  # fall back to the installed package metadata
 
     try:
         return importlib.metadata.version("photo-cat")

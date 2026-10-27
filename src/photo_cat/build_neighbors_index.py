@@ -106,7 +106,7 @@ import csv
 import re
 import os
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import BinaryIO, Iterator
 
@@ -950,9 +950,6 @@ def calculate_contaminants(
             build_signature_value,
         )
     finally:
-        neighbors_file.close()
-        if (separations_file is not None):
-            separations_file.close()
         progress.close()
 
     return final_star_dataframe, offsets, checkpoint_total
@@ -1270,36 +1267,29 @@ def run_build(config_build: BuildConfig) -> int:
 
     if (not checkpoint_complete):
         # Open binary files in append mode if resuming, else write mode.
-        neighbors_file = open(
-            neighbors_tmp_path,
-            "ab" if checkpoint_index > 0 else "wb"
-        )
-
-        separations_file = None
-        if config_build.calculate_separations and separations_tmp_path is not None:
-            separations_file = open(
-                separations_tmp_path,
-                "ab" if checkpoint_index > 0 else "wb"
+        with open(neighbors_tmp_path, "ab" if checkpoint_index > 0 else "wb") as neighbors_file, (
+            open(separations_tmp_path, "ab" if checkpoint_index > 0 else "wb")
+            if (config_build.calculate_separations and separations_tmp_path is not None)
+            else nullcontext()
+        ) as separations_file:
+            # Main computation: fill neighbors_ids.bin + offsets (CSR).
+            final_star_dataframe, offsets, checkpoint_total = calculate_contaminants(
+                checkpoint_index=checkpoint_index,
+                number_of_stars_in_dataframe=number_of_stars_in_dataframe,
+                chunk_size=config_build.chunk_size,
+                coords=coords,
+                chord_radius=chord_radius,
+                coordinate_tree=coordinate_tree,
+                offsets=offsets,
+                checkpoint_total=checkpoint_total,
+                final_star_dataframe=final_star_dataframe,
+                neighbors_file=neighbors_file,
+                separations_file=separations_file,
+                buffer_flush_interval=config_build.buffer_flush_interval,
+                calculate_separations=config_build.calculate_separations,
+                checkpoint_path=checkpoint_path,
+                build_signature_value=current_build_signature,
             )
-
-        # Main computation: fill neighbors_ids.bin + offsets (CSR).
-        final_star_dataframe, offsets, checkpoint_total = calculate_contaminants(
-            checkpoint_index=checkpoint_index,
-            number_of_stars_in_dataframe=number_of_stars_in_dataframe,
-            chunk_size=config_build.chunk_size,
-            coords=coords,
-            chord_radius=chord_radius,
-            coordinate_tree=coordinate_tree,
-            offsets=offsets,
-            checkpoint_total=checkpoint_total,
-            final_star_dataframe=final_star_dataframe,
-            neighbors_file=neighbors_file,
-            separations_file=separations_file,
-            buffer_flush_interval=config_build.buffer_flush_interval,
-            calculate_separations=config_build.calculate_separations,
-            checkpoint_path=checkpoint_path,
-            build_signature_value=current_build_signature,
-        )
 
     # Finalize files and write auxiliary arrays.
     with ActivityBar("[saving index outputs]"):

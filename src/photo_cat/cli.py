@@ -6,11 +6,10 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import os
 import sys
 from contextlib import contextmanager
-from importlib import import_module
+from importlib import import_module, reload
 from pathlib import Path
 from typing import Iterator, NoReturn
 
@@ -138,7 +137,7 @@ def run_configure(args: argparse.Namespace) -> int:
     with scoped_config_environment(config_path):
         from . import configure_gui
 
-        configure_gui = importlib.reload(configure_gui)
+        configure_gui = reload(configure_gui)
         return int(configure_gui.main() or 0)
 
 

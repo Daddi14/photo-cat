@@ -124,7 +124,7 @@ def candidate_project_dirs() -> list[Path]:
         source_candidate = Path(__file__).resolve().parents[2]
         candidates.append(source_candidate)
     except IndexError:
-        pass
+        pass  # installed outside a source tree; the cwd candidate is enough
 
     unique_candidates: list[Path] = []
     for candidate in candidates:

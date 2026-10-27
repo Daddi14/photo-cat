@@ -71,7 +71,7 @@ def enable_windows_ansi() -> None:
         if (kernel32.GetConsoleMode(handle, ctypes.byref(mode))):
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
     except Exception:
-        pass
+        pass  # ANSI colours are cosmetic; plain output still works
 
 
 def supports_color() -> bool:

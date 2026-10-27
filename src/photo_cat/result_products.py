@@ -57,7 +57,7 @@ def _number(value: Any, default: float = 0.0) -> float:
         result = float(value)
     except (TypeError, ValueError):
         return default
-    return result if (result == result) else default
+    return default if math.isnan(result) else result
 
 
 def _int_number(value: Any, default: int = 0) -> int:

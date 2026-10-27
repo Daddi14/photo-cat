@@ -288,4 +288,4 @@ class RuntimeConfigOverride:
             try:
                 self.runtime_config_path.unlink(missing_ok=True)
             except OSError:
-                pass
+                pass  # best-effort cleanup of the temporary config
