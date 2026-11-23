@@ -10,6 +10,8 @@
 
 [English](README.md) · [Italiano](README_IT.md)
 
+[![arXiv](https://img.shields.io/badge/arXiv-2611.27677-b31b1b.svg)](https://arxiv.org/abs/2611.27677)
+
 **Photometric Contamination Analyzer Tool**
 
 PHOTO-CAT builds a neighbour index from an astronomical catalogue and screens selected photometric targets for nearby-source contamination risk.
