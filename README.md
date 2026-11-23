@@ -213,13 +213,26 @@ Please include the following citation and acknowledgement in any published mater
 
 Citation:
 
-`<publication reference>`
+`Galletta, G., Favata, F., Bradley, L., et al. 2026, PHOTO-CAT - Photometric Contamination Analyzer Tool: A High-Performance Framework for Photometric Contamination Assessment, arXiv:2611.27677`
+
+```bibtex
+@ARTICLE{2026arXiv261127677G,
+       author = {{Galletta}, G. and {Favata}, F. and {Bradley}, L. and {Saba}, A. and {Grant}, R. and {McLaren}, J. and {Harvey}, S. and {Tessenyi}, M. and {Micela}, G.},
+        title = "{PHOTO-CAT - Photometric Contamination Analyzer Tool: A High-Performance Framework for Photometric Contamination Assessment}",
+      journal = {arXiv e-prints},
+         year = 2026,
+          eid = {arXiv:2611.27677},
+archivePrefix = {arXiv},
+       eprint = {2611.27677},
+ primaryClass = {astro-ph.IM}
+}
+```
 
 Acknowledgement:
 
-`This research made use of PHOTO-CAT, a Python package for catalogue-level photometric contamination risk assessment and target screening (<publication reference>), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
+`This research made use of PHOTO-CAT, a Python package for catalogue-level photometric contamination risk assessment and target screening (Galletta et al. 2026, arXiv:2611.27677), developed with the support of Blue Skies Space Ltd. (www.bssl.space).`
 
-Replace `<publication reference>` with the final publication reference once available.
+The article has been accepted for publication; this reference will be updated with the journal DOI once it is published ([arXiv:2611.27677](https://arxiv.org/abs/2611.27677)).
 
 ## Acknowledgements
 

@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use PHOTO-CAT in published work, please cite the project and replace the placeholder paper reference when the final paper is available."
+message: "If you use PHOTO-CAT in published work, please cite the accompanying paper (preferred-citation) and this software."
 title: "PHOTO-CAT: Photometric Contamination Analyzer Tool"
 version: "4.0.2"
 date-released: "2026-10-27"
@@ -82,10 +82,38 @@ abstract: >-
 
   The method and its application to the Ariel Mission Candidate Sample are described
   in G. Galletta et al. (2026), "PHOTO-CAT - Photometric Contamination Analyzer Tool:
-  A High-Performance Framework for Photometric Contamination Assessment"; this
-  reference is updated with its DOI once the article is published. Although developed
+  A High-Performance Framework for Photometric Contamination Assessment",
+  arXiv:2611.27677 (accepted for publication). Although developed
   for the Mauve satellite, PHOTO-CAT is mission-agnostic and readily applicable to
   TESS, PLATO, Ariel and other wide-field surveys.
+preferred-citation:
+  type: article
+  title: "PHOTO-CAT - Photometric Contamination Analyzer Tool: A High-Performance Framework for Photometric Contamination Assessment"
+  authors:
+    - family-names: "Galletta"
+      given-names: "Gabriele"
+    - family-names: "Favata"
+      given-names: "Fabio"
+    - family-names: "Bradley"
+      given-names: "Lawrence"
+    - family-names: "Saba"
+      given-names: "Arianna"
+    - family-names: "Grant"
+      given-names: "Rachel"
+    - family-names: "McLaren"
+      given-names: "James"
+    - family-names: "Harvey"
+      given-names: "Sarah"
+    - family-names: "Tessenyi"
+      given-names: "Marcell"
+    - family-names: "Micela"
+      given-names: "Giuseppina"
+  year: 2026
+  journal: "arXiv e-prints"
+  identifiers:
+    - type: other
+      value: "arXiv:2611.27677"
+  url: "https://arxiv.org/abs/2611.27677"
 keywords:
   - astronomy
   - photometry
